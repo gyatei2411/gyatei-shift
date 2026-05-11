@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>シフト管理 - ぎゃあてい</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="shared.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="xlsx-export.js"></script>
+</head>
+<body>
+  <div class="header">
+    <h1>📅 シフト管理（ぎゃあてい）</h1>
+    <div class="header-actions">
+      <span id="connection-badge" class="conn-badge">⚪ ローカル</span>
+      <button onclick="exportData()" title="バックアップ">💾 書出</button>
+      <button onclick="importData()" title="復元">📥 復元</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="tabs">
+      <button class="tab active" data-tab="create" onclick="switchTab('create')">① 依頼作成</button>
+      <button class="tab" data-tab="aggregate" onclick="switchTab('aggregate')">② 集計＆Excel出力</button>
+      <button class="tab" data-tab="staff" onclick="switchTab('staff')">スタッフ管理</button>
+    </div>
+
+    <!-- ============ ① 依頼作成タブ ============ -->
+    <div class="tab-pane" id="tab-create">
+      <div class="card">
+        <h2>シフト調整依頼を作る</h2>
+        <p class="card-sub">対象週を選んで「依頼URLを生成」を押すと、スタッフマスタ全員に向けたURLが発行されます。<br>そのURLをLINEで送ってください。</p>
+
+        <div class="form-group">
+          <label class="form-label">対象週（月曜始まり）</label>
+          <div class="week-row">
+            <button onclick="changeCreateWeek(-1)">‹ 前週</button>
+            <span class="week-display" id="create-week-display"></span>
+            <button onclick="changeCreateWeek(1)">次週 ›</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">送信先スタッフ</label>
+          <div id="staff-summary" style="background:var(--muted-bg);padding:10px 14px;border-radius:8px;font-size:0.9rem"></div>
+          <div class="url-info" style="margin-top:6px">スタッフを変えたい場合は <a href="#" onclick="switchTab('staff');return false;" style="color:var(--primary)">スタッフ管理</a> から編集してください。</div>
+        </div>
+
+        <button class="btn btn-primary btn-block" onclick="createRequest()">依頼URLを生成</button>
+
+        <div id="request-result" style="display:none;margin-top:18px"></div>
+      </div>
+
+      <div class="card">
+        <h2>過去の依頼</h2>
+        <div id="past-requests"></div>
+      </div>
+    </div>
+
+    <!-- ============ ② 集計＆Excel出力 ============ -->
+    <div class="tab-pane" id="tab-aggregate" style="display:none">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div>
+            <h2 style="margin-bottom:0">集計</h2>
+            <p class="card-sub" style="margin:4px 0 0">表示する依頼を選んでください。回答はリアルタイムで自動更新されます。</p>
+          </div>
+          <div>
+            <select id="active-request-select" onchange="setActive(this.value)" style="min-width:240px"></select>
+          </div>
+        </div>
+
+        <div id="offline-import" style="display:none;margin-top:14px;padding:12px;background:#FEF3C7;border-radius:8px;border:1px solid #FCD34D">
+          <p style="font-size:0.85rem;color:#92400E;margin-bottom:8px">⚠ オフラインモード: スタッフから受け取った回答URLを下に貼ってください</p>
+          <textarea id="reply-paste" placeholder="https://....?a=...  または  === SHIFT REPLY === からの行" style="min-height:80px;font-family:monospace;font-size:0.82rem"></textarea>
+          <button class="btn btn-success btn-sm" style="margin-top:8px" onclick="importReplies()">取り込み</button>
+        </div>
+      </div>
+
+      <div class="card" id="aggregate-card" style="display:none">
+        <div id="aggregate-area"></div>
+      </div>
+      <div id="aggregate-empty" class="card">
+        <div class="empty-state">依頼を選択するか、まず ①依頼作成 から始めてください。</div>
+      </div>
+    </div>
+
+    <!-- ============ スタッフ管理タブ ============ -->
+    <div class="tab-pane" id="tab-staff" style="display:none">
+      <div class="card">
+        <h2>スタッフ名マスタ</h2>
+        <p class="card-sub">テンプレ525シートの実在メンバー24名が初期登録されています。追加・削除はここで行えます。</p>
+        <div class="form-group">
+          <div style="display:flex;gap:8px">
+            <input type="text" class="form-input" id="new-staff-input" placeholder="スタッフ名を追加" onkeydown="if(event.key==='Enter') addStaff()">
+            <button class="btn btn-primary" onclick="addStaff()">追加</button>
+          </div>
+        </div>
+        <div id="staff-master-list"></div>
+        <div style="margin-top:14px">
+          <button class="btn btn-outline btn-sm" onclick="resetStaff()">525シートのメンバーに戻す</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let createWs = App.weekStart();
+
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+      document.querySelectorAll('.tab-pane').forEach(p => p.style.display = (p.id === 'tab-' + name) ? '' : 'none');
+      if (name === 'aggregate') renderAggregate();
+      if (name === 'staff') renderStaffMaster();
+      if (name === 'create') renderCreate();
+    }
+
+    function updateConnectionBadge() {
+      const el = document.getElementById('connection-badge');
+      if (App.isOnline()) {
+        el.textContent = '🟢 オンライン同期';
+        el.className = 'conn-badge online';
+      } else {
+        el.textContent = '⚪ ローカル';
+        el.className = 'conn-badge';
+      }
+      // オフラインモードでは取り込み欄を表示
+      const off = document.getElementById('offline-import');
+      if (off) off.style.display = App.isOnline() ? 'none' : '';
+    }
+
+    /* ===== ① 依頼作成 ===== */
+
+    function changeCreateWeek(n) {
+      createWs = App.shiftWeek(createWs, n);
+      renderCreate();
+    }
+
+    function renderCreate() {
+      document.getElementById('create-week-display').textContent = App.weekLabel(createWs);
+      const staff = App.getStaff();
+      document.getElementById('staff-summary').innerHTML =
+        `<strong>${staff.length}名</strong>： ${staff.join(' / ')}`;
+      renderPastRequests();
+    }
+
+    function createRequest() {
+      const staff = App.getStaff();
+      if (staff.length === 0) {
+        App.toast('スタッフマスタが空です', 'error');
+        return;
+      }
+      const req = {
+        id: App.newRequestId(),
+        ws: createWs,
+        shop: 'ぎゃあてい',
+        staff: staff.slice(),
+        createdAt: new Date().toISOString()
+      };
+      App.saveRequest(req);
+
+      const baseUrl = location.origin + location.pathname.replace(/admin\.html$/, 'reply.html');
+      const url = App.buildRequestUrl(baseUrl, { v: 1, id: req.id, ws: req.ws, shop: req.shop, staff: req.staff });
+      const lineText = `【ぎゃあてい シフト希望調整】\n${App.weekLabel(req.ws)}\n下のリンクから○△✕をご記入ください。\n${url}`;
+
+      const resultEl = document.getElementById('request-result');
+      resultEl.style.display = '';
+      resultEl.innerHTML = `
+        <div class="card" style="background:#F0FDF4;border:1.5px solid #BBF7D0">
+          <h2 style="color:var(--success)">✓ 依頼を作成しました</h2>
+          <div class="form-group" style="margin-top:10px">
+            <label class="form-label">依頼URL</label>
+            <div class="url-box">${url}</div>
+            <div class="url-info">URL長: ${url.length}文字 / スタッフ: ${staff.length}名</div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="copy-url-btn">URLコピー</button>
+            <button class="btn btn-outline" id="copy-text-btn">案内文コピー</button>
+            <a class="btn btn-line" href="${App.lineShareUrl(lineText)}" target="_blank">LINEで送る</a>
+          </div>
+        </div>
+      `;
+      document.getElementById('copy-url-btn').onclick = () => App.copyToClipboard(url).then(ok => App.toast(ok?'URLをコピーしました':'失敗', ok?'success':'error'));
+      document.getElementById('copy-text-btn').onclick = () => App.copyToClipboard(lineText).then(ok => App.toast(ok?'案内文をコピーしました':'失敗', ok?'success':'error'));
+
+      renderPastRequests();
+      App.toast('依頼を作成しました', 'success');
+      // 自動でこの依頼を購読開始
+      if (App.isOnline()) App.subscribeReplies(req.id, () => { /* 集計タブで使うだけ */ });
+    }
+
+    function renderPastRequests() {
+      const reqs = App.getRequests().slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      const active = App.getActiveRequest();
+      const el = document.getElementById('past-requests');
+      if (!reqs.length) {
+        el.innerHTML = '<div class="empty-state">まだ依頼はありません。</div>';
+        return;
+      }
+      el.innerHTML = reqs.map(r => {
+        const replies = App.getReplies(r.id);
+        return `
+          <div style="border:1.5px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;${r.id === active ? 'background:#EEF2FF;border-color:var(--primary)' : ''}">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <div>
+                <strong>${App.weekLabel(r.ws)}</strong>
+                <span style="color:var(--muted);font-size:0.85rem;margin-left:8px">対象 ${r.staff.length}名 / 回答 ${replies.length}名</span>
+              </div>
+              <div class="btn-row">
+                <button class="btn btn-outline btn-sm" onclick="setActive('${r.id}'); switchTab('aggregate')">集計を見る</button>
+                <button class="btn btn-danger-outline btn-sm" onclick="if(confirm('この依頼と回答をすべて削除しますか？')) { App.deleteRequest('${r.id}'); renderPastRequests(); App.toast('削除しました','success'); }">削除</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    /* ===== ② 集計 ===== */
+
+    function importReplies() {
+      const ta = document.getElementById('reply-paste');
+      const text = ta.value;
+      if (!text.trim()) { App.toast('貼り付けてください', 'error'); return; }
+      const lines = text.split(/\r?\n/);
+      let ok = 0, updated = 0, skipped = 0;
+      const requests = App.getRequests();
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t) continue;
+        let r = null;
+        const urlMatch = t.match(/[?&]a=([A-Za-z0-9_-]+)/);
+        if (urlMatch) {
+          try { r = App.decodeBase64Url(urlMatch[1]); } catch (e) { skipped++; continue; }
+        } else if (t.startsWith('{')) {
+          try { r = JSON.parse(t); } catch (e) { skipped++; continue; }
+        } else { continue; }
+        if (!r.id || !r.n || !r.d) { skipped++; continue; }
+        if (!requests.find(req => req.id === r.id)) { skipped++; continue; }
+        const reply = { id: r.id, ws: r.ws, name: r.n, d: r.d, times: r.times || {}, gnote: r.gnote || '' };
+        const res = App._saveReplyLocal(reply);
+        if (res.isUpdate) updated++; else ok++;
+      }
+      ta.value = '';
+      App.toast(`${ok}件取込${updated ? ` / ${updated}件上書き` : ''}${skipped ? ` / ${skipped}件スキップ` : ''}`, skipped ? 'warn' : 'success');
+      renderAggregate();
+    }
+
+    function setActive(id) {
+      App.setActiveRequest(id);
+      // 既存購読を解除して新しい依頼を購読
+      if (App.isOnline() && id) App.subscribeReplies(id, () => renderAggregate());
+      renderAggregate();
+    }
+
+    function renderAggregate() {
+      const sel = document.getElementById('active-request-select');
+      const reqs = App.getRequests().slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      const active = App.getActiveRequest();
+      sel.innerHTML = '<option value="">--選択--</option>' + reqs.map(r =>
+        `<option value="${r.id}" ${r.id === active ? 'selected' : ''}>${App.weekLabel(r.ws)} (${r.staff.length}名)</option>`
+      ).join('');
+
+      const card = document.getElementById('aggregate-card');
+      const empty = document.getElementById('aggregate-empty');
+      const area = document.getElementById('aggregate-area');
+      const req = reqs.find(r => r.id === active);
+      if (!req) { card.style.display = 'none'; empty.style.display = ''; return; }
+      card.style.display = ''; empty.style.display = 'none';
+
+      const replies = App.getReplies(req.id);
+      const dates = App.weekDates(req.ws);
+      const submittedNames = new Set(replies.map(r => r.name));
+      const unsubmitted = req.staff.filter(n => !submittedNames.has(n));
+
+      // マトリクス
+      let matrixHtml = '<div class="matrix-wrap"><table class="matrix"><thead><tr>';
+      matrixHtml += '<th style="text-align:left">スタッフ</th>';
+      dates.forEach((d, i) => {
+        const dow = App.DOW_LABELS[i];
+        const cls = i === 5 ? 'sat' : i === 6 ? 'sun' : '';
+        matrixHtml += `<th class="${cls}">${App.fmtMD(d)}<br><span style="font-weight:500">(${dow})</span></th>`;
+      });
+      matrixHtml += '</tr></thead><tbody>';
+
+      const orderedReplies = req.staff
+        .map(name => replies.find(r => r.name === name))
+        .filter(Boolean);
+      replies.filter(r => !req.staff.includes(r.name)).forEach(r => orderedReplies.push(r));
+
+      for (const r of orderedReplies) {
+        matrixHtml += `<tr><td class="name-cell">${r.name}</td>`;
+        for (let i = 0; i < 7; i++) {
+          const sym = r.d[i] || 'x';
+          const symInfo = App.SYMBOLS[sym] || App.SYMBOLS.x;
+          const time = r.times && r.times[i] ? r.times[i] : '';
+          const title = time ? `${symInfo.label}: ${time}` : symInfo.label;
+          matrixHtml += `<td class="sym-cell" data-sym="${sym}" title="${title.replace(/"/g, '&quot;')}">${symInfo.mark}${time ? `<div class="cell-time">${escapeHtml(time)}</div>` : ''}</td>`;
+        }
+        matrixHtml += '</tr>';
+      }
+
+      matrixHtml += '<tr class="summary-row"><td class="name-cell">集計</td>';
+      for (let i = 0; i < 7; i++) {
+        const counts = { o: 0, t: 0, x: 0 };
+        orderedReplies.forEach(r => { const s = r.d[i]; if (counts[s] !== undefined) counts[s]++; });
+        matrixHtml += `<td>
+          <div class="summary-counts">
+            <span class="cnt-o">○ ${counts.o}</span>
+            <span class="cnt-t">△ ${counts.t}</span>
+            <span class="cnt-x">✕ ${counts.x}</span>
+          </div>
+        </td>`;
+      }
+      matrixHtml += '</tr></tbody></table></div>';
+
+      let unsubHtml = '';
+      if (unsubmitted.length) {
+        const baseUrl = location.origin + location.pathname.replace(/admin\.html$/, 'reply.html');
+        const url = App.buildRequestUrl(baseUrl, { v: 1, id: req.id, ws: req.ws, shop: req.shop, staff: req.staff });
+        const lineText = `【ぎゃあてい シフト希望調整】\n${App.weekLabel(req.ws)}\nまだ回答がありません。下のリンクからご記入ください。\n${url}`;
+        unsubHtml = `
+          <h3 style="font-size:1rem;margin-top:20px;margin-bottom:8px">未提出スタッフ（${unsubmitted.length}名）</h3>
+          <div class="unsubmitted-list">${unsubmitted.map(n => `<span class="unsubmitted-item">${n}</span>`).join('')}</div>
+          <div class="btn-row" style="margin-top:10px">
+            <button class="btn btn-outline btn-sm" onclick="App.copyToClipboard('${url.replace(/'/g, "\\'")}').then(ok=>App.toast(ok?'URLをコピー':'失敗',ok?'success':'error'))">依頼URLをコピー</button>
+            <a class="btn btn-line btn-sm" href="${App.lineShareUrl(lineText)}" target="_blank">LINEで督促</a>
+          </div>
+        `;
+      } else if (replies.length > 0) {
+        unsubHtml = `<div style="margin-top:20px;padding:12px;background:#D1FAE5;border-radius:8px;color:var(--success);font-weight:700;font-size:0.9rem">✓ 全員提出済みです</div>`;
+      }
+
+      // 全体備考
+      const gnotes = orderedReplies.filter(r => r.gnote).map(r => `${r.name}: ${r.gnote}`);
+      let gnoteHtml = '';
+      if (gnotes.length) {
+        gnoteHtml = `
+          <h3 style="font-size:1rem;margin-top:20px;margin-bottom:8px">全体備考</h3>
+          <div class="notes-list">
+            ${gnotes.map(g => `<div class="note-item"><span class="note-body">${escapeHtml(g)}</span></div>`).join('')}
+          </div>
+        `;
+      }
+
+      area.innerHTML = `
+        <div style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div>
+            <strong style="font-size:1.05rem">${App.weekLabel(req.ws)}</strong>
+            <span style="color:var(--muted);font-size:0.85rem;margin-left:8px">提出 ${replies.length}/${req.staff.length}名</span>
+          </div>
+          <button class="btn btn-success" onclick="downloadXlsx()" style="font-size:1rem">📥 Excelダウンロード</button>
+        </div>
+        ${matrixHtml}
+        ${unsubHtml}
+        ${gnoteHtml}
+      `;
+    }
+
+    function downloadXlsx() {
+      const reqId = App.getActiveRequest();
+      const req = App.getRequest(reqId);
+      if (!req) { App.toast('依頼が選択されていません', 'error'); return; }
+      const replies = App.getReplies(reqId);
+      if (replies.length === 0) {
+        if (!confirm('回答が0件です。空のシートで出力しますか？')) return;
+      }
+      try {
+        XlsxExport.generate(req, replies);
+        App.toast('Excelをダウンロードしました', 'success');
+      } catch (e) {
+        console.error(e);
+        App.toast('生成失敗: ' + e.message, 'error');
+      }
+    }
+
+    /* ===== スタッフ管理 ===== */
+
+    function renderStaffMaster() {
+      const staff = App.getStaff();
+      const el = document.getElementById('staff-master-list');
+      if (!staff.length) { el.innerHTML = '<div class="empty-state">スタッフが登録されていません</div>'; return; }
+      el.innerHTML = staff.map((n, i) => `
+        <div class="staff-master-row">
+          <span class="name">${n}</span>
+          <div class="actions">
+            <button class="btn btn-outline btn-sm" onclick="moveStaff(${i}, -1)">↑</button>
+            <button class="btn btn-outline btn-sm" onclick="moveStaff(${i}, 1)">↓</button>
+            <button class="btn btn-danger-outline btn-sm" onclick="removeStaff(${i})">削除</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function addStaff() {
+      const input = document.getElementById('new-staff-input');
+      const name = input.value.trim();
+      if (!name) return;
+      const staff = App.getStaff();
+      if (staff.includes(name)) { App.toast('既に登録されています', 'warn'); return; }
+      staff.push(name);
+      App.setStaff(staff);
+      input.value = '';
+      renderStaffMaster();
+      App.toast('追加しました', 'success');
+    }
+
+    function removeStaff(i) {
+      const staff = App.getStaff();
+      if (!confirm(`「${staff[i]}」を削除しますか？`)) return;
+      staff.splice(i, 1);
+      App.setStaff(staff);
+      renderStaffMaster();
+    }
+
+    function moveStaff(i, dir) {
+      const staff = App.getStaff();
+      const j = i + dir;
+      if (j < 0 || j >= staff.length) return;
+      [staff[i], staff[j]] = [staff[j], staff[i]];
+      App.setStaff(staff);
+      renderStaffMaster();
+    }
+
+    function resetStaff() {
+      if (!confirm('スタッフマスタを525シートの24名に戻しますか？\n（追加・削除した内容は失われます）')) return;
+      App.resetStaffToDefault();
+      renderStaffMaster();
+      App.toast('マスタを初期化しました', 'success');
+    }
+
+    /* ===== バックアップ ===== */
+
+    function exportData() {
+      const data = {
+        v: 4,
+        exportedAt: new Date().toISOString(),
+        requests: App.getRequests(),
+        replies: App.getReplies(),
+        staff: App.getStaff()
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `gyatei-shift-backup-${App.toDateStr(new Date())}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      App.toast('バックアップをダウンロードしました', 'success');
+    }
+
+    function importData() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = e => {
+        const f = e.target.files[0]; if (!f) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const data = JSON.parse(reader.result);
+            if (!data.requests || !data.replies) throw new Error('形式が不正です');
+            if (!confirm(`現在のデータを上書きします。\n依頼: ${data.requests.length}件 / 回答: ${data.replies.length}件 / スタッフ: ${(data.staff||[]).length}名\n復元しますか？`)) return;
+            localStorage.setItem(App.KEYS.requests, JSON.stringify(data.requests));
+            localStorage.setItem(App.KEYS.replies, JSON.stringify(data.replies));
+            if (data.staff) localStorage.setItem(App.KEYS.staff, JSON.stringify(data.staff));
+            App.toast('復元しました', 'success');
+            renderCreate(); renderAggregate(); renderStaffMaster();
+          } catch (err) {
+            App.toast('読み込み失敗: ' + err.message, 'error');
+          }
+        };
+        reader.readAsText(f);
+      };
+      input.click();
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    /* ===== 初期化 ===== */
+    window.addEventListener('load', () => {
+      // shared.js の DOMContentLoaded で initFirebase が呼ばれた後に状態確認
+      setTimeout(() => {
+        updateConnectionBadge();
+        // 既存の依頼すべてに購読開始
+        if (App.isOnline()) {
+          App.getRequests().forEach(r => App.subscribeReplies(r.id, () => {
+            renderAggregate();
+            renderPastRequests();
+          }));
+        }
+        renderCreate();
+      }, 100);
+    });
+  </script>
+</body>
+</html>

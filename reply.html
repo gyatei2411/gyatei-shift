@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>シフト希望入力 - ぎゃあてい</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="shared.js"></script>
+</head>
+<body>
+  <div class="header">
+    <h1>📝 シフト希望入力</h1>
+  </div>
+
+  <div class="container">
+
+    <!-- 入力画面 -->
+    <div id="form-section" style="display:none">
+      <div class="card">
+        <div id="meta-area" style="margin-bottom:18px"></div>
+        <div id="connection-info" style="font-size:0.78rem;color:var(--muted);margin-bottom:12px"></div>
+
+        <div class="form-group">
+          <label class="form-label" for="name-input">あなたのお名前</label>
+          <input class="form-input" type="text" id="name-input" placeholder="名前を入力 or 下から選択" autocomplete="off">
+          <div class="name-options" id="name-options"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">出勤可否</label>
+          <div class="bulk-actions">
+            <button onclick="bulkSet('o')">全部 ○</button>
+            <button onclick="bulkSet('x')">全部 ✕</button>
+            <button onclick="bulkSet(null)">クリア</button>
+          </div>
+          <div class="day-grid" id="day-grid"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="gnote">全体備考（任意）</label>
+          <textarea id="gnote" placeholder="全体に関する連絡事項があれば"></textarea>
+        </div>
+
+        <button class="btn btn-primary btn-block" onclick="submitReply()">送信する</button>
+      </div>
+    </div>
+
+    <!-- 送信完了画面 -->
+    <div id="result-section" style="display:none">
+      <div class="card">
+        <div class="success-screen">
+          <div class="icon">✅</div>
+          <h2>送信完了！</h2>
+          <p id="success-msg"></p>
+        </div>
+        <div class="btn-row" style="justify-content:center">
+          <button class="btn btn-outline" onclick="backToForm()">回答を直す</button>
+        </div>
+      </div>
+
+      <div class="card" id="manual-fallback" style="display:none">
+        <h2 style="font-size:1rem">⚠ オフライン送信用URL</h2>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:10px">
+          自動送信ができませんでした。下のURLをコピーしてLINEで管理者に送ってください。
+        </p>
+        <div class="url-box" id="manual-url"></div>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn btn-primary btn-sm" id="copy-fallback-btn">URLをコピー</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- エラー画面 -->
+    <div id="error-section" style="display:none">
+      <div class="card">
+        <div class="success-screen">
+          <div class="icon">⚠️</div>
+          <h2 style="color:var(--danger)">URLが正しくありません</h2>
+          <p>管理者から受け取った正しい依頼URLからアクセスしてください。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let request = null;     // { id, ws, shop, staff }
+    let answers = {};       // { 0..6: 'o'/'t'/'x' }
+    let dayTimes = {};      // { 0..6: '希望時刻文字列' }
+
+    function init() {
+      App.initFirebase();
+      const parsed = App.parseUrl();
+      if (parsed.type === 'request' && parsed.data && parsed.data.staff) {
+        request = parsed.data;
+        renderForm();
+        document.getElementById('form-section').style.display = '';
+      } else {
+        document.getElementById('error-section').style.display = '';
+      }
+    }
+
+    function renderForm() {
+      document.getElementById('meta-area').innerHTML = `
+        <h2 style="font-size:1.05rem;font-weight:800;margin-bottom:4px">${request.shop || 'シフト希望'}</h2>
+        <p style="font-size:0.9rem;color:var(--muted)">対象週: ${App.weekLabel(request.ws)}</p>
+      `;
+      document.getElementById('connection-info').textContent =
+        App.isOnline() ? '🟢 オンライン送信モード（送信ボタンで自動的に管理者へ届きます）'
+                       : '⚪ オフラインモード（送信後にURLが表示されます。LINEで管理者へ送ってください）';
+
+      const nameOptions = document.getElementById('name-options');
+      nameOptions.innerHTML = (request.staff || []).map(n =>
+        `<button type="button" class="name-pill" onclick="selectName(this, '${n.replace(/'/g, "\\'")}')">${n}</button>`
+      ).join('');
+
+      const dates = App.weekDates(request.ws);
+      const grid = document.getElementById('day-grid');
+      grid.innerHTML = dates.map((d, i) => {
+        const day = App.DOW_LABELS[i];
+        const cls = i === 5 ? 'is-sat' : i === 6 ? 'is-sun' : '';
+        return `
+          <div class="day-row ${cls}">
+            <div class="day-row-head">
+              <span class="day-label">${App.fmtMD(d)} (${day})</span>
+            </div>
+            <div class="symbol-row symbol-row-3">
+              ${['o','t','x'].map(s => `
+                <button type="button" class="sym-btn" data-sym="${s}" data-day="${i}" onclick="setDay(${i},'${s}',this)">
+                  ${App.SYMBOLS[s].mark}<br><span style="font-size:0.7rem;font-weight:500;color:var(--muted)">${App.SYMBOLS[s].label}</span>
+                </button>
+              `).join('')}
+            </div>
+            <div class="day-time" data-day="${i}">
+              <div class="day-time-label">希望出勤・退勤時間</div>
+              <input type="text" data-day-time="${i}" placeholder="例: 9-15 / 10-L / 17時以降" oninput="updateTime(${i}, this.value)">
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function selectName(el, name) {
+      document.getElementById('name-input').value = name;
+      document.querySelectorAll('.name-pill').forEach(p => p.classList.remove('selected'));
+      el.classList.add('selected');
+    }
+
+    function setDay(idx, sym, btn) {
+      answers[idx] = sym;
+      const row = btn.closest('.day-row');
+      row.querySelectorAll('.sym-btn').forEach(b => b.classList.toggle('selected', b === btn));
+      const timeBox = row.querySelector('.day-time');
+      const showTime = (sym === 'o' || sym === 't');
+      timeBox.classList.toggle('visible', showTime);
+      if (!showTime) {
+        delete dayTimes[idx];
+        const input = timeBox.querySelector('input');
+        if (input) input.value = '';
+      }
+    }
+
+    function updateTime(idx, val) {
+      const trimmed = val.trim();
+      if (trimmed) dayTimes[idx] = trimmed;
+      else delete dayTimes[idx];
+    }
+
+    function bulkSet(sym) {
+      for (let i = 0; i < 7; i++) {
+        if (sym === null) {
+          delete answers[i];
+          delete dayTimes[i];
+          document.querySelectorAll(`[data-day="${i}"].sym-btn`).forEach(b => b.classList.remove('selected'));
+          document.querySelectorAll(`.day-time[data-day="${i}"]`).forEach(n => {
+            n.classList.remove('visible');
+            const ip = n.querySelector('input'); if (ip) ip.value = '';
+          });
+        } else {
+          answers[i] = sym;
+          document.querySelectorAll(`[data-day="${i}"].sym-btn`).forEach(b => {
+            b.classList.toggle('selected', b.dataset.sym === sym);
+          });
+          document.querySelectorAll(`.day-time[data-day="${i}"]`).forEach(n => {
+            n.classList.toggle('visible', sym === 'o' || sym === 't');
+          });
+        }
+      }
+    }
+
+    function submitReply() {
+      const name = document.getElementById('name-input').value.trim();
+      if (!name) {
+        App.toast('名前を入力してください', 'error');
+        document.getElementById('name-input').focus();
+        return;
+      }
+      const unanswered = [];
+      for (let i = 0; i < 7; i++) if (!answers[i]) unanswered.push(App.DOW_LABELS[i]);
+      if (unanswered.length === 7) {
+        App.toast('1日も入力されていません', 'error');
+        return;
+      }
+      if (unanswered.length > 0) {
+        if (!confirm(`未入力の曜日: ${unanswered.join('、')}\nこのまま送信しますか？\n（未入力の日は「✕（不可）」として扱われます）`)) return;
+        for (const w of unanswered) {
+          const i = App.DOW_LABELS.indexOf(w);
+          answers[i] = 'x';
+        }
+      }
+
+      let d = '';
+      for (let i = 0; i < 7; i++) d += answers[i] || 'x';
+
+      const times = {};
+      Object.keys(dayTimes).forEach(k => { times[k] = dayTimes[k]; });
+      const gnote = document.getElementById('gnote').value.trim();
+
+      const reply = {
+        id: request.id,
+        ws: request.ws,
+        name: name,
+        d: d,
+        times: times,
+        gnote: gnote || ''
+      };
+
+      const submitBtn = document.querySelector('button.btn-primary.btn-block');
+      submitBtn.disabled = true;
+      submitBtn.textContent = '送信中...';
+
+      App.submitReply(reply).then(res => {
+        showResult(reply, res.online);
+      }).catch(err => {
+        console.error('Send failed:', err);
+        showResult(reply, false);
+      }).finally(() => {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '送信する';
+      });
+    }
+
+    function showResult(reply, online) {
+      const dates = App.weekDates(reply.ws);
+      const counts = { o: 0, t: 0, x: 0 };
+      for (const c of reply.d) counts[c] = (counts[c] || 0) + 1;
+      document.getElementById('success-msg').innerHTML = online
+        ? `<strong>${reply.name}</strong> さんの<br>${App.fmtMD(dates[0])}〜${App.fmtMD(dates[6])} の希望を受け付けました。<br>
+           <span style="display:inline-block;margin-top:8px">○${counts.o} / △${counts.t} / ✕${counts.x}</span>`
+        : `<strong>${reply.name}</strong> さんの<br>${App.fmtMD(dates[0])}〜${App.fmtMD(dates[6])} の希望を作りました。<br>
+           下のURLをLINEで管理者に送ってください。`;
+
+      if (!online) {
+        // フォールバック用URL生成（旧仕様）
+        const baseUrl = location.origin + location.pathname;
+        const payload = { v:1, id: reply.id, ws: reply.ws, n: reply.name, d: reply.d, times: reply.times, gnote: reply.gnote };
+        const fbUrl = `${baseUrl}?a=${App.encodeBase64Url(payload)}`;
+        document.getElementById('manual-fallback').style.display = '';
+        document.getElementById('manual-url').textContent = fbUrl;
+        document.getElementById('copy-fallback-btn').onclick = () => {
+          App.copyToClipboard(fbUrl).then(ok => App.toast(ok ? 'コピーしました' : '失敗', ok ? 'success' : 'error'));
+        };
+      }
+
+      document.getElementById('form-section').style.display = 'none';
+      document.getElementById('result-section').style.display = '';
+      window.scrollTo(0, 0);
+    }
+
+    function backToForm() {
+      document.getElementById('result-section').style.display = 'none';
+      document.getElementById('manual-fallback').style.display = 'none';
+      document.getElementById('form-section').style.display = '';
+    }
+
+    init();
+  </script>
+</body>
+</html>
