@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>シフト表 - ぎゃあてい</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="shared.js"></script>
+  <style>
+    /* ====== シフト表ビュー専用スタイル ====== */
+    body { background: #F8FAFC; }
+    .sv-toolbar {
+      background: linear-gradient(135deg, #4F46E5, #7C3AED);
+      color: #fff; padding: 12px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .sv-toolbar h1 { font-size: 1.1rem; font-weight: 700; margin: 0; }
+    .sv-toolbar .meta { font-size: 0.82rem; opacity: 0.9; margin-top: 2px; }
+    .sv-toolbar .actions { display: flex; gap: 8px; }
+    .sv-toolbar button, .sv-toolbar a {
+      background: rgba(255,255,255,0.2); color: #fff; border: none;
+      padding: 8px 14px; border-radius: 8px; font-size: 0.85rem; font-weight: 600;
+      cursor: pointer; text-decoration: none; transition: background 0.15s;
+    }
+    .sv-toolbar button:hover, .sv-toolbar a:hover { background: rgba(255,255,255,0.35); }
+    .sv-toolbar button.primary { background: #fff; color: var(--primary); }
+    .sv-toolbar button.primary:hover { background: #F1F5F9; }
+
+    .sv-container {
+      max-width: 100%;
+      margin: 20px auto;
+      padding: 0 16px 40px;
+      overflow-x: auto;
+    }
+
+    /* シフト表本体: 元テンプレ準拠の列幅・行高 */
+    .shift-table {
+      border-collapse: collapse;
+      table-layout: fixed;
+      background: #fff;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+      margin: 0 auto;
+      font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+      font-size: 11px;
+    }
+    .shift-table th, .shift-table td {
+      border: 1px solid #94A3B8;
+      padding: 0 2px;
+      text-align: center;
+      vertical-align: middle;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    /* 列幅（元テンプレ準拠 × 7.5px/単位） */
+    .shift-table colgroup col.c-name { width: 56px; }      /* A: 4.14→31 → 名前は読めるよう拡大 56px */
+    .shift-table colgroup col.c-start { width: 32px; }     /* B/E/H/...: 始業 4.0 */
+    .shift-table colgroup col.c-end { width: 36px; }       /* C/F/I/...: 終業 4.5 */
+    .shift-table colgroup col.c-time { width: 50px; }      /* D/G/J/...: 希望時刻 5.85 */
+    .shift-table colgroup col.c-w { width: 56px; }         /* W: 再掲名前 */
+
+    .shift-table thead .row-date { height: 24px; background: #F1F5F9; font-weight: 700; }
+    .shift-table thead .row-dow { height: 18px; background: #F8FAFC; font-weight: 700; font-size: 10px; }
+    .shift-table .dow-sat { color: #2563EB; }
+    .shift-table .dow-sun { color: #DC2626; }
+
+    .shift-table .row-header { height: 18px; background: #FAFBFC; }
+    .shift-table .row-header td.lbl { background: #F1F5F9; font-weight: 700; text-align: left; padding-left: 6px; font-size: 10px; }
+
+    /* スタッフ2行ペア */
+    .shift-table .row-staff-top { height: 18px; }
+    .shift-table .row-staff-bot { height: 26px; }
+    .shift-table .row-staff-top td.name-cell,
+    .shift-table .row-staff-bot td.name-cell {
+      background: #F1F5F9; font-weight: 700; text-align: left; padding-left: 6px;
+      font-size: 11px;
+    }
+
+    /* 上段: 希望時刻 */
+    .shift-table .cell-time {
+      background: #FAFBFC; font-size: 10px; color: #4338CA; font-weight: 600;
+    }
+    /* 下段: ○/△/✕ */
+    .shift-table .cell-sym {
+      font-weight: 800; font-size: 14px; line-height: 1;
+    }
+    .shift-table .cell-sym[data-sym="o"] { background: #D1FAE5; color: #059669; }
+    .shift-table .cell-sym[data-sym="t"] { background: #FEF3C7; color: #D97706; }
+    .shift-table .cell-sym[data-sym="x"] { background: #FEE2E2; color: #DC2626; }
+
+    /* ポジション集計行 */
+    .shift-table .row-pos { height: 18px; background: #F8FAFC; }
+    .shift-table .row-pos td.lbl { background: #E0E7FF; color: var(--primary); font-weight: 700; text-align: center; font-size: 10px; }
+    .shift-table .row-pos td.cnt { font-size: 11px; font-weight: 600; }
+
+    /* 備考行 */
+    .shift-table .row-note { height: 24px; }
+    .shift-table .row-note td.lbl { background: #F1F5F9; font-weight: 700; text-align: left; padding-left: 6px; font-size: 10px; }
+    .shift-table .row-note .gnote { text-align: left; padding-left: 6px; font-size: 10px; color: #475569; white-space: normal; }
+
+    .sv-stats {
+      max-width: 1100px;
+      margin: 0 auto 14px;
+      padding: 12px 16px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+      font-size: 0.88rem;
+    }
+    .sv-stats .item strong { color: var(--primary); }
+    .sv-stats .gnote-list { width: 100%; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 0.82rem; color: var(--muted); }
+    .sv-stats .gnote-list .gn-item { margin-top: 2px; }
+
+    .sv-legend {
+      display: inline-flex; gap: 10px; font-size: 0.78rem;
+    }
+    .sv-legend span { display: inline-flex; align-items: center; gap: 4px; }
+    .sv-legend i {
+      display: inline-block; width: 14px; height: 14px; border-radius: 3px; line-height: 14px; text-align: center; font-style: normal; font-weight: 700;
+    }
+    .sv-legend i.o { background: #D1FAE5; color: #059669; }
+    .sv-legend i.t { background: #FEF3C7; color: #D97706; }
+    .sv-legend i.x { background: #FEE2E2; color: #DC2626; }
+
+    .sv-error { max-width: 600px; margin: 40px auto; padding: 30px; background: #fff; border-radius: 12px; text-align: center; }
+    .sv-error h2 { color: var(--danger); margin-bottom: 8px; }
+
+    /* ===== 印刷用: A4横、ツールバー隠す、表を1ページに ===== */
+    @media print {
+      @page { size: A4 landscape; margin: 8mm; }
+      body { background: #fff; }
+      .sv-toolbar, .sv-stats { display: none !important; }
+      .sv-container { margin: 0; padding: 0; overflow: visible; }
+      .shift-table { box-shadow: none; width: 100%; font-size: 9px; }
+      .shift-table th, .shift-table td { border-color: #000; padding: 0 1px; }
+      .shift-table .row-staff-top { height: 16px; }
+      .shift-table .row-staff-bot { height: 22px; }
+      .shift-table .cell-sym { font-size: 12px; }
+      .shift-table .cell-time { font-size: 9px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="sv-toolbar">
+    <div>
+      <h1>📋 シフト表</h1>
+      <div class="meta" id="meta-line">読み込み中…</div>
+    </div>
+    <div class="actions">
+      <div class="sv-legend">
+        <span><i class="o">○</i>出勤可</span>
+        <span><i class="t">△</i>条件付</span>
+        <span><i class="x">✕</i>不可</span>
+      </div>
+      <button class="primary" onclick="window.print()">🖨 印刷</button>
+      <button onclick="location.reload()">🔄 更新</button>
+      <a href="admin.html">← 管理画面に戻る</a>
+    </div>
+  </div>
+
+  <div class="sv-container">
+    <div id="content"></div>
+  </div>
+
+  <script>
+    function getReqId() {
+      return new URLSearchParams(location.search).get('id');
+    }
+
+    function init() {
+      App.initFirebase();
+      const reqId = getReqId();
+      if (!reqId) {
+        showError('依頼IDが指定されていません。管理画面から開いてください。');
+        return;
+      }
+      // Firebase購読開始（オンラインなら自動更新）
+      if (App.isOnline()) {
+        App.subscribeReplies(reqId, () => render(reqId));
+      }
+      render(reqId);
+    }
+
+    function showError(msg) {
+      document.getElementById('content').innerHTML = `<div class="sv-error"><h2>⚠ エラー</h2><p>${msg}</p></div>`;
+    }
+
+    function render(reqId) {
+      const req = App.getRequest(reqId);
+      if (!req) {
+        showError('依頼データが見つかりません。管理画面で再選択してください。');
+        return;
+      }
+      const replies = App.getReplies(reqId);
+      const dates = App.weekDates(req.ws);
+      const submittedNames = new Set(replies.map(r => r.name));
+      const unsubmitted = req.staff.filter(n => !submittedNames.has(n));
+
+      // メタ表示
+      document.getElementById('meta-line').textContent =
+        `${App.weekLabel(req.ws)}　提出 ${replies.length}/${req.staff.length}名` +
+        (App.isOnline() ? '（オンライン同期中）' : '');
+
+      // スタッフ順
+      const orderedNames = req.staff.slice();
+      replies.forEach(r => { if (!orderedNames.includes(r.name)) orderedNames.push(r.name); });
+      const replyMap = {};
+      replies.forEach(r => { replyMap[r.name] = r; });
+
+      // 日別集計
+      const dayCounts = dates.map((_, i) => {
+        const c = { o: 0, t: 0, x: 0 };
+        for (const r of replies) { const s = r.d[i]; if (c[s] !== undefined) c[s]++; }
+        return c;
+      });
+
+      // colgroup（A名前 / [始業 終業 希望時刻] × 7曜日 / W名前）
+      let colgroup = '<colgroup>';
+      colgroup += '<col class="c-name">';
+      for (let i = 0; i < 7; i++) {
+        colgroup += '<col class="c-start"><col class="c-end"><col class="c-time">';
+      }
+      colgroup += '<col class="c-w"></colgroup>';
+
+      // 日付行
+      let html = `<table class="shift-table">${colgroup}<thead>`;
+      html += '<tr class="row-date"><th></th>';
+      dates.forEach((d, i) => {
+        html += `<th colspan="3">${App.fmtMD(d)}</th>`;
+      });
+      html += '<th></th></tr>';
+      // 曜日行
+      html += '<tr class="row-dow"><th></th>';
+      dates.forEach((d, i) => {
+        const dow = App.DOW_LABELS[i];
+        const cls = i === 5 ? 'dow-sat' : i === 6 ? 'dow-sun' : '';
+        html += `<th colspan="3" class="${cls}">${dow}曜日</th>`;
+      });
+      html += '<th></th></tr></thead><tbody>';
+
+      // 予想/UP/物販 ヘッダ行（空欄、管理者用）
+      ['予想', 'UP', '物販'].forEach(lbl => {
+        html += `<tr class="row-header"><td class="lbl">${lbl}</td>`;
+        for (let i = 0; i < 7; i++) html += '<td colspan="3"></td>';
+        html += '<td></td></tr>';
+      });
+
+      // スタッフ2行ペア
+      for (const name of orderedNames) {
+        const reply = replyMap[name];
+        // 上段（希望時刻行）
+        html += `<tr class="row-staff-top"><td class="name-cell" rowspan="2">${name}</td>`;
+        for (let i = 0; i < 7; i++) {
+          const time = reply && reply.times && reply.times[i] ? reply.times[i] : '';
+          html += `<td></td><td></td><td class="cell-time">${escapeHtml(time)}</td>`;
+        }
+        html += `<td class="name-cell" rowspan="2">${name}</td></tr>`;
+        // 下段（○△✕行）
+        html += '<tr class="row-staff-bot">';
+        for (let i = 0; i < 7; i++) {
+          const sym = reply ? (reply.d[i] || '') : '';
+          const mark = sym === 'o' ? '○' : sym === 't' ? '△' : sym === 'x' ? '✕' : '';
+          html += `<td></td><td></td><td class="cell-sym" data-sym="${sym}">${mark}</td>`;
+        }
+        html += '</tr>';
+      }
+
+      // 集計行（○/△/✕ 数）
+      ['o','t','x'].forEach(s => {
+        const lbl = s === 'o' ? '○' : s === 't' ? '△' : '✕';
+        html += `<tr class="row-pos"><td class="lbl">${lbl}</td>`;
+        for (let i = 0; i < 7; i++) {
+          html += `<td colspan="3" class="cnt">${dayCounts[i][s]}</td>`;
+        }
+        html += `<td></td></tr>`;
+      });
+
+      // ポジション集計（空欄、管理者用）
+      ['K','R','W','T','G1','G2','G','LT'].forEach(p => {
+        html += `<tr class="row-pos"><td class="lbl">${p}</td>`;
+        for (let i = 0; i < 7; i++) {
+          html += `<td colspan="3" class="cnt"></td>`;
+        }
+        html += `<td></td></tr>`;
+      });
+
+      // 備考行
+      const gnotes = orderedNames
+        .map(n => replyMap[n])
+        .filter(r => r && r.gnote)
+        .map(r => `${r.name}: ${r.gnote}`);
+      html += `<tr class="row-note"><td class="lbl">備考</td>`;
+      html += `<td colspan="21" class="gnote">${gnotes.length ? escapeHtml(gnotes.join(' / ')) : ''}</td>`;
+      html += `<td></td></tr>`;
+
+      html += '</tbody></table>';
+
+      // 統計セクション
+      let statsHtml = `<div class="sv-stats">
+        <div class="item">対象週: <strong>${App.weekLabel(req.ws)}</strong></div>
+        <div class="item">提出: <strong>${replies.length} / ${req.staff.length}名</strong></div>
+        <div class="item">${unsubmitted.length ? `未提出: <strong style="color:#DC2626">${unsubmitted.join(' / ')}</strong>` : '<strong style="color:#059669">✓ 全員提出済み</strong>'}</div>`;
+      if (gnotes.length) {
+        statsHtml += `<div class="gnote-list"><strong>全体備考</strong>${gnotes.map(g => `<div class="gn-item">・${escapeHtml(g)}</div>`).join('')}</div>`;
+      }
+      statsHtml += '</div>';
+
+      document.getElementById('content').innerHTML = statsHtml + html;
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    window.addEventListener('load', () => setTimeout(init, 50));
+  </script>
+</body>
+</html>

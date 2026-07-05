@@ -354,7 +354,10 @@
             <strong style="font-size:1.05rem">${App.weekLabel(req.ws)}</strong>
             <span style="color:var(--muted);font-size:0.85rem;margin-left:8px">提出 ${replies.length}/${req.staff.length}名</span>
           </div>
-          <button class="btn btn-success" onclick="downloadXlsx()" style="font-size:1rem">📥 Excelダウンロード</button>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="openShiftView()" style="font-size:1rem">📋 シフト表を表示</button>
+            <button class="btn btn-outline btn-sm" onclick="downloadXlsx()" title="Excel形式でも出力できます">📥 Excel</button>
+          </div>
         </div>
         ${matrixHtml}
         ${unsubHtml}
@@ -377,6 +380,14 @@
         console.error(e);
         App.toast('生成失敗: ' + e.message, 'error');
       }
+    }
+
+    function openShiftView() {
+      const reqId = App.getActiveRequest();
+      if (!reqId) { App.toast('依頼が選択されていません', 'error'); return; }
+      // 同じドメインの shift-view.html を新タブで開く
+      const url = location.pathname.replace(/admin\.html$/, 'shift-view.html') + '?id=' + encodeURIComponent(reqId);
+      window.open(url, '_blank');
     }
 
     /* ===== スタッフ管理 ===== */
