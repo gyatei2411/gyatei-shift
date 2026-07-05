@@ -448,7 +448,9 @@
     /* ===== 自動割り当て ===== */
 
     // △の全体備考から時間制約をパース
-    // 戻り値: { 0: {start: 9, end: 15}, ... } (day index → 制約。end=99 は「ラストまでOK」)
+    // 戻り値: { 0: {start: 9, end: 15}, ..., _default: {...} }
+    //   (day index → 制約。end=99 は「ラストまでOK」。
+    //    _default = 曜日指定なしの時間 → △をつけた全日に適用)
     function parseTimeConstraints(gnote) {
       const result = {};
       if (!gnote) return result;
@@ -460,7 +462,6 @@
         const days = [];
         const dowMatches = part.match(/[月火水木金土日](?=曜|[はの・、]|$)/g) || part.match(/[月火水木金土日]曜/g);
         if (dowMatches) dowMatches.forEach(m => { const d = dowMap[m[0]]; if (d !== undefined && !days.includes(d)) days.push(d); });
-        if (!days.length) continue;
 
         let start = null, end = null;
         // "9-15" "9時-15時" "9:30-16" "930-16" パターン
@@ -479,9 +480,22 @@
           }
         }
         if (start === null && end === null) continue;
-        days.forEach(d => { result[d] = { start: start ?? 0, end: end ?? 99 }; });
+        const cons = { start: start ?? 0, end: end ?? 99 };
+        if (days.length) {
+          days.forEach(d => { result[d] = cons; });
+        } else {
+          // 曜日指定なし → △をつけた全日のデフォルト制約
+          result._default = cons;
+        }
       }
       return result;
+    }
+
+    // その日の時間制約を取得（曜日指定 > 曜日なしデフォルト の順）
+    function getTimeCons(timeCons, name, day) {
+      const tc = timeCons[name];
+      if (!tc) return null;
+      return tc[day] || tc._default || null;
     }
 
     // 割り当て指示から「◯◯はN日だけ」制約をパース
@@ -525,15 +539,8 @@
       const timeCons = {};  // name → { day: {start,end} }
       replies.forEach(r => { timeCons[r.name] = parseTimeConstraints(r.gnote); });
 
-      // 優先順の枠リスト: K×3 → R2d×1+R2×1 → W×1 → R2×1 → W×1 → T×1
-      const SLOTS = [
-        { pos: 'K' }, { pos: 'K' }, { pos: 'K' },
-        { pos: 'R2d' }, { pos: 'R2' },
-        { pos: 'W' },
-        { pos: 'R2' },
-        { pos: 'W' },
-        { pos: 'T' }
-      ];
+      // 1日の枠を優先順で定義（人数不足時は先頭から確保: K3 → R2d+R2の2名 → W1 → 残り）
+      const PRIORITY_SLOTS = ['K', 'K', 'K', 'R2d', 'R2', 'W', 'R2', 'W', 'T'];
 
       const assignedCount = {};  // name → 週の割当日数
       replies.forEach(r => assignedCount[r.name] = 0);
@@ -544,65 +551,106 @@
 
       for (let day = 0; day < 7; day++) {
         if (closed.has(day)) continue;
-        const assignedToday = new Set();
 
-        for (const slot of SLOTS) {
-          // 候補: その日○or△、できるポジションにslot.posあり、未割当、上限未達
-          const candidates = replies.filter(r => {
-            const sym = r.d[day];
-            if (sym !== 'o' && sym !== 't') return false;
-            if (assignedToday.has(r.name)) return false;
-            const m = meta[r.name];
-            if (!m || !m.positions || !m.positions.includes(slot.pos)) return false;
-            if (maxDays[r.name] !== undefined && assignedCount[r.name] >= maxDays[r.name]) return false;
-            // △の時間制約チェック
-            if (sym === 't') {
-              const tc = timeCons[r.name][day];
-              if (!tc) { return false; }  // 時間解釈できない△は自動割当しない
-              // R2系は 9:30-16 勤務必須
-              if ((slot.pos === 'R2' || slot.pos === 'R2d') && (tc.start > 9.5 || tc.end < 16)) return false;
-            }
-            return true;
-          });
-
-          if (!candidates.length) {
-            shortages.push(`${App.fmtMD(App.weekDates(req.ws)[day])}(${App.DOW_LABELS[day]}) ${slot.pos}`);
-            continue;
-          }
-
-          // できるポジション数が少ない人 → 割当日数が少ない人 の順で選ぶ
-          candidates.sort((a, b) => {
-            const pa = (meta[a.name].positions || []).length;
-            const pb = (meta[b.name].positions || []).length;
-            if (pa !== pb) return pa - pb;
-            return assignedCount[a.name] - assignedCount[b.name];
-          });
-          const pick = candidates[0];
-          assignedToday.add(pick.name);
-          assignedCount[pick.name]++;
-
-          // 時間決定
-          let start, end;
-          if (slot.pos === 'R2' || slot.pos === 'R2d') {
-            start = '930'; end = '-16';
-          } else {
-            const sym = pick.d[day];
-            if (sym === 't') {
-              const tc = timeCons[pick.name][day];
-              start = fmtStart(Math.max(tc.start, 9));
-              end = fmtEnd(tc.end);
-            } else {
-              start = '9'; end = '-L';
-            }
-          }
-          results.push({ name: pick.name, day, pos: slot.pos, start, end });
-        }
-
-        // △で時間解釈できなかった人を記録
-        replies.forEach(r => {
-          if (r.d[day] === 't' && !timeCons[r.name][day] && !assignedToday.has(r.name)) {
+        // その日の出勤可能者（○ / △で時間解釈できた人、上限未達、ポジション設定あり）
+        const available = replies.filter(r => {
+          const sym = r.d[day];
+          if (sym !== 'o' && sym !== 't') return false;
+          const m = meta[r.name];
+          if (!m || !m.positions || !m.positions.length) return false;
+          if (maxDays[r.name] !== undefined && assignedCount[r.name] >= maxDays[r.name]) return false;
+          if (sym === 't' && !getTimeCons(timeCons, r.name, day)) {
             const key = `${r.name}(${App.DOW_LABELS[day]})`;
             if (!skipped.includes(key)) skipped.push(key);
+            return false;
+          }
+          return true;
+        });
+
+        // 出勤可能人数分だけ枠を開く（9人未満なら優先順の先頭から）
+        const openSlots = PRIORITY_SLOTS.slice(0, Math.min(available.length, PRIORITY_SLOTS.length));
+        const needs = {};  // pos → 残り枠数
+        openSlots.forEach(p => { needs[p] = (needs[p] || 0) + 1; });
+
+        // ★ できるポジションが少ない人から先に配置（多能な人は後回し=調整役）
+        const sorted = available.slice().sort((a, b) => {
+          const pa = (meta[a.name].positions || []).length;
+          const pb = (meta[b.name].positions || []).length;
+          if (pa !== pb) return pa - pb;
+          return assignedCount[a.name] - assignedCount[b.name];
+        });
+
+        const unplaced = new Set(sorted.map(r => r.name));  // 枠選択のレア度計算用
+        const assignedToday = new Set();
+
+        // 候補枠を計算（時間制約による除外はしない=全ポジション柔軟対応）
+        const candsFor = (person, needsMap) => {
+          const m = meta[person.name];
+          return (m.positions || []).filter(p => p !== 'R1' && needsMap[p]);
+        };
+
+        // 時間決定（△の人はどのポジションでも可能時間内で配置）
+        const assignPerson = (person, pos, needsMap) => {
+          const sym = person.d[day];
+          const tc = sym === 't' ? getTimeCons(timeCons, person.name, day) : null;
+          needsMap[pos]--;
+          assignedToday.add(person.name);
+          assignedCount[person.name]++;
+          let start, end;
+          if (tc) {
+            if ((pos === 'R2' || pos === 'R2d') && tc.start < 16 && tc.end > 9.5) {
+              // R2標準勤務帯(9:30-16)と重なる場合は交差部分で配置
+              start = fmtStart(Math.max(tc.start, 9.5));
+              end = fmtEnd(Math.min(tc.end, 16));
+            } else {
+              // それ以外はその人の可能時間をそのまま使用（全ポジション柔軟対応）
+              start = fmtStart(Math.max(tc.start, 9));
+              end = fmtEnd(tc.end);
+            }
+          } else if (pos === 'R2' || pos === 'R2d') {
+            start = '930'; end = '-16';
+          } else {
+            start = '9'; end = '-L';
+          }
+          results.push({ name: person.name, day, pos, start, end });
+        };
+
+        // ── 第1パス: 優先枠に「できるポジションが少ない人」から配置 ──
+        for (const person of sorted) {
+          const cands = candsFor(person, needs);
+          if (!cands.length) { unplaced.delete(person.name); continue; }
+
+          // 枠選択: 「その枠をできる残りの人数」が少ないレア枠を優先
+          //（同数なら PRIORITY_SLOTS の順で早い枠）
+          cands.sort((p1, p2) => {
+            const rare1 = [...unplaced].filter(n => n !== person.name && (meta[n]?.positions || []).includes(p1)).length;
+            const rare2 = [...unplaced].filter(n => n !== person.name && (meta[n]?.positions || []).includes(p2)).length;
+            if (rare1 !== rare2) return rare1 - rare2;
+            return PRIORITY_SLOTS.indexOf(p1) - PRIORITY_SLOTS.indexOf(p2);
+          });
+          unplaced.delete(person.name);
+          assignPerson(person, cands[0], needs);
+        }
+
+        // ── 第2パス: 優先枠に入れなかった人を残り枠に配置 ──
+        //（例: Wしかできない人がいるのにW枠が開いていない場合、W枠を追加で開く）
+        const extraSlots = PRIORITY_SLOTS.slice(openSlots.length);
+        if (extraSlots.length) {
+          const extraNeeds = {};
+          extraSlots.forEach(p => { extraNeeds[p] = (extraNeeds[p] || 0) + 1; });
+          for (const person of sorted) {
+            if (assignedToday.has(person.name)) continue;
+            const cands = candsFor(person, extraNeeds);
+            if (!cands.length) continue;
+            cands.sort((p1, p2) => PRIORITY_SLOTS.indexOf(p1) - PRIORITY_SLOTS.indexOf(p2));
+            assignPerson(person, cands[0], extraNeeds);
+          }
+        }
+
+        // 埋まらなかった優先枠を不足として記録
+        Object.entries(needs).forEach(([p, n]) => {
+          for (let k = 0; k < n; k++) {
+            shortages.push(`${App.fmtMD(App.weekDates(req.ws)[day])}(${App.DOW_LABELS[day]}) ${p}`);
           }
         });
       }
@@ -637,13 +685,14 @@
       let txt = `あなたはシフト作成の専門家です。以下のデータからシフトの割り当てを検討し、指定のJSON形式で出力してください。\n\n`;
       txt += `## 対象週\n${App.weekLabel(req.ws)}\n`;
       txt += `日別: ${dates.map((d, i) => `day${i}=${App.fmtMD(d)}(${App.DOW_LABELS[i]}${closed.has(i) ? '・定休日' : ''})`).join(', ')}\n\n`;
-      txt += `## ポジションと1日の必要人数\n`;
+      txt += `## ポジションと1日の必要人数（計9名にできるだけ近づける）\n`;
       txt += `- K: 3人\n- R2系: 3人（うちR2dが必ず1人。表記はR2dとR2）\n- W: 2人\n- T: 1人\n- R1: 0人（使わない）\n`;
-      txt += `- 人数不足の場合の優先順位: ①K3人 ②R2系2人（R2d優先） ③W1人 ④残り\n\n`;
+      txt += `- 人数不足の場合の優先順位: ①K3人 ②R2系2人（R2d優先） ③W1人 ④残り\n`;
+      txt += `- ★できるポジションが少ない人から優先的に配置し、多くのポジションができる人は後回しにして調整役とする（そうしないとシフトに入れない人が出る）\n\n`;
       txt += `## 出勤時間のルール\n`;
       txt += `- ○（終日可）の人: 基本 9-L（9時からラストまで）\n`;
-      txt += `- R2/R2d に割り当てた人: 930-16（9時半から16時）\n`;
-      txt += `- △の人: 備考に書かれた時間帯を超えて勤務させない\n\n`;
+      txt += `- R2/R2d に割り当てた○の人: 基本 930-16（9時半から16時）\n`;
+      txt += `- △の人: 備考に書かれた時間帯の範囲内で配置する（R2系でも例えば1030-1430のような時間で配置してよい）\n\n`;
       txt += `## スタッフの回答（○=終日可 / △=条件付き / ✕=不可 / -=定休日）\n`;
       for (const r of replies) {
         const m = meta[r.name] || { positions: [] };
