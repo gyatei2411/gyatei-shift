@@ -113,6 +113,7 @@ const App = {
     replies:  'sa_v4_replies',
     staff:    'sa_v4_staff',
     active:   'sa_v4_active',
+    manual:   'sa_v4_manual',
     seenWelcome: 'sa_v4_seen_welcome'
   },
 
@@ -153,10 +154,11 @@ const App = {
     if (i >= 0) all[i] = req; else all.push(req);
     App._write(App.KEYS.requests, all);
     App.setActiveRequest(req.id);
-    // Firebase にもメタを書いておく（任意）
+    // Firebase にもメタを書いておく（update: 手入力データ manual を消さないため）
     if (App.fbReady) {
-      App.fbDB.ref('requests/' + req.id).set({
-        ws: req.ws, shop: req.shop, staff: req.staff, createdAt: req.createdAt
+      App.fbDB.ref('requests/' + req.id).update({
+        ws: req.ws, shop: req.shop, staff: req.staff,
+        closed: req.closed || [], createdAt: req.createdAt
       }).catch(e => console.error('FB save request failed', e));
     }
     return req;
@@ -165,12 +167,16 @@ const App = {
   deleteRequest(id) {
     App._write(App.KEYS.requests, App.getRequests().filter(r => r.id !== id));
     App._write(App.KEYS.replies, App._read(App.KEYS.replies, []).filter(r => r.id !== id));
+    const manualAll = App._read(App.KEYS.manual, {});
+    delete manualAll[id];
+    App._write(App.KEYS.manual, manualAll);
     if (App.getActiveRequest() === id) App._write(App.KEYS.active, null);
     if (App.fbReady) {
       App.fbDB.ref('requests/' + id).remove().catch(()=>{});
       App.fbDB.ref('replies/' + id).remove().catch(()=>{});
     }
     if (App.fbListeners[id]) { App.fbListeners[id](); delete App.fbListeners[id]; }
+    if (App.fbListeners['m_' + id]) { App.fbListeners['m_' + id](); delete App.fbListeners['m_' + id]; }
   },
 
   /* ===== replies (回答) ===== */
@@ -201,7 +207,6 @@ const App = {
         name: reply.name,
         ws: reply.ws,
         d: reply.d,
-        times: reply.times || {},
         gnote: reply.gnote || '',
         receivedAt: reply.receivedAt
       }).then(() => ({ ok: true, online: true }));
@@ -221,7 +226,7 @@ const App = {
       Object.values(data).forEach(r => {
         all.push({
           id: reqId, name: r.name, ws: r.ws, d: r.d,
-          times: r.times || {}, gnote: r.gnote || '', receivedAt: r.receivedAt
+          gnote: r.gnote || '', receivedAt: r.receivedAt
         });
       });
       App._write(App.KEYS.replies, all);
@@ -230,6 +235,49 @@ const App = {
     ref.on('value', cb);
     App.fbListeners[reqId] = () => ref.off('value', cb);
     return App.fbListeners[reqId];
+  },
+
+  /* ===== 手入力データ (シフト表の直接編集) ===== */
+
+  // FBキーに使えない文字を除去
+  _safeCellKey(key) {
+    return String(key).replace(/[.#$\/\[\]]/g, '_');
+  },
+
+  getManual(reqId) {
+    const all = App._read(App.KEYS.manual, {});
+    return all[reqId] || {};
+  },
+
+  setManualCell(reqId, key, val) {
+    const safeKey = App._safeCellKey(key);
+    const all = App._read(App.KEYS.manual, {});
+    if (!all[reqId]) all[reqId] = {};
+    if (val === '' || val == null) delete all[reqId][safeKey];
+    else all[reqId][safeKey] = val;
+    App._write(App.KEYS.manual, all);
+    if (App.fbReady) {
+      const ref = App.fbDB.ref(`requests/${reqId}/manual/${safeKey}`);
+      (val === '' || val == null ? ref.remove() : ref.set(val)).catch(e => console.error('FB manual save failed', e));
+    }
+  },
+
+  // 手入力データのFirebase購読（他端末との同期）
+  subscribeManual(reqId, onUpdate) {
+    if (!App.fbReady) return null;
+    const lkey = 'm_' + reqId;
+    if (App.fbListeners[lkey]) App.fbListeners[lkey]();
+    const ref = App.fbDB.ref(`requests/${reqId}/manual`);
+    const cb = (snap) => {
+      const data = snap.val() || {};
+      const all = App._read(App.KEYS.manual, {});
+      all[reqId] = data;
+      App._write(App.KEYS.manual, all);
+      onUpdate && onUpdate();
+    };
+    ref.on('value', cb);
+    App.fbListeners[lkey] = () => ref.off('value', cb);
+    return App.fbListeners[lkey];
   },
 
   /* ===== スタッフマスタ ===== */

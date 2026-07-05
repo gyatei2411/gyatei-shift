@@ -15,13 +15,13 @@
     .sv-toolbar {
       background: linear-gradient(135deg, #4F46E5, #7C3AED);
       color: #fff; padding: 12px 20px;
-      display: flex; align-items: center; justify-content: space-between;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.15);
       position: sticky; top: 0; z-index: 100;
     }
     .sv-toolbar h1 { font-size: 1.1rem; font-weight: 700; margin: 0; }
     .sv-toolbar .meta { font-size: 0.82rem; opacity: 0.9; margin-top: 2px; }
-    .sv-toolbar .actions { display: flex; gap: 8px; }
+    .sv-toolbar .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .sv-toolbar button, .sv-toolbar a {
       background: rgba(255,255,255,0.2); color: #fff; border: none;
       padding: 8px 14px; border-radius: 8px; font-size: 0.85rem; font-weight: 600;
@@ -31,14 +31,20 @@
     .sv-toolbar button.primary { background: #fff; color: var(--primary); }
     .sv-toolbar button.primary:hover { background: #F1F5F9; }
 
+    .sv-edit-hint {
+      max-width: 1100px; margin: 14px auto 0; padding: 8px 14px;
+      background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 8px;
+      font-size: 0.82rem; color: #4338CA;
+    }
+
     .sv-container {
       max-width: 100%;
-      margin: 20px auto;
+      margin: 14px auto;
       padding: 0 16px 40px;
       overflow-x: auto;
     }
 
-    /* シフト表本体: 元テンプレ準拠の列幅・行高 */
+    /* シフト表本体 */
     .shift-table {
       border-collapse: collapse;
       table-layout: fixed;
@@ -57,22 +63,22 @@
       white-space: nowrap;
     }
 
-    /* 列幅（元テンプレ準拠 × 7.5px/単位） */
-    .shift-table colgroup col.c-name { width: 56px; }      /* A: 4.14→31 → 名前は読めるよう拡大 56px */
-    .shift-table colgroup col.c-start { width: 32px; }     /* B/E/H/...: 始業 4.0 */
-    .shift-table colgroup col.c-end { width: 36px; }       /* C/F/I/...: 終業 4.5 */
-    .shift-table colgroup col.c-time { width: 50px; }      /* D/G/J/...: 希望時刻 5.85 */
-    .shift-table colgroup col.c-w { width: 56px; }         /* W: 再掲名前 */
+    /* 列幅（元テンプレ準拠） */
+    .shift-table colgroup col.c-name { width: 56px; }
+    .shift-table colgroup col.c-start { width: 34px; }
+    .shift-table colgroup col.c-end { width: 38px; }
+    .shift-table colgroup col.c-time { width: 52px; }
+    .shift-table colgroup col.c-w { width: 56px; }
 
     .shift-table thead .row-date { height: 24px; background: #F1F5F9; font-weight: 700; }
     .shift-table thead .row-dow { height: 18px; background: #F8FAFC; font-weight: 700; font-size: 10px; }
     .shift-table .dow-sat { color: #2563EB; }
     .shift-table .dow-sun { color: #DC2626; }
+    .shift-table th.closed-head { background: #E2E8F0 !important; color: #94A3B8 !important; }
 
-    .shift-table .row-header { height: 18px; background: #FAFBFC; }
+    .shift-table .row-header { height: 18px; }
     .shift-table .row-header td.lbl { background: #F1F5F9; font-weight: 700; text-align: left; padding-left: 6px; font-size: 10px; }
 
-    /* スタッフ2行ペア */
     .shift-table .row-staff-top { height: 18px; }
     .shift-table .row-staff-bot { height: 26px; }
     .shift-table .row-staff-top td.name-cell,
@@ -81,11 +87,9 @@
       font-size: 11px;
     }
 
-    /* 上段: 希望時刻 */
     .shift-table .cell-time {
       background: #FAFBFC; font-size: 10px; color: #4338CA; font-weight: 600;
     }
-    /* 下段: ○/△/✕ */
     .shift-table .cell-sym {
       font-weight: 800; font-size: 14px; line-height: 1;
     }
@@ -93,15 +97,23 @@
     .shift-table .cell-sym[data-sym="t"] { background: #FEF3C7; color: #D97706; }
     .shift-table .cell-sym[data-sym="x"] { background: #FEE2E2; color: #DC2626; }
 
-    /* ポジション集計行 */
+    /* 定休日セル */
+    .shift-table td.closed-cell {
+      background: #E2E8F0 !important; color: #CBD5E1 !important;
+    }
+
+    /* 編集可能セル */
+    .shift-table td.editable { cursor: text; }
+    .shift-table td.editable:hover { outline: 2px solid #A5B4FC; outline-offset: -2px; }
+    .shift-table td.editable:focus { outline: 2px solid var(--primary); outline-offset: -2px; background: #EEF2FF; }
+
     .shift-table .row-pos { height: 18px; background: #F8FAFC; }
     .shift-table .row-pos td.lbl { background: #E0E7FF; color: var(--primary); font-weight: 700; text-align: center; font-size: 10px; }
     .shift-table .row-pos td.cnt { font-size: 11px; font-weight: 600; }
 
-    /* 備考行 */
     .shift-table .row-note { height: 24px; }
     .shift-table .row-note td.lbl { background: #F1F5F9; font-weight: 700; text-align: left; padding-left: 6px; font-size: 10px; }
-    .shift-table .row-note .gnote { text-align: left; padding-left: 6px; font-size: 10px; color: #475569; white-space: normal; }
+    .shift-table .row-note td.gnote { text-align: left; padding-left: 6px; font-size: 10px; color: #475569; white-space: normal; }
 
     .sv-stats {
       max-width: 1100px;
@@ -117,9 +129,7 @@
     .sv-stats .gnote-list { width: 100%; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 0.82rem; color: var(--muted); }
     .sv-stats .gnote-list .gn-item { margin-top: 2px; }
 
-    .sv-legend {
-      display: inline-flex; gap: 10px; font-size: 0.78rem;
-    }
+    .sv-legend { display: inline-flex; gap: 10px; font-size: 0.78rem; }
     .sv-legend span { display: inline-flex; align-items: center; gap: 4px; }
     .sv-legend i {
       display: inline-block; width: 14px; height: 14px; border-radius: 3px; line-height: 14px; text-align: center; font-style: normal; font-weight: 700;
@@ -131,18 +141,26 @@
     .sv-error { max-width: 600px; margin: 40px auto; padding: 30px; background: #fff; border-radius: 12px; text-align: center; }
     .sv-error h2 { color: var(--danger); margin-bottom: 8px; }
 
-    /* ===== 印刷用: A4横、ツールバー隠す、表を1ページに ===== */
+    .save-indicator {
+      position: fixed; bottom: 16px; right: 16px;
+      background: #059669; color: #fff; padding: 6px 14px; border-radius: 999px;
+      font-size: 0.78rem; font-weight: 700; opacity: 0; transition: opacity 0.3s;
+      pointer-events: none; z-index: 200;
+    }
+    .save-indicator.show { opacity: 1; }
+
+    /* ===== 印刷: A4横1ページに自動フィット ===== */
     @media print {
-      @page { size: A4 landscape; margin: 8mm; }
+      @page { size: A4 landscape; margin: 6mm; }
       body { background: #fff; }
-      .sv-toolbar, .sv-stats { display: none !important; }
+      .sv-toolbar, .sv-stats, .sv-edit-hint, .save-indicator { display: none !important; }
       .sv-container { margin: 0; padding: 0; overflow: visible; }
-      .shift-table { box-shadow: none; width: 100%; font-size: 9px; }
-      .shift-table th, .shift-table td { border-color: #000; padding: 0 1px; }
-      .shift-table .row-staff-top { height: 16px; }
-      .shift-table .row-staff-bot { height: 22px; }
-      .shift-table .cell-sym { font-size: 12px; }
-      .shift-table .cell-time { font-size: 9px; }
+      .shift-table {
+        box-shadow: none;
+        zoom: var(--print-zoom, 1);
+      }
+      .shift-table th, .shift-table td { border-color: #000; }
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
   </style>
 </head>
@@ -154,151 +172,189 @@
     </div>
     <div class="actions">
       <div class="sv-legend">
-        <span><i class="o">○</i>出勤可</span>
+        <span><i class="o">○</i>終日可</span>
         <span><i class="t">△</i>条件付</span>
         <span><i class="x">✕</i>不可</span>
       </div>
-      <button class="primary" onclick="window.print()">🖨 印刷</button>
+      <button class="primary" onclick="printFit()">🖨 印刷</button>
       <button onclick="location.reload()">🔄 更新</button>
       <a href="admin.html">← 管理画面に戻る</a>
     </div>
+  </div>
+
+  <div class="sv-edit-hint">
+    ✏️ <strong>セルをクリックすると直接入力できます</strong>（始業・終業時刻、ポジション、予想、備考など）。入力内容は自動保存されます。
   </div>
 
   <div class="sv-container">
     <div id="content"></div>
   </div>
 
+  <div class="save-indicator" id="save-indicator">✓ 保存しました</div>
+
   <script>
+    let currentReqId = null;
+    let pendingRender = false;  // 編集中にFB更新が来たら遅延再描画
+    let saveTimer = null;
+
     function getReqId() {
       return new URLSearchParams(location.search).get('id');
     }
 
     function init() {
       App.initFirebase();
-      const reqId = getReqId();
-      if (!reqId) {
+      currentReqId = getReqId();
+      if (!currentReqId) {
         showError('依頼IDが指定されていません。管理画面から開いてください。');
         return;
       }
-      // Firebase購読開始（オンラインなら自動更新）
       if (App.isOnline()) {
-        App.subscribeReplies(reqId, () => render(reqId));
+        App.subscribeReplies(currentReqId, deferredRender);
+        App.subscribeManual(currentReqId, deferredRender);
       }
-      render(reqId);
+      render();
+    }
+
+    // 編集中なら再描画を保留
+    function deferredRender() {
+      if (isEditing()) { pendingRender = true; return; }
+      render();
+    }
+
+    function isEditing() {
+      const ae = document.activeElement;
+      return ae && ae.closest && ae.closest('.shift-table') && ae.isContentEditable;
     }
 
     function showError(msg) {
       document.getElementById('content').innerHTML = `<div class="sv-error"><h2>⚠ エラー</h2><p>${msg}</p></div>`;
     }
 
-    function render(reqId) {
-      const req = App.getRequest(reqId);
+    // 手入力セル: contenteditable + data-mkey
+    function edCell(mkey, cls, manual, extra = '') {
+      const val = manual[App._safeCellKey(mkey)] || '';
+      return `<td class="editable ${cls}" contenteditable="plaintext-only" data-mkey="${mkey}" ${extra}>${escapeHtml(val)}</td>`;
+    }
+
+    function render() {
+      pendingRender = false;
+      const req = App.getRequest(currentReqId);
       if (!req) {
         showError('依頼データが見つかりません。管理画面で再選択してください。');
         return;
       }
-      const replies = App.getReplies(reqId);
+      const replies = App.getReplies(currentReqId);
       const dates = App.weekDates(req.ws);
+      const closed = new Set(req.closed || []);
+      const manual = App.getManual(currentReqId);
       const submittedNames = new Set(replies.map(r => r.name));
       const unsubmitted = req.staff.filter(n => !submittedNames.has(n));
 
-      // メタ表示
       document.getElementById('meta-line').textContent =
         `${App.weekLabel(req.ws)}　提出 ${replies.length}/${req.staff.length}名` +
         (App.isOnline() ? '（オンライン同期中）' : '');
 
-      // スタッフ順
       const orderedNames = req.staff.slice();
       replies.forEach(r => { if (!orderedNames.includes(r.name)) orderedNames.push(r.name); });
       const replyMap = {};
       replies.forEach(r => { replyMap[r.name] = r; });
 
-      // 日別集計
       const dayCounts = dates.map((_, i) => {
         const c = { o: 0, t: 0, x: 0 };
         for (const r of replies) { const s = r.d[i]; if (c[s] !== undefined) c[s]++; }
         return c;
       });
 
-      // colgroup（A名前 / [始業 終業 希望時刻] × 7曜日 / W名前）
-      let colgroup = '<colgroup>';
-      colgroup += '<col class="c-name">';
-      for (let i = 0; i < 7; i++) {
-        colgroup += '<col class="c-start"><col class="c-end"><col class="c-time">';
-      }
+      let colgroup = '<colgroup><col class="c-name">';
+      for (let i = 0; i < 7; i++) colgroup += '<col class="c-start"><col class="c-end"><col class="c-time">';
       colgroup += '<col class="c-w"></colgroup>';
 
-      // 日付行
       let html = `<table class="shift-table">${colgroup}<thead>`;
       html += '<tr class="row-date"><th></th>';
       dates.forEach((d, i) => {
-        html += `<th colspan="3">${App.fmtMD(d)}</th>`;
+        const cls = closed.has(i) ? 'closed-head' : '';
+        html += `<th colspan="3" class="${cls}">${App.fmtMD(d)}</th>`;
       });
       html += '<th></th></tr>';
-      // 曜日行
       html += '<tr class="row-dow"><th></th>';
       dates.forEach((d, i) => {
-        const dow = App.DOW_LABELS[i];
-        const cls = i === 5 ? 'dow-sat' : i === 6 ? 'dow-sun' : '';
-        html += `<th colspan="3" class="${cls}">${dow}曜日</th>`;
+        let cls = i === 5 ? 'dow-sat' : i === 6 ? 'dow-sun' : '';
+        if (closed.has(i)) cls += ' closed-head';
+        const label = closed.has(i) ? `${App.DOW_LABELS[i]}曜日（定休日）` : `${App.DOW_LABELS[i]}曜日`;
+        html += `<th colspan="3" class="${cls}">${label}</th>`;
       });
       html += '<th></th></tr></thead><tbody>';
 
-      // 予想/UP/物販 ヘッダ行（空欄、管理者用）
-      ['予想', 'UP', '物販'].forEach(lbl => {
+      // 予想/UP/物販（手入力可）
+      [['yoso','予想'],['up','UP'],['bup','物販']].forEach(([key, lbl]) => {
         html += `<tr class="row-header"><td class="lbl">${lbl}</td>`;
-        for (let i = 0; i < 7; i++) html += '<td colspan="3"></td>';
+        for (let i = 0; i < 7; i++) {
+          if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
+          html += edCell(`h_${key}_${i}`, '', manual, 'colspan="3"');
+        }
         html += '<td></td></tr>';
       });
 
       // スタッフ2行ペア
       for (const name of orderedNames) {
         const reply = replyMap[name];
-        // 上段（希望時刻行）
-        html += `<tr class="row-staff-top"><td class="name-cell" rowspan="2">${name}</td>`;
+        // 上段: [始業(手入力)][終業(手入力)][希望時刻(手入力)]
+        html += `<tr class="row-staff-top"><td class="name-cell" rowspan="2">${escapeHtml(name)}</td>`;
         for (let i = 0; i < 7; i++) {
-          const time = reply && reply.times && reply.times[i] ? reply.times[i] : '';
-          html += `<td></td><td></td><td class="cell-time">${escapeHtml(time)}</td>`;
+          if (closed.has(i)) { html += '<td class="closed-cell"></td><td class="closed-cell"></td><td class="closed-cell"></td>'; continue; }
+          html += edCell(`s_${name}_${i}_start`, '', manual);
+          html += edCell(`s_${name}_${i}_end`, '', manual);
+          html += edCell(`s_${name}_${i}_time`, 'cell-time', manual);
         }
-        html += `<td class="name-cell" rowspan="2">${name}</td></tr>`;
-        // 下段（○△✕行）
+        html += `<td class="name-cell" rowspan="2">${escapeHtml(name)}</td></tr>`;
+        // 下段: [サブポジ(手入力)][メインポジ(手入力)][○△✕(自動+手動上書き可)]
         html += '<tr class="row-staff-bot">';
         for (let i = 0; i < 7; i++) {
-          const sym = reply ? (reply.d[i] || '') : '';
-          const mark = sym === 'o' ? '○' : sym === 't' ? '△' : sym === 'x' ? '✕' : '';
-          html += `<td></td><td></td><td class="cell-sym" data-sym="${sym}">${mark}</td>`;
+          if (closed.has(i)) { html += '<td class="closed-cell"></td><td class="closed-cell"></td><td class="closed-cell">休</td>'; continue; }
+          html += edCell(`s_${name}_${i}_sub`, '', manual);
+          html += edCell(`s_${name}_${i}_main`, '', manual);
+          const manualSym = manual[App._safeCellKey(`s_${name}_${i}_sym`)];
+          const autoSym = reply ? (reply.d[i] || '') : '';
+          const symChar = manualSym !== undefined && manualSym !== ''
+            ? manualSym
+            : (autoSym === 'o' ? '○' : autoSym === 't' ? '△' : autoSym === 'x' ? '✕' : '');
+          const dataSym = symChar === '○' ? 'o' : symChar === '△' ? 't' : (symChar === '✕' || symChar === '×') ? 'x' : '';
+          html += `<td class="editable cell-sym" contenteditable="plaintext-only" data-mkey="s_${name}_${i}_sym" data-sym="${dataSym}">${escapeHtml(symChar)}</td>`;
         }
         html += '</tr>';
       }
 
-      // 集計行（○/△/✕ 数）
-      ['o','t','x'].forEach(s => {
-        const lbl = s === 'o' ? '○' : s === 't' ? '△' : '✕';
+      // ○/△/✕ 自動集計
+      [['o','○'],['t','△'],['x','✕']].forEach(([s, lbl]) => {
         html += `<tr class="row-pos"><td class="lbl">${lbl}</td>`;
         for (let i = 0; i < 7; i++) {
+          if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
           html += `<td colspan="3" class="cnt">${dayCounts[i][s]}</td>`;
         }
-        html += `<td></td></tr>`;
+        html += '<td></td></tr>';
       });
 
-      // ポジション集計（空欄、管理者用）
+      // ポジション別（手入力可）
       ['K','R','W','T','G1','G2','G','LT'].forEach(p => {
         html += `<tr class="row-pos"><td class="lbl">${p}</td>`;
         for (let i = 0; i < 7; i++) {
-          html += `<td colspan="3" class="cnt"></td>`;
+          if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
+          html += edCell(`p_${p}_${i}`, 'cnt', manual, 'colspan="3"');
         }
-        html += `<td></td></tr>`;
+        html += '<td></td></tr>';
       });
 
-      // 備考行
+      // 備考行（日別手入力 + 全体備考は統計に表示）
       const gnotes = orderedNames
         .map(n => replyMap[n])
         .filter(r => r && r.gnote)
         .map(r => `${r.name}: ${r.gnote}`);
       html += `<tr class="row-note"><td class="lbl">備考</td>`;
-      html += `<td colspan="21" class="gnote">${gnotes.length ? escapeHtml(gnotes.join(' / ')) : ''}</td>`;
-      html += `<td></td></tr>`;
-
+      for (let i = 0; i < 7; i++) {
+        if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
+        html += edCell(`note_${i}`, 'gnote', manual, 'colspan="3"');
+      }
+      html += '<td></td></tr>';
       html += '</tbody></table>';
 
       // 統計セクション
@@ -307,11 +363,66 @@
         <div class="item">提出: <strong>${replies.length} / ${req.staff.length}名</strong></div>
         <div class="item">${unsubmitted.length ? `未提出: <strong style="color:#DC2626">${unsubmitted.join(' / ')}</strong>` : '<strong style="color:#059669">✓ 全員提出済み</strong>'}</div>`;
       if (gnotes.length) {
-        statsHtml += `<div class="gnote-list"><strong>全体備考</strong>${gnotes.map(g => `<div class="gn-item">・${escapeHtml(g)}</div>`).join('')}</div>`;
+        statsHtml += `<div class="gnote-list"><strong>スタッフ備考（△の条件など）</strong>${gnotes.map(g => `<div class="gn-item">・${escapeHtml(g)}</div>`).join('')}</div>`;
       }
       statsHtml += '</div>';
 
       document.getElementById('content').innerHTML = statsHtml + html;
+      attachEditHandlers();
+    }
+
+    /* ===== 手入力ハンドラ ===== */
+    function attachEditHandlers() {
+      const table = document.querySelector('.shift-table');
+      if (!table) return;
+      table.addEventListener('focusout', (e) => {
+        const td = e.target.closest && e.target.closest('td.editable');
+        if (!td) return;
+        saveCell(td);
+        if (pendingRender) setTimeout(() => { if (!isEditing()) render(); }, 100);
+      });
+      table.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.closest && e.target.closest('td.editable')) {
+          e.preventDefault();
+          e.target.blur();
+        }
+      });
+    }
+
+    function saveCell(td) {
+      const mkey = td.dataset.mkey;
+      if (!mkey) return;
+      const val = td.textContent.trim();
+      App.setManualCell(currentReqId, mkey, val);
+      if (mkey.endsWith('_sym')) {
+        const dataSym = val === '○' ? 'o' : val === '△' ? 't' : (val === '✕' || val === '×') ? 'x' : '';
+        td.dataset.sym = dataSym;
+      }
+      showSaved();
+    }
+
+    function showSaved() {
+      const el = document.getElementById('save-indicator');
+      el.classList.add('show');
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => el.classList.remove('show'), 1200);
+    }
+
+    /* ===== 印刷: A4横1枚にフィット ===== */
+    function printFit() {
+      computePrintZoom();
+      window.print();
+    }
+    window.addEventListener('beforeprint', computePrintZoom);
+
+    function computePrintZoom() {
+      const t = document.querySelector('.shift-table');
+      if (!t) return;
+      // A4横 297x210mm - 余白6mm×2 = 285x198mm (96dpi: 1mm≒3.7795px)
+      const pageW = 285 * 3.7795;
+      const pageH = 198 * 3.7795;
+      const scale = Math.min(pageW / t.offsetWidth, pageH / t.offsetHeight, 1);
+      document.documentElement.style.setProperty('--print-zoom', scale.toFixed(3));
     }
 
     function escapeHtml(s) {

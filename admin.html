@@ -46,6 +46,13 @@
         </div>
 
         <div class="form-group">
+          <label class="form-label">定休日（出勤なしの曜日にチェック）</label>
+          <div id="closed-days" style="display:flex;gap:6px;flex-wrap:wrap">
+            <!-- JS で生成 -->
+          </div>
+        </div>
+
+        <div class="form-group">
           <label class="form-label">送信先スタッフ</label>
           <div id="staff-summary" style="background:var(--muted-bg);padding:10px 14px;border-radius:8px;font-size:0.9rem"></div>
           <div class="url-info" style="margin-top:6px">スタッフを変えたい場合は <a href="#" onclick="switchTab('staff');return false;" style="color:var(--primary)">スタッフ管理</a> から編集してください。</div>
@@ -141,12 +148,30 @@
       renderCreate();
     }
 
+    let closedDays = new Set();  // 定休日の曜日インデックス (0=月...6=日)
+
     function renderCreate() {
       document.getElementById('create-week-display').textContent = App.weekLabel(createWs);
       const staff = App.getStaff();
       document.getElementById('staff-summary').innerHTML =
         `<strong>${staff.length}名</strong>： ${staff.join(' / ')}`;
+      renderClosedDays();
       renderPastRequests();
+    }
+
+    function renderClosedDays() {
+      const el = document.getElementById('closed-days');
+      el.innerHTML = App.DOW_LABELS.map((d, i) => `
+        <label style="display:inline-flex;align-items:center;gap:4px;background:${closedDays.has(i) ? '#FEE2E2' : '#fff'};border:1.5px solid ${closedDays.has(i) ? '#DC2626' : 'var(--border)'};padding:7px 14px;border-radius:8px;cursor:pointer;font-weight:600;font-size:0.9rem">
+          <input type="checkbox" ${closedDays.has(i) ? 'checked' : ''} onchange="toggleClosedDay(${i}, this.checked)">
+          <span>${d}</span>
+        </label>
+      `).join('');
+    }
+
+    function toggleClosedDay(i, checked) {
+      if (checked) closedDays.add(i); else closedDays.delete(i);
+      renderClosedDays();
     }
 
     function createRequest() {
@@ -160,12 +185,13 @@
         ws: createWs,
         shop: 'ぎゃあてい',
         staff: staff.slice(),
+        closed: Array.from(closedDays).sort(),
         createdAt: new Date().toISOString()
       };
       App.saveRequest(req);
 
       const baseUrl = location.origin + location.pathname.replace(/admin\.html$/, 'reply.html');
-      const url = App.buildRequestUrl(baseUrl, { v: 1, id: req.id, ws: req.ws, shop: req.shop, staff: req.staff });
+      const url = App.buildRequestUrl(baseUrl, { v: 1, id: req.id, ws: req.ws, shop: req.shop, staff: req.staff, closed: req.closed });
       const lineText = `【ぎゃあてい シフト希望調整】\n${App.weekLabel(req.ws)}\n下のリンクから○△✕をご記入ください。\n${url}`;
 
       const resultEl = document.getElementById('request-result');
@@ -279,12 +305,14 @@
       const unsubmitted = req.staff.filter(n => !submittedNames.has(n));
 
       // マトリクス
+      const closed = new Set(req.closed || []);
       let matrixHtml = '<div class="matrix-wrap"><table class="matrix"><thead><tr>';
       matrixHtml += '<th style="text-align:left">スタッフ</th>';
       dates.forEach((d, i) => {
         const dow = App.DOW_LABELS[i];
         const cls = i === 5 ? 'sat' : i === 6 ? 'sun' : '';
-        matrixHtml += `<th class="${cls}">${App.fmtMD(d)}<br><span style="font-weight:500">(${dow})</span></th>`;
+        const closedMark = closed.has(i) ? '<br><span style="color:#94A3B8;font-size:0.7rem">定休日</span>' : '';
+        matrixHtml += `<th class="${cls}">${App.fmtMD(d)}<br><span style="font-weight:500">(${dow})</span>${closedMark}</th>`;
       });
       matrixHtml += '</tr></thead><tbody>';
 
@@ -296,17 +324,23 @@
       for (const r of orderedReplies) {
         matrixHtml += `<tr><td class="name-cell">${r.name}</td>`;
         for (let i = 0; i < 7; i++) {
+          if (closed.has(i)) {
+            matrixHtml += '<td style="background:#F1F5F9;color:#94A3B8;font-size:0.75rem">休</td>';
+            continue;
+          }
           const sym = r.d[i] || 'x';
           const symInfo = App.SYMBOLS[sym] || App.SYMBOLS.x;
-          const time = r.times && r.times[i] ? r.times[i] : '';
-          const title = time ? `${symInfo.label}: ${time}` : symInfo.label;
-          matrixHtml += `<td class="sym-cell" data-sym="${sym}" title="${title.replace(/"/g, '&quot;')}">${symInfo.mark}${time ? `<div class="cell-time">${escapeHtml(time)}</div>` : ''}</td>`;
+          matrixHtml += `<td class="sym-cell" data-sym="${sym}" title="${symInfo.label}">${symInfo.mark}</td>`;
         }
         matrixHtml += '</tr>';
       }
 
       matrixHtml += '<tr class="summary-row"><td class="name-cell">集計</td>';
       for (let i = 0; i < 7; i++) {
+        if (closed.has(i)) {
+          matrixHtml += '<td style="background:#F1F5F9;color:#94A3B8;font-size:0.75rem">－</td>';
+          continue;
+        }
         const counts = { o: 0, t: 0, x: 0 };
         orderedReplies.forEach(r => { const s = r.d[i]; if (counts[s] !== undefined) counts[s]++; });
         matrixHtml += `<td>
@@ -322,7 +356,7 @@
       let unsubHtml = '';
       if (unsubmitted.length) {
         const baseUrl = location.origin + location.pathname.replace(/admin\.html$/, 'reply.html');
-        const url = App.buildRequestUrl(baseUrl, { v: 1, id: req.id, ws: req.ws, shop: req.shop, staff: req.staff });
+        const url = App.buildRequestUrl(baseUrl, { v: 1, id: req.id, ws: req.ws, shop: req.shop, staff: req.staff, closed: req.closed || [] });
         const lineText = `【ぎゃあてい シフト希望調整】\n${App.weekLabel(req.ws)}\nまだ回答がありません。下のリンクからご記入ください。\n${url}`;
         unsubHtml = `
           <h3 style="font-size:1rem;margin-top:20px;margin-bottom:8px">未提出スタッフ（${unsubmitted.length}名）</h3>
