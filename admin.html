@@ -101,7 +101,7 @@
     <div class="tab-pane" id="tab-staff" style="display:none">
       <div class="card">
         <h2>スタッフ名マスタ</h2>
-        <p class="card-sub">テンプレ525シートの実在メンバー24名が初期登録されています。追加・削除はここで行えます。</p>
+        <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R2d / R1 / W / T）の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。</p>
         <div class="form-group">
           <div style="display:flex;gap:8px">
             <input type="text" class="form-input" id="new-staff-input" placeholder="スタッフ名を追加" onkeydown="if(event.key==='Enter') addStaff()">
@@ -428,18 +428,49 @@
 
     function renderStaffMaster() {
       const staff = App.getStaff();
+      const meta = App.getStaffMeta();
       const el = document.getElementById('staff-master-list');
       if (!staff.length) { el.innerHTML = '<div class="empty-state">スタッフが登録されていません</div>'; return; }
-      el.innerHTML = staff.map((n, i) => `
-        <div class="staff-master-row">
+      el.innerHTML = staff.map((n, i) => {
+        const m = meta[n] || { positions: [], note: '' };
+        return `
+        <div class="staff-master-row" style="flex-wrap:wrap">
           <span class="name">${n}</span>
           <div class="actions">
             <button class="btn btn-outline btn-sm" onclick="moveStaff(${i}, -1)">↑</button>
             <button class="btn btn-outline btn-sm" onclick="moveStaff(${i}, 1)">↓</button>
             <button class="btn btn-danger-outline btn-sm" onclick="removeStaff(${i})">削除</button>
           </div>
+          <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:6px 0 2px">
+            <span style="font-size:0.72rem;color:var(--muted);font-weight:700">できるポジション:</span>
+            ${App.POSITIONS.map(p => `
+              <label style="display:inline-flex;align-items:center;gap:3px;font-size:0.8rem;background:${m.positions.includes(p) ? '#EEF2FF' : '#fff'};border:1.5px solid ${m.positions.includes(p) ? 'var(--primary)' : 'var(--border)'};padding:3px 9px;border-radius:6px;cursor:pointer;font-weight:600">
+                <input type="checkbox" ${m.positions.includes(p) ? 'checked' : ''} onchange="togglePosition('${n.replace(/'/g, "\\'")}', '${p}', this.checked)">
+                ${p}
+              </label>
+            `).join('')}
+            <input type="text" placeholder="メモ（例: 週3日まで）" value="${(m.note || '').replace(/"/g, '&quot;')}"
+              style="flex:1;min-width:140px;font-size:0.78rem;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px"
+              onchange="setStaffNote('${n.replace(/'/g, "\\'")}', this.value)">
+          </div>
         </div>
-      `).join('');
+      `;}).join('');
+    }
+
+    function togglePosition(name, pos, checked) {
+      const meta = App.getStaffMeta();
+      const m = meta[name] || { positions: [], note: '' };
+      if (checked) { if (!m.positions.includes(pos)) m.positions.push(pos); }
+      else m.positions = m.positions.filter(p => p !== pos);
+      App.setStaffMeta(name, m);
+      renderStaffMaster();
+    }
+
+    function setStaffNote(name, note) {
+      const meta = App.getStaffMeta();
+      const m = meta[name] || { positions: [], note: '' };
+      m.note = note.trim();
+      App.setStaffMeta(name, m);
     }
 
     function addStaff() {
@@ -539,6 +570,7 @@
             renderAggregate();
             renderPastRequests();
           }));
+          App.subscribeStaffMeta(() => renderStaffMaster());
         }
         renderCreate();
       }, 100);

@@ -114,8 +114,12 @@ const App = {
     staff:    'sa_v4_staff',
     active:   'sa_v4_active',
     manual:   'sa_v4_manual',
+    staffmeta: 'sa_v4_staffmeta',
     seenWelcome: 'sa_v4_seen_welcome'
   },
+
+  // ポジション一覧（割り当て可能）
+  POSITIONS: ['K', 'R2', 'R2d', 'R1', 'W', 'T'],
 
   // Firebase が初期化済みかどうか
   fbReady: false,
@@ -276,6 +280,45 @@ const App = {
       onUpdate && onUpdate();
     };
     ref.on('value', cb);
+    App.fbListeners[lkey] = () => ref.off('value', cb);
+    return App.fbListeners[lkey];
+  },
+
+  /* ===== スタッフ別設定 (できるポジション・メモ) ===== */
+
+  // { 名前: { positions: ['K','R2'], note: '' } }
+  getStaffMeta() {
+    return App._read(App.KEYS.staffmeta, {});
+  },
+
+  setStaffMeta(name, meta) {
+    const all = App.getStaffMeta();
+    all[name] = meta;
+    App._write(App.KEYS.staffmeta, all);
+    if (App.fbReady) {
+      const safeName = App._safeCellKey(encodeURIComponent(name));
+      App.fbDB.ref(`staffmeta/${safeName}`).set({ name, ...meta })
+        .catch(e => console.warn('FB staffmeta save failed (ルール未設定の可能性):', e.message));
+    }
+  },
+
+  // Firebase から staffmeta を購読（ルール設定済みの場合のみ動作）
+  subscribeStaffMeta(onUpdate) {
+    if (!App.fbReady) return null;
+    const lkey = 'staffmeta';
+    if (App.fbListeners[lkey]) App.fbListeners[lkey]();
+    const ref = App.fbDB.ref('staffmeta');
+    const cb = (snap) => {
+      const data = snap.val();
+      if (!data) return;  // ルール未設定・データなしなら localStorage を維持
+      const all = {};
+      Object.values(data).forEach(m => {
+        if (m && m.name) all[m.name] = { positions: m.positions || [], note: m.note || '' };
+      });
+      App._write(App.KEYS.staffmeta, all);
+      onUpdate && onUpdate();
+    };
+    ref.on('value', cb, () => {});  // 権限エラーは無視
     App.fbListeners[lkey] = () => ref.off('value', cb);
     return App.fbListeners[lkey];
   },

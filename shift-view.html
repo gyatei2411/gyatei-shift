@@ -176,6 +176,9 @@
         <span><i class="t">△</i>条件付</span>
         <span><i class="x">✕</i>不可</span>
       </div>
+      <button onclick="autoAssign()" style="background:#F59E0B">⚡ 自動割り当て</button>
+      <button onclick="copyForClaude()">🤖 Claude用コピー</button>
+      <button onclick="openImportDialog()">📥 結果取り込み</button>
       <button class="primary" onclick="printFit()">🖨 印刷</button>
       <button onclick="location.reload()">🔄 更新</button>
       <a href="admin.html">← 管理画面に戻る</a>
@@ -183,7 +186,31 @@
   </div>
 
   <div class="sv-edit-hint">
-    ✏️ <strong>セルをクリックすると直接入力できます</strong>（始業・終業時刻、ポジション、予想、備考など）。入力内容は自動保存されます。
+    ✏️ <strong>セルをクリックすると直接入力できます</strong>。
+    <strong>⚡自動割り当て</strong>＝ルールに沿って自動でポジションと時間を入力 /
+    <strong>🤖Claude用コピー</strong>＝複雑な調整はClaudeに渡して検討 → <strong>📥結果取り込み</strong>で反映。
+  </div>
+
+  <div class="sv-edit-hint" style="background:#FFFBEB;border-color:#FCD34D;color:#92400E">
+    📌 <strong>割り当て指示（自動割り当て・Claude検討の際に考慮されます）</strong>
+    <textarea id="assign-note" placeholder="例: 山口は3日間○だが2日だけ出勤にする / 青木は必ずK"
+      style="width:100%;margin-top:6px;min-height:48px;border:1.5px solid #FCD34D;border-radius:6px;padding:8px;font-size:0.85rem;font-family:inherit"
+      onchange="saveAssignNote(this.value)"></textarea>
+  </div>
+
+  <!-- 取り込みダイアログ -->
+  <div id="import-dialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:300;align-items:center;justify-content:center;padding:20px">
+    <div style="background:#fff;border-radius:14px;padding:24px;max-width:640px;width:100%;max-height:80vh;overflow-y:auto">
+      <h2 style="font-size:1.05rem;font-weight:800;margin-bottom:8px">📥 Claude の結果を取り込み</h2>
+      <p style="font-size:0.85rem;color:#64748B;margin-bottom:12px">
+        Claude が出力した JSON（<code>{"assign":[...]}</code> の部分）を貼り付けてください。
+      </p>
+      <textarea id="import-json" style="width:100%;min-height:160px;border:1.5px solid #CBD5E1;border-radius:8px;padding:10px;font-family:monospace;font-size:0.8rem" placeholder='{"assign":[{"name":"青木","day":0,"pos":"K","start":"9","end":"-L"}, ...]}'></textarea>
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+        <button onclick="closeImportDialog()" style="background:#fff;border:1.5px solid #CBD5E1;padding:9px 18px;border-radius:8px;cursor:pointer;font-weight:700">キャンセル</button>
+        <button onclick="importAssignments()" style="background:#4F46E5;color:#fff;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-weight:700">取り込む</button>
+      </div>
+    </div>
   </div>
 
   <div class="sv-container">
@@ -368,7 +395,17 @@
       statsHtml += '</div>';
 
       document.getElementById('content').innerHTML = statsHtml + html;
+      // 割り当て指示欄の復元（編集中でなければ）
+      const noteEl = document.getElementById('assign-note');
+      if (noteEl && document.activeElement !== noteEl) {
+        noteEl.value = manual[App._safeCellKey('assign_note')] || '';
+      }
       attachEditHandlers();
+    }
+
+    function saveAssignNote(val) {
+      App.setManualCell(currentReqId, 'assign_note', val.trim());
+      showSaved();
     }
 
     /* ===== 手入力ハンドラ ===== */
@@ -406,6 +443,268 @@
       el.classList.add('show');
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => el.classList.remove('show'), 1200);
+    }
+
+    /* ===== 自動割り当て ===== */
+
+    // △の全体備考から時間制約をパース
+    // 戻り値: { 0: {start: 9, end: 15}, ... } (day index → 制約。end=99 は「ラストまでOK」)
+    function parseTimeConstraints(gnote) {
+      const result = {};
+      if (!gnote) return result;
+      const dowMap = { '月': 0, '火': 1, '水': 2, '木': 3, '金': 4, '土': 5, '日': 6 };
+      // 文をスラッシュ・改行・読点で分割
+      const parts = gnote.split(/[\/\n、。]/);
+      for (const part of parts) {
+        // 曜日の抽出（複数曜日対応: 「火・木は…」）
+        const days = [];
+        const dowMatches = part.match(/[月火水木金土日](?=曜|[はの・、]|$)/g) || part.match(/[月火水木金土日]曜/g);
+        if (dowMatches) dowMatches.forEach(m => { const d = dowMap[m[0]]; if (d !== undefined && !days.includes(d)) days.push(d); });
+        if (!days.length) continue;
+
+        let start = null, end = null;
+        // "9-15" "9時-15時" "9:30-16" "930-16" パターン
+        let m = part.match(/(\d{1,2})(?:[:：時]?(30|半))?\s*[-〜~から]+\s*(\d{1,2})(?:[:：時]?(30|半))?/);
+        if (m) {
+          start = parseFloat(m[1]) + (m[2] ? 0.5 : 0);
+          end = parseFloat(m[3]) + (m[4] ? 0.5 : 0);
+        } else {
+          // "17時以降" パターン
+          m = part.match(/(\d{1,2})(?:[:：時]?(30|半))?\s*(?:時)?以降/);
+          if (m) { start = parseFloat(m[1]) + (m[2] ? 0.5 : 0); end = 99; }
+          else {
+            // "15時まで" パターン
+            m = part.match(/(\d{1,2})(?:[:：時]?(30|半))?\s*(?:時)?まで/);
+            if (m) { start = 0; end = parseFloat(m[1]) + (m[2] ? 0.5 : 0); }
+          }
+        }
+        if (start === null && end === null) continue;
+        days.forEach(d => { result[d] = { start: start ?? 0, end: end ?? 99 }; });
+      }
+      return result;
+    }
+
+    // 割り当て指示から「◯◯はN日だけ」制約をパース
+    function parseMaxDays(note, staffNames) {
+      const result = {};
+      if (!note) return result;
+      for (const name of staffNames) {
+        const re = new RegExp(name + '[^\\d]{0,12}?(\\d)\\s*日\\s*(だけ|まで|に)');
+        const m = note.match(re);
+        if (m) result[name] = parseInt(m[1], 10);
+      }
+      return result;
+    }
+
+    // 時刻数値→表示文字列 (9→'9', 9.5→'930', 16→'-16'等)
+    function fmtStart(t) { return t % 1 === 0.5 ? `${Math.floor(t)}30` : String(t); }
+    function fmtEnd(t) { return t >= 99 ? '-L' : (t % 1 === 0.5 ? `-${Math.floor(t)}30` : `-${t}`); }
+
+    function autoAssign() {
+      const req = App.getRequest(currentReqId);
+      if (!req) { App.toast('依頼がありません', 'error'); return; }
+      const replies = App.getReplies(currentReqId);
+      if (!replies.length) { App.toast('回答がまだありません', 'error'); return; }
+      const meta = App.getStaffMeta();
+      const closed = new Set(req.closed || []);
+      const manual = App.getManual(currentReqId);
+      const assignNote = manual[App._safeCellKey('assign_note')] || '';
+
+      // ポジション未設定チェック
+      const noPosStaff = replies.filter(r => {
+        const m = meta[r.name];
+        return !m || !m.positions || !m.positions.length;
+      }).map(r => r.name);
+      if (noPosStaff.length) {
+        if (!confirm(`以下のスタッフは「できるポジション」が未設定のため割り当て対象外になります:\n${noPosStaff.join(' / ')}\n\n（管理画面 → スタッフ管理 で設定できます）\nこのまま続けますか？`)) return;
+      }
+
+      if (!confirm('自動割り当てを実行します。\n既存のポジション・時間の手入力は上書きされます。よろしいですか？')) return;
+
+      const maxDays = parseMaxDays(assignNote, replies.map(r => r.name));
+      const timeCons = {};  // name → { day: {start,end} }
+      replies.forEach(r => { timeCons[r.name] = parseTimeConstraints(r.gnote); });
+
+      // 優先順の枠リスト: K×3 → R2d×1+R2×1 → W×1 → R2×1 → W×1 → T×1
+      const SLOTS = [
+        { pos: 'K' }, { pos: 'K' }, { pos: 'K' },
+        { pos: 'R2d' }, { pos: 'R2' },
+        { pos: 'W' },
+        { pos: 'R2' },
+        { pos: 'W' },
+        { pos: 'T' }
+      ];
+
+      const assignedCount = {};  // name → 週の割当日数
+      replies.forEach(r => assignedCount[r.name] = 0);
+      const shortages = [];   // 不足記録
+      const skipped = [];     // △で時間解釈できず割当できなかった人
+
+      const results = [];  // { name, day, pos, start, end }
+
+      for (let day = 0; day < 7; day++) {
+        if (closed.has(day)) continue;
+        const assignedToday = new Set();
+
+        for (const slot of SLOTS) {
+          // 候補: その日○or△、できるポジションにslot.posあり、未割当、上限未達
+          const candidates = replies.filter(r => {
+            const sym = r.d[day];
+            if (sym !== 'o' && sym !== 't') return false;
+            if (assignedToday.has(r.name)) return false;
+            const m = meta[r.name];
+            if (!m || !m.positions || !m.positions.includes(slot.pos)) return false;
+            if (maxDays[r.name] !== undefined && assignedCount[r.name] >= maxDays[r.name]) return false;
+            // △の時間制約チェック
+            if (sym === 't') {
+              const tc = timeCons[r.name][day];
+              if (!tc) { return false; }  // 時間解釈できない△は自動割当しない
+              // R2系は 9:30-16 勤務必須
+              if ((slot.pos === 'R2' || slot.pos === 'R2d') && (tc.start > 9.5 || tc.end < 16)) return false;
+            }
+            return true;
+          });
+
+          if (!candidates.length) {
+            shortages.push(`${App.fmtMD(App.weekDates(req.ws)[day])}(${App.DOW_LABELS[day]}) ${slot.pos}`);
+            continue;
+          }
+
+          // できるポジション数が少ない人 → 割当日数が少ない人 の順で選ぶ
+          candidates.sort((a, b) => {
+            const pa = (meta[a.name].positions || []).length;
+            const pb = (meta[b.name].positions || []).length;
+            if (pa !== pb) return pa - pb;
+            return assignedCount[a.name] - assignedCount[b.name];
+          });
+          const pick = candidates[0];
+          assignedToday.add(pick.name);
+          assignedCount[pick.name]++;
+
+          // 時間決定
+          let start, end;
+          if (slot.pos === 'R2' || slot.pos === 'R2d') {
+            start = '930'; end = '-16';
+          } else {
+            const sym = pick.d[day];
+            if (sym === 't') {
+              const tc = timeCons[pick.name][day];
+              start = fmtStart(Math.max(tc.start, 9));
+              end = fmtEnd(tc.end);
+            } else {
+              start = '9'; end = '-L';
+            }
+          }
+          results.push({ name: pick.name, day, pos: slot.pos, start, end });
+        }
+
+        // △で時間解釈できなかった人を記録
+        replies.forEach(r => {
+          if (r.d[day] === 't' && !timeCons[r.name][day] && !assignedToday.has(r.name)) {
+            const key = `${r.name}(${App.DOW_LABELS[day]})`;
+            if (!skipped.includes(key)) skipped.push(key);
+          }
+        });
+      }
+
+      // manual セルへ書き込み
+      results.forEach(a => {
+        App.setManualCell(currentReqId, `s_${a.name}_${a.day}_main`, a.pos);
+        App.setManualCell(currentReqId, `s_${a.name}_${a.day}_start`, a.start);
+        App.setManualCell(currentReqId, `s_${a.name}_${a.day}_end`, a.end);
+      });
+
+      render();
+
+      let msg = `✓ ${results.length}件割り当てました`;
+      if (shortages.length) msg += `\n\n【人数不足】\n${shortages.join('\n')}`;
+      if (skipped.length) msg += `\n\n【△の時間を解釈できず未割当】\n${skipped.join(' / ')}\n→ 手動で調整するか、🤖Claude連携をお使いください`;
+      alert(msg);
+    }
+
+    /* ===== Claude連携 ===== */
+
+    function copyForClaude() {
+      const req = App.getRequest(currentReqId);
+      if (!req) { App.toast('依頼がありません', 'error'); return; }
+      const replies = App.getReplies(currentReqId);
+      const meta = App.getStaffMeta();
+      const closed = new Set(req.closed || []);
+      const manual = App.getManual(currentReqId);
+      const assignNote = manual[App._safeCellKey('assign_note')] || '';
+      const dates = App.weekDates(req.ws);
+
+      let txt = `あなたはシフト作成の専門家です。以下のデータからシフトの割り当てを検討し、指定のJSON形式で出力してください。\n\n`;
+      txt += `## 対象週\n${App.weekLabel(req.ws)}\n`;
+      txt += `日別: ${dates.map((d, i) => `day${i}=${App.fmtMD(d)}(${App.DOW_LABELS[i]}${closed.has(i) ? '・定休日' : ''})`).join(', ')}\n\n`;
+      txt += `## ポジションと1日の必要人数\n`;
+      txt += `- K: 3人\n- R2系: 3人（うちR2dが必ず1人。表記はR2dとR2）\n- W: 2人\n- T: 1人\n- R1: 0人（使わない）\n`;
+      txt += `- 人数不足の場合の優先順位: ①K3人 ②R2系2人（R2d優先） ③W1人 ④残り\n\n`;
+      txt += `## 出勤時間のルール\n`;
+      txt += `- ○（終日可）の人: 基本 9-L（9時からラストまで）\n`;
+      txt += `- R2/R2d に割り当てた人: 930-16（9時半から16時）\n`;
+      txt += `- △の人: 備考に書かれた時間帯を超えて勤務させない\n\n`;
+      txt += `## スタッフの回答（○=終日可 / △=条件付き / ✕=不可 / -=定休日）\n`;
+      for (const r of replies) {
+        const m = meta[r.name] || { positions: [] };
+        txt += `- ${r.name}: [${r.d.split('').map((c, i) => `${App.DOW_LABELS[i]}=${c === 'o' ? '○' : c === 't' ? '△' : c === 'x' ? '✕' : '-'}`).join(' ')}]`;
+        txt += ` できるポジション: ${m.positions.length ? m.positions.join(',') : '未設定'}`;
+        if (m.note) txt += ` / 個人メモ: ${m.note}`;
+        if (r.gnote) txt += ` / 備考: ${r.gnote}`;
+        txt += `\n`;
+      }
+      const unsubmitted = req.staff.filter(n => !replies.find(r => r.name === n));
+      if (unsubmitted.length) txt += `\n未提出（割り当て不可）: ${unsubmitted.join(' / ')}\n`;
+      if (assignNote) txt += `\n## 管理者からの割り当て指示（最優先で従うこと）\n${assignNote}\n`;
+      txt += `\n## 出力形式\n`;
+      txt += `検討過程を簡潔に説明した後、最後に必ず次のJSON形式で出力してください。\n`;
+      txt += '```json\n{"assign":[{"name":"青木","day":0,"pos":"K","start":"9","end":"-L"}]}\n```\n';
+      txt += `- day: 0=月曜〜6=日曜\n- pos: K/R2/R2d/W/T のいずれか\n- start例: "9" "930" "10" / end例: "-L" "-16" "-15"\n- 割り当てない人は含めない\n`;
+
+      App.copyToClipboard(txt).then(ok => {
+        if (ok) alert('Claude用データをコピーしました！\n\nClaude（クロード）のチャットに貼り付けて送信してください。\nClaudeの回答のJSON部分をコピーして「📥結果取り込み」に貼り付ければ反映されます。');
+        else App.toast('コピーに失敗しました', 'error');
+      });
+    }
+
+    function openImportDialog() {
+      document.getElementById('import-dialog').style.display = 'flex';
+      document.getElementById('import-json').value = '';
+      document.getElementById('import-json').focus();
+    }
+    function closeImportDialog() {
+      document.getElementById('import-dialog').style.display = 'none';
+    }
+
+    function importAssignments() {
+      const raw = document.getElementById('import-json').value.trim();
+      if (!raw) { App.toast('JSONを貼り付けてください', 'error'); return; }
+      let data;
+      try {
+        // ```json ... ``` で囲まれていても取り出せるように
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        data = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
+      } catch (e) {
+        App.toast('JSONの形式が正しくありません: ' + e.message, 'error');
+        return;
+      }
+      if (!data.assign || !Array.isArray(data.assign)) {
+        App.toast('「assign」の配列が見つかりません', 'error');
+        return;
+      }
+      if (!confirm(`${data.assign.length}件の割り当てを取り込みます。\n既存のポジション・時間の手入力は上書きされます。よろしいですか？`)) return;
+
+      let count = 0;
+      for (const a of data.assign) {
+        if (!a.name || a.day === undefined || !a.pos) continue;
+        App.setManualCell(currentReqId, `s_${a.name}_${a.day}_main`, a.pos);
+        if (a.start) App.setManualCell(currentReqId, `s_${a.name}_${a.day}_start`, String(a.start));
+        if (a.end) App.setManualCell(currentReqId, `s_${a.name}_${a.day}_end`, String(a.end));
+        count++;
+      }
+      closeImportDialog();
+      render();
+      App.toast(`${count}件取り込みました`, 'success');
     }
 
     /* ===== 印刷: A4横1枚にフィット ===== */
