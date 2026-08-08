@@ -211,6 +211,7 @@ const App = {
         name: reply.name,
         ws: reply.ws,
         d: reply.d,
+        dnotes: reply.dnotes || {},   // 曜日ごとの出勤可能時間 { "1": "11-15:30" }
         gnote: reply.gnote || '',
         receivedAt: reply.receivedAt
       }).then(() => ({ ok: true, online: true }));
@@ -230,7 +231,7 @@ const App = {
       Object.values(data).forEach(r => {
         all.push({
           id: reqId, name: r.name, ws: r.ws, d: r.d,
-          gnote: r.gnote || '', receivedAt: r.receivedAt
+          dnotes: r.dnotes || {}, gnote: r.gnote || '', receivedAt: r.receivedAt
         });
       });
       App._write(App.KEYS.replies, all);
@@ -286,7 +287,8 @@ const App = {
 
   /* ===== スタッフ別設定 (できるポジション・メモ) ===== */
 
-  // { 名前: { positions: ['K','R2'], note: '' } }
+  // { 名前: { positions: ['K','R2'], note: '', priority: false } }
+  // priority=true … 社保加入者など、優先してシフトに入れるメンバー
   getStaffMeta() {
     return App._read(App.KEYS.staffmeta, {});
   },
@@ -313,7 +315,7 @@ const App = {
       if (!data) return;  // ルール未設定・データなしなら localStorage を維持
       const all = {};
       Object.values(data).forEach(m => {
-        if (m && m.name) all[m.name] = { positions: m.positions || [], note: m.note || '' };
+        if (m && m.name) all[m.name] = { positions: m.positions || [], note: m.note || '', priority: !!m.priority };
       });
       App._write(App.KEYS.staffmeta, all);
       onUpdate && onUpdate();

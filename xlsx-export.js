@@ -75,8 +75,15 @@ const XlsxExport = (() => {
 
     // 全体備考をW列右に集約
     const gNotes = [];
+    const DOW = ['月','火','水','木','金','土','日'];
     for (const r of replies) {
-      if (r.gnote) gNotes.push(`${r.name}: ${r.gnote}`);
+      const parts = [];
+      const dn = r.dnotes || {};
+      Object.keys(dn).map(Number).sort((a, b) => a - b).forEach(i => {
+        if (dn[i]) parts.push(`${DOW[i]}:${dn[i]}`);
+      });
+      if (r.gnote) parts.push(r.gnote);
+      if (parts.length) gNotes.push(`${r.name}: ${parts.join(' / ')}`);
     }
     if (gNotes.length) setCell(noteRow, 24, '全体備考: ' + gNotes.join(' / '));
 

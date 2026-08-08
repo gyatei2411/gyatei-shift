@@ -29,6 +29,23 @@
       border-radius: 8px; padding: 10px 12px; font-size: 0.85rem; margin-top: 8px;
     }
     .gnote-hint.visible { display: block; }
+    /* 曜日ごとの備考（△を選んだ日だけ表示） */
+    .day-note-wrap { display: none; margin-top: 8px; }
+    .day-note-wrap.visible { display: block; }
+    .day-note-wrap .dn-label {
+      display: block; font-size: 0.74rem; font-weight: 700; color: #92400E; margin-bottom: 4px;
+    }
+    .day-note {
+      width: 100%; box-sizing: border-box;
+      padding: 9px 10px; font-size: 0.92rem;
+      border: 1.5px solid #FCD34D; border-radius: 8px; background: #FFFBEB;
+      font-family: inherit;
+    }
+    .day-note:focus { outline: none; border-color: var(--primary); background: #fff; }
+    .day-note.dn-required {
+      border-color: var(--danger) !important;
+      box-shadow: 0 0 0 3px rgba(220,38,38,0.12);
+    }
   </style>
 </head>
 <body>
@@ -61,12 +78,13 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="gnote">全体備考 <span id="gnote-req-mark" style="color:var(--danger);display:none">★必須</span></label>
+          <label class="form-label" for="gnote">全体備考 <span id="gnote-req-mark" style="color:var(--danger);display:none">★どちらか必須</span></label>
           <textarea id="gnote" placeholder="連絡事項があれば記入"></textarea>
           <div class="gnote-hint" id="gnote-hint">
             ⚠ △（条件付き）を選んだ日があります。<br>
-            <strong>どの曜日に何時から何時まで出勤できるか</strong>を全体備考に必ず書いてください。<br>
-            例：「火曜は9時-15時のみ可 / 土曜は17時以降なら可」
+            <strong>①各曜日の「出勤できる時間帯」欄</strong>か、<strong>②この全体備考</strong>の<u>どちらか</u>に、出勤できる時間を必ず書いてください。<br>
+            ・曜日ごとに条件が違う → ①に曜日ごとに記入<br>
+            ・全部同じ条件（例: 毎日 9:30-15:30） → ②にまとめて記入でOK
           </div>
         </div>
 
@@ -114,6 +132,7 @@
   <script>
     let request = null;      // { id, ws, shop, staff, closed }
     let answers = {};        // { 0..6: 'o'/'t'/'x' }
+    let dayNotes = {};       // { 0..6: '9:30-16' } △の曜日ごとの出勤可能時間
     let closedSet = new Set();
 
     function init() {
@@ -170,6 +189,12 @@
                 </button>
               `).join('')}
             </div>
+            <div class="day-note-wrap" id="dnw-${i}">
+              <label class="dn-label" for="dn-${i}">${day}曜の出勤できる時間帯</label>
+              <input type="text" class="day-note" id="dn-${i}" inputmode="text"
+                placeholder="例: 9:30-16 / 11時-15時半 / 17時以降"
+                oninput="setDayNote(${i}, this.value)">
+            </div>
           </div>
         `;
       }).join('');
@@ -188,6 +213,12 @@
       updateGnoteRequirement();
     }
 
+    function setDayNote(idx, val) {
+      dayNotes[idx] = val;
+      const el = document.getElementById('dn-' + idx);
+      if (el && val.trim()) el.classList.remove('dn-required');
+    }
+
     function bulkSet(sym) {
       for (let i = 0; i < 7; i++) {
         if (closedSet.has(i)) continue;
@@ -204,12 +235,23 @@
       updateGnoteRequirement();
     }
 
-    // △がある場合は全体備考必須
+    // △を選んだ曜日一覧
+    function triangleDays() {
+      return Object.keys(answers).filter(k => answers[k] === 't').map(Number).sort((a, b) => a - b);
+    }
     function hasTriangle() {
-      return Object.values(answers).includes('t');
+      return triangleDays().length > 0;
     }
 
+    // △の日だけ「曜日ごとの時間帯」欄を表示し、全体備考の必須マークを切り替える
     function updateGnoteRequirement() {
+      for (let i = 0; i < 7; i++) {
+        const w = document.getElementById('dnw-' + i);
+        if (!w) continue;
+        const show = answers[i] === 't';
+        w.classList.toggle('visible', show);
+        if (!show) document.getElementById('dn-' + i).classList.remove('dn-required');
+      }
       const required = hasTriangle();
       document.getElementById('gnote-req-mark').style.display = required ? '' : 'none';
       document.getElementById('gnote-hint').classList.toggle('visible', required);
@@ -240,14 +282,21 @@
         }
       }
 
-      // △がある場合、全体備考必須
+      // △がある場合、「曜日ごとの時間帯」か「全体備考」のどちらかが必須
       const gnote = document.getElementById('gnote').value.trim();
-      if (hasTriangle() && !gnote) {
-        App.toast('△を選んだ場合は全体備考に出勤できる時間帯を書いてください', 'error');
-        const ta = document.getElementById('gnote');
-        ta.classList.add('gnote-required');
-        ta.focus();
-        ta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const tdays = triangleDays();
+      const dnotes = {};
+      tdays.forEach(i => {
+        const v = (dayNotes[i] || '').trim();
+        if (v) dnotes[i] = v;
+      });
+      const missing = tdays.filter(i => !dnotes[i]);
+      if (tdays.length && missing.length && !gnote) {
+        App.toast(`△の日（${missing.map(i => App.DOW_LABELS[i]).join('・')}）の出勤できる時間帯を入力してください`, 'error');
+        missing.forEach(i => document.getElementById('dn-' + i).classList.add('dn-required'));
+        document.getElementById('gnote').classList.add('gnote-required');
+        document.getElementById('dn-' + missing[0]).focus();
+        document.getElementById('dnw-' + missing[0]).scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
 
@@ -262,6 +311,7 @@
         ws: request.ws,
         name: name,
         d: d,
+        dnotes: dnotes,
         gnote: gnote || ''
       };
 
@@ -292,7 +342,7 @@
 
       if (!online) {
         const baseUrl = location.origin + location.pathname;
-        const payload = { v:1, id: reply.id, ws: reply.ws, n: reply.name, d: reply.d, gnote: reply.gnote };
+        const payload = { v:1, id: reply.id, ws: reply.ws, n: reply.name, d: reply.d, dn: reply.dnotes || {}, gnote: reply.gnote };
         const fbUrl = `${baseUrl}?a=${App.encodeBase64Url(payload)}`;
         document.getElementById('manual-fallback').style.display = '';
         document.getElementById('manual-url').textContent = fbUrl;

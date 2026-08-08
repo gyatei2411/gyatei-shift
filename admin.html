@@ -101,7 +101,7 @@
     <div class="tab-pane" id="tab-staff" style="display:none">
       <div class="card">
         <h2>スタッフ名マスタ</h2>
-        <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R2d / R1 / W / T）の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。</p>
+        <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R2d / R1 / W / T）の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。<br><strong>★優先</strong>にチェックを入れると、社会保険加入者など<strong>必ずシフトに入れたいメンバー</strong>として、自動割り当てで最優先に配置されます。</p>
         <div class="form-group">
           <div style="display:flex;gap:8px">
             <input type="text" class="form-input" id="new-staff-input" placeholder="スタッフ名を追加" onkeydown="if(event.key==='Enter') addStaff()">
@@ -268,7 +268,7 @@
         } else { continue; }
         if (!r.id || !r.n || !r.d) { skipped++; continue; }
         if (!requests.find(req => req.id === r.id)) { skipped++; continue; }
-        const reply = { id: r.id, ws: r.ws, name: r.n, d: r.d, times: r.times || {}, gnote: r.gnote || '' };
+        const reply = { id: r.id, ws: r.ws, name: r.n, d: r.d, dnotes: r.dn || {}, gnote: r.gnote || '' };
         const res = App._saveReplyLocal(reply);
         if (res.isUpdate) updated++; else ok++;
       }
@@ -370,12 +370,20 @@
         unsubHtml = `<div style="margin-top:20px;padding:12px;background:#D1FAE5;border-radius:8px;color:var(--success);font-weight:700;font-size:0.9rem">✓ 全員提出済みです</div>`;
       }
 
-      // 全体備考
-      const gnotes = orderedReplies.filter(r => r.gnote).map(r => `${r.name}: ${r.gnote}`);
+      // 備考（曜日ごとの時間帯 ＋ 全体備考）
+      const gnotes = orderedReplies.map(r => {
+        const parts = [];
+        const dn = r.dnotes || {};
+        Object.keys(dn).map(Number).sort((a, b) => a - b).forEach(i => {
+          if (dn[i]) parts.push(`${App.DOW_LABELS[i]}: ${dn[i]}`);
+        });
+        if (r.gnote) parts.push(r.gnote);
+        return parts.length ? `${r.name} … ${parts.join(' / ')}` : null;
+      }).filter(Boolean);
       let gnoteHtml = '';
       if (gnotes.length) {
         gnoteHtml = `
-          <h3 style="font-size:1rem;margin-top:20px;margin-bottom:8px">全体備考</h3>
+          <h3 style="font-size:1rem;margin-top:20px;margin-bottom:8px">備考（△の出勤可能時間など）</h3>
           <div class="notes-list">
             ${gnotes.map(g => `<div class="note-item"><span class="note-body">${escapeHtml(g)}</span></div>`).join('')}
           </div>
@@ -432,10 +440,16 @@
       const el = document.getElementById('staff-master-list');
       if (!staff.length) { el.innerHTML = '<div class="empty-state">スタッフが登録されていません</div>'; return; }
       el.innerHTML = staff.map((n, i) => {
-        const m = meta[n] || { positions: [], note: '' };
+        const m = meta[n] || { positions: [], note: '', priority: false };
+        const esc = n.replace(/'/g, "\\'");
         return `
-        <div class="staff-master-row" style="flex-wrap:wrap">
-          <span class="name">${n}</span>
+        <div class="staff-master-row" style="flex-wrap:wrap;${m.priority ? 'background:#FFF7ED;border-color:#F59E0B' : ''}">
+          <span class="name">${n}${m.priority ? ' <span style="font-size:0.68rem;color:#B45309;font-weight:700">優先</span>' : ''}</span>
+          <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.76rem;font-weight:700;color:${m.priority ? '#B45309' : 'var(--muted)'};cursor:pointer;white-space:nowrap"
+            title="社保加入者など、必ず優先してシフトに入れるメンバー">
+            <input type="checkbox" ${m.priority ? 'checked' : ''} onchange="togglePriority('${esc}', this.checked)">
+            ★優先
+          </label>
           <div class="actions">
             <button class="btn btn-outline btn-sm" onclick="moveStaff(${i}, -1)">↑</button>
             <button class="btn btn-outline btn-sm" onclick="moveStaff(${i}, 1)">↓</button>
@@ -459,16 +473,25 @@
 
     function togglePosition(name, pos, checked) {
       const meta = App.getStaffMeta();
-      const m = meta[name] || { positions: [], note: '' };
+      const m = meta[name] || { positions: [], note: '', priority: false };
       if (checked) { if (!m.positions.includes(pos)) m.positions.push(pos); }
       else m.positions = m.positions.filter(p => p !== pos);
       App.setStaffMeta(name, m);
       renderStaffMaster();
     }
 
+    // 社保加入者など「必ず優先してシフトに入れる」メンバー
+    function togglePriority(name, checked) {
+      const meta = App.getStaffMeta();
+      const m = meta[name] || { positions: [], note: '', priority: false };
+      m.priority = !!checked;
+      App.setStaffMeta(name, m);
+      renderStaffMaster();
+    }
+
     function setStaffNote(name, note) {
       const meta = App.getStaffMeta();
-      const m = meta[name] || { positions: [], note: '' };
+      const m = meta[name] || { positions: [], note: '', priority: false };
       m.note = note.trim();
       App.setStaffMeta(name, m);
     }
