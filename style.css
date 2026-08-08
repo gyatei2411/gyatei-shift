@@ -131,17 +131,9 @@ textarea { resize: vertical; min-height: 80px; }
 .sym-btn.selected[data-sym="x"] { background: #FEE2E2; border-color: var(--danger); color: var(--danger); }
 .sym-btn.selected[data-sym="m"] { background: #EDE9FE; border-color: var(--purple); color: var(--purple); }
 
-.day-note, .day-time {
-  margin-top: 8px; display: none;
-}
-.day-note.visible, .day-time.visible { display: block; }
-.day-note input, .day-time input {
-  width: 100%; border: 1.5px solid var(--border);
-  padding: 8px 10px; border-radius: 7px; font-size: 0.85rem;
-  background: #fff;
-}
-.day-note input:focus, .day-time input:focus { outline: none; border-color: var(--primary); }
-.day-note-label, .day-time-label { font-size: 0.75rem; color: var(--primary); font-weight: 700; margin-bottom: 4px; }
+/* 旧版の .day-note / .day-time（日別の時間入力欄）は廃止。
+   現在の「曜日ごとの出勤できる時間帯」は reply.html 内の
+   .day-note-wrap / .day-note で定義している（ここに書くと衝突するので追加しないこと） */
 
 .bulk-actions { display: flex; gap: 6px; margin-bottom: 10px; }
 .bulk-actions button {
