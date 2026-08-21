@@ -409,7 +409,7 @@ const App = {
   },
 
   // 依頼一覧をFirebaseから読み込む（タブレット表示など、依頼を作っていない端末用）
-  subscribeRequests(onUpdate) {
+  subscribeRequests(onUpdate, onError) {
     if (!App.fbReady) return null;
     const lkey = 'reqlist';
     if (App.fbListeners[lkey]) App.fbListeners[lkey]();
@@ -438,7 +438,10 @@ const App = {
       App._write(App.KEYS.confirmed, confirmedAll);
       onUpdate && onUpdate();
     };
-    ref.on('value', cb, () => {});
+    ref.on('value', cb, (err) => {
+      console.warn('FB requests read failed:', err && err.message);
+      onError && onError(err);
+    });
     App.fbListeners[lkey] = () => ref.off('value', cb);
     return App.fbListeners[lkey];
   },

@@ -140,12 +140,16 @@
   <script>
     const POS_CLASS = { K: 'p-K', R2: 'p-R2', R2d: 'p-R2d', R1: 'p-R1', W: 'p-W', T: 'p-T' };
     let reqIds = [];      // 表示対象の依頼ID（週の古い順）
+    let fbError = false;  // Firebaseの読み取り権限エラー
     let cursor = 0;       // reqIds 内の現在位置
 
     function init() {
       App.initFirebase();
       if (App.isOnline()) {
-        App.subscribeRequests(() => { pickWeeks(); render(); });
+        App.subscribeRequests(
+          () => { fbError = false; pickWeeks(); render(); },
+          () => { fbError = true; render(); }
+        );
       }
       pickWeeks();
       render();
@@ -208,6 +212,15 @@
 
       const reqId = reqIds[cursor];
       const req = reqId ? App.getRequest(reqId) : null;
+      if (!req && fbError) {
+        document.getElementById('week-label').textContent = '表示できません';
+        document.getElementById('stamp').textContent = '';
+        showMsg('Firebaseの<strong>読み取り権限がありません</strong>。<br>' +
+          'Firebaseコンソール → Realtime Database → ルールで<br>' +
+          '<strong>requests に “.read”: true を追加</strong>して公開してください。<br>' +
+          '<span style="font-size:15px;color:#64748B">（詳しくは README.md の「Firebase 設定」を参照）</span>');
+        return;
+      }
       if (!req) {
         document.getElementById('week-label').textContent = 'シフトがまだありません';
         document.getElementById('stamp').textContent = '';
