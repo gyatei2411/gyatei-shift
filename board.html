@@ -86,6 +86,27 @@
     }
     td.cell .sub { font-size: 13px; font-weight: 700; opacity: 0.75; }
 
+    /* 出勤していないが「出られる」と答えた日 */
+    td.cell.av-o { background: #123024; color: #4ADE80; }
+    td.cell.av-t { background: #2E2410; color: #FBBF24; }
+    td.cell .mark { font-size: 24px; font-weight: 900; line-height: 1; }
+
+    /* 今週シフトが1日もない人（表の下に小さくまとめる） */
+    .resting {
+      flex: 0 0 auto;
+      display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+      padding: 6px 14px 0; font-size: 14px; color: #64748B; line-height: 1.6;
+    }
+    .resting .rt-label { font-weight: 800; color: #94A3B8; white-space: nowrap; }
+    .resting .rt-person {
+      background: #16202F; border-radius: 6px; padding: 2px 9px; white-space: nowrap;
+      color: #CBD5E1; font-weight: 700;
+    }
+    .resting .rt-person .rt-day { font-weight: 800; margin-left: 5px; }
+    .resting .rt-person .rt-o { color: #4ADE80; }
+    .resting .rt-person .rt-t { color: #FBBF24; }
+    .resting .rt-none { opacity: 0.55; }
+
     /* 人数が多い週は1行にまとめて、その分だけ文字を大きく見せる */
     table.board.compact td.cell { height: 42px; }
     table.board.compact td.cell .ci { flex-direction: row; align-items: baseline; gap: 8px; }
@@ -134,6 +155,7 @@
       <div class="fit-inner" id="fit-inner"></div>
     </div>
 
+    <div class="resting" id="resting" style="display:none"></div>
     <div class="legend" id="legend"></div>
   </div>
 
@@ -204,6 +226,8 @@
       document.getElementById('fit-inner').innerHTML = `<div class="msg">${html}</div>`;
       document.getElementById('fit-inner').style.transform = 'scale(1)';
       document.getElementById('legend').innerHTML = '';
+      const r = document.getElementById('resting');
+      if (r) { r.innerHTML = ''; r.style.display = 'none'; }
     }
 
     function render() {
@@ -241,22 +265,30 @@
         : '管理画面で確定するとスタッフ向けの正式版になります';
 
       const get = (name, d, f) => cells[App._safeCellKey(`s_${name}_${d}_${f}`)] || '';
+      const worksOn = (n, d) => !!(get(n, d, 'main') || get(n, d, 'start') || get(n, d, 'end'));
 
-      // 出勤が1日でもある人だけ表示（画面を最大限使うため）
-      const names = (req.staff || []).filter(n => {
-        for (let d = 0; d < 7; d++) {
-          if (closed.has(d)) continue;
-          if (get(n, d, 'main') || get(n, d, 'start') || get(n, d, 'end')) return true;
-        }
-        return false;
-      });
+      // 出勤可否（○△✕）: 確定時のスナップショット優先、無ければ手元の回答
+      const availMap = {};
+      const availSrc = (conf && conf.avail) ? conf.avail
+        : App.getReplies(reqId).map(r => ({ n: r.name, d: r.d }));
+      (availSrc || []).forEach(a => { if (a && a.n) availMap[a.n] = a.d || ''; });
+      const symOf = (n, d) => (availMap[n] || '')[d] || '';
 
-      if (!names.length) {
+      const all = (req.staff || []).slice();
+      const working = all.filter(n => { for (let d = 0; d < 7; d++) if (!closed.has(d) && worksOn(n, d)) return true; return false; });
+      const resting = all.filter(n => working.indexOf(n) < 0);
+
+      if (!working.length && !resting.length) {
+        showMsg('この週は<strong>スタッフが登録されていません</strong>。');
+        return;
+      }
+      if (!working.length) {
         showMsg('この週はまだ<strong>ポジションが割り当てられていません</strong>。<br>管理画面のシフト表で割り当ててから確定してください。');
         return;
       }
+      const names = working;
 
-      let html = `<table class="board${names.length > 12 ? ' compact' : ''}"><thead><tr><th class="corner"></th>`;
+      let html = `<table class="board${working.length > 12 ? ' compact' : ''}"><thead><tr><th class="corner"></th>`;
       dates.forEach((ds, i) => {
         let cls = 'day';
         if (i === 5) cls += ' sat';
@@ -271,31 +303,71 @@
       html += '</tr></thead><tbody>';
 
       const usedPos = {};
-      for (const name of names) {
-        html += `<tr><td class="name">${esc(name)}</td>`;
+      let usedAvail = false;
+
+      const rowFor = (name) => {
+        let r = `<tr><td class="name">${esc(name)}</td>`;
         for (let d = 0; d < 7; d++) {
-          if (closed.has(d)) { html += '<td class="cell closedday"></td>'; continue; }
+          if (closed.has(d)) { r += '<td class="cell closedday"></td>'; continue; }
           const pos = get(name, d, 'main');
           const sub = get(name, d, 'sub');
           const time = (get(name, d, 'start') + get(name, d, 'end')).trim();
-          if (!pos && !time) { html += '<td class="cell off"></td>'; continue; }
-          const cls = POS_CLASS[pos] || 'p-etc';
-          if (pos) usedPos[pos] = cls;
-          html += `<td class="cell ${cls}"><div class="ci">` +
-            (pos ? `<span class="pos">${esc(pos)}${sub ? `<span class="sub">+${esc(sub)}</span>` : ''}</span>` : '') +
-            (time ? `<span class="time">${esc(time)}</span>` : '') +
-            `</div></td>`;
+          if (pos || time) {
+            const cls = POS_CLASS[pos] || 'p-etc';
+            if (pos) usedPos[pos] = cls;
+            r += `<td class="cell ${cls}"><div class="ci">` +
+              (pos ? `<span class="pos">${esc(pos)}${sub ? `<span class="sub">+${esc(sub)}</span>` : ''}</span>` : '') +
+              (time ? `<span class="time">${esc(time)}</span>` : '') +
+              `</div></td>`;
+            continue;
+          }
+          // 出勤していない日 → ○/△で出せると答えていれば交代候補として表示
+          const sym = symOf(name, d);
+          if (sym === 'o' || sym === 't') {
+            usedAvail = true;
+            r += `<td class="cell av-${sym}"><div class="ci"><span class="mark">${sym === 'o' ? '○' : '△'}</span></div></td>`;
+          } else {
+            r += '<td class="cell off"></td>';
+          }
         }
-        html += '</tr>';
-      }
+        return r + '</tr>';
+      };
+
+      for (const name of names) html += rowFor(name);
       html += '</tbody></table>';
+
+      // 今週シフトなしの人は、表の下に小さくまとめて出す（在籍していることが分かるように）
+      const restEl = document.getElementById('resting');
+      if (resting.length) {
+        const chips = resting.map(n => {
+          const days = [];
+          for (let d = 0; d < 7; d++) {
+            if (closed.has(d)) continue;
+            const sm = symOf(n, d);
+            if (sm === 'o' || sm === 't') {
+              usedAvail = true;
+              days.push(`<span class="rt-day rt-${sm}">${App.DOW_LABELS[d]}${sm === 'o' ? '○' : '△'}</span>`);
+            }
+          }
+          return `<span class="rt-person${days.length ? '' : ' rt-none'}">${esc(n)}${days.join('')}</span>`;
+        }).join('');
+        restEl.innerHTML = `<span class="rt-label">今週シフトなし（${resting.length}名）</span>${chips}`;
+        restEl.style.display = '';
+      } else {
+        restEl.innerHTML = '';
+        restEl.style.display = 'none';
+      }
 
       document.getElementById('fit-inner').innerHTML = html;
 
       const order = ['K', 'R2', 'R2d', 'R1', 'W', 'T'];
-      document.getElementById('legend').innerHTML =
-        order.filter(p => usedPos[p]).map(p => `<span><i class="${usedPos[p]}">${p}</i></span>`).join('') +
-        '<span style="margin-left:auto">時間の「L」＝ラストまで</span>';
+      let leg = order.filter(p => usedPos[p]).map(p => `<span><i class="${usedPos[p]}">${p}</i></span>`).join('');
+      if (usedAvail) {
+        leg += '<span style="margin-left:14px"><i style="background:#123024;color:#4ADE80">○</i>' +
+               '<i style="background:#2E2410;color:#FBBF24">△</i>この日は出られると回答（交代を頼めます）</span>';
+      }
+      leg += '<span style="margin-left:auto">時間の「L」＝ラストまで</span>';
+      document.getElementById('legend').innerHTML = leg;
 
       fit();
     }

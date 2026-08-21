@@ -889,7 +889,9 @@ ${head}${rest}
       const version = (cur ? cur.version : 0) + 1;
       const at = new Date().toISOString();
       const history = (cur && cur.history ? cur.history : []).concat([{ v: version, at, changes }]);
-      App.saveConfirmed(currentReqId, { version, at, cells, history });
+      // 出勤可否も一緒に記録（タブレットで「入っていないが出られる日」を出すため）
+      const avail = App.getReplies(currentReqId).map(r => ({ n: r.name, d: r.d }));
+      App.saveConfirmed(currentReqId, { version, at, cells, avail, history });
       App.toast(`v${version} として確定しました`, 'success');
       renderConfirmStatus();
     }
