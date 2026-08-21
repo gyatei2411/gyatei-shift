@@ -101,7 +101,7 @@
     <div class="tab-pane" id="tab-staff" style="display:none">
       <div class="card">
         <h2>スタッフ名マスタ</h2>
-        <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R2d / R1 / W / T）の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。<br><strong>★優先</strong>にチェックを入れると、社会保険加入者など<strong>必ずシフトに入れたいメンバー</strong>として、自動割り当てで最優先に配置されます。</p>
+        <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R2d / R1 / W / T）の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。<br><strong>★優先</strong>にチェックを入れると、社会保険加入者など<strong>必ずシフトに入れたいメンバー</strong>として、自動割り当てで最優先に配置されます。<br><strong>メモ</strong>に「<strong>週3日まで</strong>」のように書くと、自動割り当てがその人の週の出勤日数の上限として扱います（★優先より上限が優先されます）。</p>
         <div class="form-group">
           <div style="display:flex;gap:8px">
             <input type="text" class="form-input" id="new-staff-input" placeholder="スタッフ名を追加" onkeydown="if(event.key==='Enter') addStaff()">
@@ -398,6 +398,7 @@
           </div>
           <div class="btn-row">
             <button class="btn btn-primary" onclick="openShiftView()" style="font-size:1rem">📋 シフト表を表示</button>
+            <button class="btn btn-outline btn-sm" onclick="openBoard()" title="確定したシフトをスタッフ全員向けに大きく表示">📺 タブレット表示</button>
             <button class="btn btn-outline btn-sm" onclick="downloadXlsx()" title="Excel形式でも出力できます">📥 Excel</button>
           </div>
         </div>
@@ -430,6 +431,11 @@
       // 同じドメインの shift-view.html を新タブで開く
       const url = location.pathname.replace(/admin\.html$/, 'shift-view.html') + '?id=' + encodeURIComponent(reqId);
       window.open(url, '_blank');
+    }
+
+    function openBoard() {
+      const id = App.getActiveRequest();
+      window.open('board.html' + (id ? '?id=' + encodeURIComponent(id) : ''), '_blank');
     }
 
     /* ===== スタッフ管理 ===== */

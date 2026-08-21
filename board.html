@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>今週のシフト - ぎゃあてい</title>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="shared.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%; overflow: hidden;
+      background: #0F172A;
+      font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    /* ===== 画面全体 ===== */
+    .screen { height: 100%; display: flex; flex-direction: column; }
+
+    /* 上部バー: 情報は小さく */
+    .topbar {
+      flex: 0 0 auto;
+      display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+      padding: 6px 14px;
+      color: #94A3B8; font-size: 12px;
+    }
+    .topbar .week {
+      color: #F8FAFC; font-size: 22px; font-weight: 800; letter-spacing: 0.02em;
+    }
+    .topbar .stamp { color: #64748B; }
+    .topbar .spacer { flex: 1; }
+    .topbar button {
+      background: #1E293B; color: #94A3B8; border: 1px solid #334155;
+      border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+      font-family: inherit;
+    }
+    .topbar button:disabled { opacity: 0.3; cursor: default; }
+    .badge-draft {
+      background: #B45309; color: #FFF7ED; padding: 3px 10px; border-radius: 999px;
+      font-size: 12px; font-weight: 800;
+    }
+
+    /* 表を画面いっぱいに拡大する領域 */
+    .fit-wrap { flex: 1 1 auto; position: relative; overflow: hidden; }
+    .fit-inner { position: absolute; top: 0; left: 0; transform-origin: top left; }
+
+    /* ===== シフト表 ===== */
+    table.board { border-collapse: separate; border-spacing: 3px; }
+    table.board th, table.board td { text-align: center; vertical-align: middle; }
+
+    /* 曜日ヘッダ */
+    th.day {
+      background: #1E293B; color: #CBD5E1; border-radius: 8px;
+      padding: 6px 10px; min-width: 118px;
+    }
+    th.day .d-date { font-size: 22px; font-weight: 800; line-height: 1.1; }
+    th.day .d-dow { font-size: 15px; font-weight: 700; opacity: 0.8; }
+    th.day.sat .d-dow { color: #60A5FA; }
+    th.day.sun .d-dow { color: #F87171; }
+    th.day.today { background: #4338CA; color: #fff; box-shadow: 0 0 0 3px #818CF8; }
+    th.day.closed { background: #172033; color: #475569; }
+
+    th.corner { background: transparent; }
+
+    /* 名前 */
+    td.name {
+      background: #1E293B; color: #F1F5F9; border-radius: 8px;
+      font-size: 24px; font-weight: 800;
+      text-align: left; padding: 4px 14px; white-space: nowrap;
+      min-width: 130px;
+    }
+
+    /* 勤務セル */
+    td.cell { border-radius: 8px; padding: 4px 6px; min-width: 118px; height: 62px; }
+    td.cell.off { background: #131C2E; }
+    td.cell.closedday { background: #0B1220; }
+    td.cell .ci { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    td.cell .pos {
+      font-size: 30px; font-weight: 900; line-height: 1.05; letter-spacing: 0.02em;
+    }
+    td.cell .time {
+      font-size: 20px; font-weight: 800; line-height: 1.15;
+    }
+    td.cell .sub { font-size: 13px; font-weight: 700; opacity: 0.75; }
+
+    /* 人数が多い週は1行にまとめて、その分だけ文字を大きく見せる */
+    table.board.compact td.cell { height: 42px; }
+    table.board.compact td.cell .ci { flex-direction: row; align-items: baseline; gap: 8px; }
+    table.board.compact td.name { font-size: 21px; padding: 2px 12px; }
+    table.board.compact th.day { padding: 3px 8px; }
+
+    /* ポジション別の色分け */
+    .p-K   { background: #7F1D1D; color: #FEE2E2; }
+    .p-R2  { background: #1E3A8A; color: #DBEAFE; }
+    .p-R2d { background: #1E40AF; color: #DBEAFE; }
+    .p-R1  { background: #334155; color: #E2E8F0; }
+    .p-W   { background: #14532D; color: #DCFCE7; }
+    .p-T   { background: #581C87; color: #F3E8FF; }
+    .p-etc { background: #334155; color: #E2E8F0; }
+
+    /* 凡例（小さく） */
+    .legend {
+      flex: 0 0 auto;
+      display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+      padding: 5px 14px 8px; font-size: 12px; color: #64748B;
+    }
+    .legend i {
+      display: inline-block; padding: 2px 8px; border-radius: 5px;
+      font-style: normal; font-weight: 800; margin-right: 3px;
+    }
+
+    .msg {
+      color: #94A3B8; text-align: center; padding: 60px 20px; font-size: 20px; line-height: 1.9;
+    }
+    .msg strong { color: #F1F5F9; }
+  </style>
+</head>
+<body>
+  <div class="screen">
+    <div class="topbar">
+      <span class="week" id="week-label">読み込み中…</span>
+      <span class="badge-draft" id="draft-badge" style="display:none">未確定（下書き）</span>
+      <span class="stamp" id="stamp"></span>
+      <span class="spacer"></span>
+      <button id="btn-prev" onclick="moveWeek(-1)">◀ 前の週</button>
+      <button id="btn-next" onclick="moveWeek(1)">次の週 ▶</button>
+      <button onclick="location.reload()">🔄 更新</button>
+    </div>
+
+    <div class="fit-wrap" id="fit-wrap">
+      <div class="fit-inner" id="fit-inner"></div>
+    </div>
+
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <script>
+    const POS_CLASS = { K: 'p-K', R2: 'p-R2', R2d: 'p-R2d', R1: 'p-R1', W: 'p-W', T: 'p-T' };
+    let reqIds = [];      // 表示対象の依頼ID（週の古い順）
+    let cursor = 0;       // reqIds 内の現在位置
+
+    function init() {
+      App.initFirebase();
+      if (App.isOnline()) {
+        App.subscribeRequests(() => { pickWeeks(); render(); });
+      }
+      pickWeeks();
+      render();
+      window.addEventListener('resize', fit);
+      // タブレット放置対策: 5分ごとに再描画（日付またぎ・同期漏れ対策）
+      setInterval(() => { pickWeeks(); render(); }, 5 * 60 * 1000);
+    }
+
+    // 表示できる週を集める（確定済みを優先。無ければ全依頼）
+    function pickWeeks() {
+      const prevId = reqIds[cursor];
+      const all = App.getRequests().slice().sort((a, b) => a.ws < b.ws ? -1 : 1);
+      const confirmed = all.filter(r => App.getConfirmed(r.id));
+      const list = confirmed.length ? confirmed : all;
+      reqIds = list.map(r => r.id);
+
+      const urlId = new URLSearchParams(location.search).get('id');
+      let idx = -1;
+      if (urlId && reqIds.includes(urlId)) idx = reqIds.indexOf(urlId);
+      else if (prevId && reqIds.includes(prevId)) idx = reqIds.indexOf(prevId);
+      else {
+        // 今日を含む週 → 無ければ一番新しい週
+        const today = App.toDateStr ? App.toDateStr(new Date()) : null;
+        const thisWs = App.weekStart();
+        idx = reqIds.findIndex(id => (App.getRequest(id) || {}).ws === thisWs);
+        if (idx < 0) idx = reqIds.length - 1;
+      }
+      cursor = Math.max(0, idx);
+    }
+
+    function moveWeek(step) {
+      const next = cursor + step;
+      if (next < 0 || next >= reqIds.length) return;
+      cursor = next;
+      // URL固定を解除してから描画
+      history.replaceState(null, '', location.pathname);
+      render();
+    }
+
+    function fmtStamp(iso) {
+      const d = new Date(iso);
+      if (isNaN(d)) return '';
+      const p2 = n => String(n).padStart(2, '0');
+      return `${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+    }
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    }
+
+    function showMsg(html) {
+      document.getElementById('fit-inner').innerHTML = `<div class="msg">${html}</div>`;
+      document.getElementById('fit-inner').style.transform = 'scale(1)';
+      document.getElementById('legend').innerHTML = '';
+    }
+
+    function render() {
+      document.getElementById('btn-prev').disabled = cursor <= 0;
+      document.getElementById('btn-next').disabled = cursor >= reqIds.length - 1;
+
+      const reqId = reqIds[cursor];
+      const req = reqId ? App.getRequest(reqId) : null;
+      if (!req) {
+        document.getElementById('week-label').textContent = 'シフトがまだありません';
+        document.getElementById('stamp').textContent = '';
+        showMsg('確定されたシフトがまだありません。<br>管理画面でシフトを作成し、<strong>「シフトを確定」</strong>を押してください。');
+        return;
+      }
+
+      const conf = App.getConfirmed(reqId);
+      const cells = conf ? (conf.cells || {}) : App.getManual(reqId);
+      const closed = new Set(req.closed || []);
+      const dates = App.weekDates(req.ws);
+      const todayStr = new Date().toISOString().slice(0, 10);
+
+      document.getElementById('week-label').textContent = App.weekLabel(req.ws);
+      document.getElementById('draft-badge').style.display = conf ? 'none' : '';
+      document.getElementById('stamp').textContent = conf
+        ? `確定 v${conf.version}・${fmtStamp(conf.at)}${(conf.history || []).length > 1 ? `（修正${conf.history.length - 1}回）` : ''}`
+        : '管理画面で確定するとスタッフ向けの正式版になります';
+
+      const get = (name, d, f) => cells[App._safeCellKey(`s_${name}_${d}_${f}`)] || '';
+
+      // 出勤が1日でもある人だけ表示（画面を最大限使うため）
+      const names = (req.staff || []).filter(n => {
+        for (let d = 0; d < 7; d++) {
+          if (closed.has(d)) continue;
+          if (get(n, d, 'main') || get(n, d, 'start') || get(n, d, 'end')) return true;
+        }
+        return false;
+      });
+
+      if (!names.length) {
+        showMsg('この週はまだ<strong>ポジションが割り当てられていません</strong>。<br>管理画面のシフト表で割り当ててから確定してください。');
+        return;
+      }
+
+      let html = `<table class="board${names.length > 12 ? ' compact' : ''}"><thead><tr><th class="corner"></th>`;
+      dates.forEach((ds, i) => {
+        let cls = 'day';
+        if (i === 5) cls += ' sat';
+        if (i === 6) cls += ' sun';
+        if (closed.has(i)) cls += ' closed';
+        if (ds === todayStr) cls += ' today';
+        html += `<th class="${cls}">
+          <div class="d-date">${App.fmtMD(ds)}</div>
+          <div class="d-dow">${App.DOW_LABELS[i]}${closed.has(i) ? '・定休' : ''}</div>
+        </th>`;
+      });
+      html += '</tr></thead><tbody>';
+
+      const usedPos = {};
+      for (const name of names) {
+        html += `<tr><td class="name">${esc(name)}</td>`;
+        for (let d = 0; d < 7; d++) {
+          if (closed.has(d)) { html += '<td class="cell closedday"></td>'; continue; }
+          const pos = get(name, d, 'main');
+          const sub = get(name, d, 'sub');
+          const time = (get(name, d, 'start') + get(name, d, 'end')).trim();
+          if (!pos && !time) { html += '<td class="cell off"></td>'; continue; }
+          const cls = POS_CLASS[pos] || 'p-etc';
+          if (pos) usedPos[pos] = cls;
+          html += `<td class="cell ${cls}"><div class="ci">` +
+            (pos ? `<span class="pos">${esc(pos)}${sub ? `<span class="sub">+${esc(sub)}</span>` : ''}</span>` : '') +
+            (time ? `<span class="time">${esc(time)}</span>` : '') +
+            `</div></td>`;
+        }
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+
+      document.getElementById('fit-inner').innerHTML = html;
+
+      const order = ['K', 'R2', 'R2d', 'R1', 'W', 'T'];
+      document.getElementById('legend').innerHTML =
+        order.filter(p => usedPos[p]).map(p => `<span><i class="${usedPos[p]}">${p}</i></span>`).join('') +
+        '<span style="margin-left:auto">時間の「L」＝ラストまで</span>';
+
+      fit();
+    }
+
+    // 表を画面いっぱいまで拡大／縮小する（縦横どちらも余白を残さない）
+    function fit() {
+      const wrap = document.getElementById('fit-wrap');
+      const inner = document.getElementById('fit-inner');
+      if (!inner.firstElementChild) return;
+      const table = inner.querySelector('table');
+      if (table) table.style.width = '';
+      inner.style.transform = 'scale(1)';
+      inner.style.left = '0px';
+      let w = inner.scrollWidth, h = inner.scrollHeight;
+      if (!w || !h) return;
+      const availW = wrap.clientWidth, availH = wrap.clientHeight;
+      let s = Math.min(availW / w, availH / h);
+      // 高さで頭打ちなら、横方向の余りを列幅に配って文字をさらに大きく見せる
+      if (table && availW / w > availH / h) {
+        table.style.width = Math.floor(availW / s) + 'px';
+        w = inner.scrollWidth; h = inner.scrollHeight;
+        s = Math.min(availW / w, availH / h);
+      }
+      inner.style.transform = `scale(${s})`;
+      inner.style.left = Math.max(0, (availW - inner.scrollWidth * s) / 2) + 'px';
+    }
+
+    init();
+  </script>
+</body>
+</html>

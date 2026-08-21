@@ -115,6 +115,7 @@ const App = {
     active:   'sa_v4_active',
     manual:   'sa_v4_manual',
     staffmeta: 'sa_v4_staffmeta',
+    confirmed: 'sa_v4_confirmed',
     seenWelcome: 'sa_v4_seen_welcome'
   },
 
@@ -357,6 +358,89 @@ const App = {
       try { document.execCommand('copy'); document.body.removeChild(ta); return true; }
       catch (e) { document.body.removeChild(ta); return false; }
     });
+  },
+
+
+  /* ===== 確定シフト（スナップショット＋修正履歴） ===== */
+
+  // { reqId: { version, at, cells:{...}, history:[{v, at, changes:[...]}] } }
+  getConfirmedAll() { return App._read(App.KEYS.confirmed, {}); },
+  getConfirmed(reqId) { return App.getConfirmedAll()[reqId] || null; },
+
+  saveConfirmed(reqId, snap) {
+    const all = App.getConfirmedAll();
+    all[reqId] = snap;
+    App._write(App.KEYS.confirmed, all);
+    if (App.fbReady) {
+      App.fbDB.ref('requests/' + reqId + '/confirmed').set(snap)
+        .catch(e => console.error('FB confirmed save failed', e));
+    }
+  },
+
+  // 確定を取り消す（履歴ごと削除）
+  clearConfirmed(reqId) {
+    const all = App.getConfirmedAll();
+    delete all[reqId];
+    App._write(App.KEYS.confirmed, all);
+    if (App.fbReady) App.fbDB.ref('requests/' + reqId + '/confirmed').remove().catch(() => {});
+  },
+
+  subscribeConfirmed(reqId, onUpdate) {
+    if (!App.fbReady) return null;
+    const lkey = 'c_' + reqId;
+    if (App.fbListeners[lkey]) App.fbListeners[lkey]();
+    const ref = App.fbDB.ref('requests/' + reqId + '/confirmed');
+    const cb = (snap) => {
+      const data = snap.val();
+      const all = App.getConfirmedAll();
+      if (data) {
+        data.cells = data.cells || {};
+        data.history = data.history || [];
+        all[reqId] = data;
+      } else {
+        delete all[reqId];
+      }
+      App._write(App.KEYS.confirmed, all);
+      onUpdate && onUpdate();
+    };
+    ref.on('value', cb, () => {});
+    App.fbListeners[lkey] = () => ref.off('value', cb);
+    return App.fbListeners[lkey];
+  },
+
+  // 依頼一覧をFirebaseから読み込む（タブレット表示など、依頼を作っていない端末用）
+  subscribeRequests(onUpdate) {
+    if (!App.fbReady) return null;
+    const lkey = 'reqlist';
+    if (App.fbListeners[lkey]) App.fbListeners[lkey]();
+    const ref = App.fbDB.ref('requests');
+    const cb = (snap) => {
+      const data = snap.val() || {};
+      const reqs = [];
+      const confirmedAll = App.getConfirmedAll();
+      const manualAll = App._read(App.KEYS.manual, {});
+      Object.keys(data).forEach(id => {
+        const r = data[id] || {};
+        if (!r.ws) return;
+        reqs.push({ id, ws: r.ws, shop: r.shop || '', staff: r.staff || [], closed: r.closed || [], createdAt: r.createdAt || '' });
+        manualAll[id] = r.manual || {};
+        if (r.confirmed) {
+          const c = r.confirmed;
+          c.cells = c.cells || {};
+          c.history = c.history || [];
+          confirmedAll[id] = c;
+        } else {
+          delete confirmedAll[id];
+        }
+      });
+      App._write(App.KEYS.requests, reqs);
+      App._write(App.KEYS.manual, manualAll);
+      App._write(App.KEYS.confirmed, confirmedAll);
+      onUpdate && onUpdate();
+    };
+    ref.on('value', cb, () => {});
+    App.fbListeners[lkey] = () => ref.off('value', cb);
+    return App.fbListeners[lkey];
   },
 
   lineShareUrl(text) {

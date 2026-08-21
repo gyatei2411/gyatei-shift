@@ -85,7 +85,8 @@
             ⚠ △（条件付き）を選んだ日があります。<br>
             <strong>①各曜日の「出勤できる時間帯」欄</strong>か、<strong>②この全体備考</strong>の<u>どちらか</u>に、出勤できる時間を必ず書いてください。<br>
             ・曜日ごとに条件が違う → ①に曜日ごとに記入<br>
-            ・全部同じ条件（例: 毎日 9:30-15:30） → ②にまとめて記入でOK
+            ・全部同じ条件（例: 毎日 9:30-15:30） → ②にまとめて記入でOK<br>
+            <span style="display:inline-block;margin-top:6px">※シフトは <strong>9:00〜18:00</strong> の中で組んでいます</span>
           </div>
         </div>
 
@@ -193,7 +194,7 @@
             <div class="day-note-wrap" id="dnw-${i}">
               <label class="dn-label" for="dn-${i}">${day}曜の出勤できる時間帯</label>
               <input type="text" class="day-note" id="dn-${i}" inputmode="text"
-                placeholder="例: 9:30-16 / 11時-15時半 / 17時以降"
+                placeholder="例: 9:30-16 / 11時-15時半 / 14時まで"
                 oninput="setDayNote(${i}, this.value)">
             </div>
           </div>

@@ -176,6 +176,10 @@
         <span><i class="t">△</i>条件付</span>
         <span><i class="x">✕</i>不可</span>
       </div>
+      <span id="confirm-badge" style="display:none;font-size:0.8rem;font-weight:800;background:rgba(255,255,255,0.28);padding:7px 11px;border-radius:8px"></span>
+      <button id="btn-confirm" onclick="confirmShift()" style="background:#059669">✅ シフトを確定</button>
+      <button id="btn-history" onclick="openHistory()" style="display:none">📜 履歴</button>
+      <a id="link-board" href="board.html" target="_blank">📺 タブレット表示</a>
       <button onclick="autoAssign()" style="background:#F59E0B">⚡ 自動割り当て</button>
       <button onclick="copyForClaude()">🤖 Claude用コピー</button>
       <button onclick="openImportDialog()">📥 結果取り込み</button>
@@ -213,6 +217,19 @@
     </div>
   </div>
 
+  <!-- 修正履歴 -->
+  <div id="history-dialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:300;align-items:center;justify-content:center;padding:20px">
+    <div style="background:#fff;border-radius:14px;padding:24px;max-width:720px;width:100%;max-height:82vh;overflow-y:auto">
+      <h2 style="font-size:1.05rem;font-weight:800;margin-bottom:4px">📜 確定・修正の履歴</h2>
+      <p style="font-size:0.82rem;color:#64748B;margin-bottom:14px">新しいものが上です。タブレットには一番新しい確定内容が表示されます。</p>
+      <div id="history-body"></div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:space-between">
+        <button onclick="unconfirmShift()" style="background:#fff;border:1.5px solid #FCA5A5;color:#B91C1C;padding:9px 16px;border-radius:8px;cursor:pointer;font-weight:700;font-size:0.85rem">確定を取り消す</button>
+        <button onclick="closeHistory()" style="background:#4F46E5;color:#fff;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-weight:700">閉じる</button>
+      </div>
+    </div>
+  </div>
+
   <div class="sv-container">
     <div id="content"></div>
   </div>
@@ -238,6 +255,7 @@
       if (App.isOnline()) {
         App.subscribeReplies(currentReqId, deferredRender);
         App.subscribeManual(currentReqId, deferredRender);
+        App.subscribeConfirmed(currentReqId, renderConfirmStatus);
       }
       render();
     }
@@ -403,6 +421,9 @@
         noteEl.value = manual[App._safeCellKey('assign_note')] || '';
       }
       attachEditHandlers();
+      renderConfirmStatus();
+      const boardLink = document.getElementById('link-board');
+      if (boardLink) boardLink.href = 'board.html?id=' + encodeURIComponent(currentReqId);
     }
 
     function saveAssignNote(val) {
@@ -438,6 +459,7 @@
         td.dataset.sym = dataSym;
       }
       showSaved();
+      renderConfirmStatus();
     }
 
     function showSaved() {
@@ -549,6 +571,15 @@
       return result;
     }
 
+    // スタッフマスタの個人メモから「週N日まで」上限をパース
+    //（誤検出を避けるため「週N日」か「N日まで/以内/だけ/のみ」の形だけ拾う）
+    function parseMaxDaysFromMemo(note) {
+      if (!note) return undefined;
+      const s = String(note).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+      const m = s.match(/週\s*(\d{1,2})\s*日/) || s.match(/(\d{1,2})\s*日\s*(?:まで|以内|だけ|のみ)/);
+      return m ? parseInt(m[1], 10) : undefined;
+    }
+
     // 時刻数値→表示文字列 (9→'9', 9.5→'930', 16→'-16'等)
     function fmtStart(t) { return t % 1 === 0.5 ? `${Math.floor(t)}30` : String(t); }
     function fmtEnd(t) { return t >= 99 ? '-L' : (t % 1 === 0.5 ? `-${Math.floor(t)}30` : `-${t}`); }
@@ -574,7 +605,15 @@
 
       if (!confirm('自動割り当てを実行します。\n既存のポジション・時間の手入力は上書きされます。よろしいですか？')) return;
 
+      // 出勤日数の上限: 今週の「割り当て指示」が最優先、無ければスタッフマスタの個人メモ
       const maxDays = parseMaxDays(assignNote, replies.map(r => r.name));
+      const memoLimits = [];  // 個人メモ由来の上限（適用結果を報告する）
+      replies.forEach(r => {
+        if (maxDays[r.name] !== undefined) return;
+        const v = parseMaxDaysFromMemo((meta[r.name] || {}).note);
+        if (v !== undefined) { maxDays[r.name] = v; memoLimits.push(`${r.name}: 週${v}日まで`); }
+      });
+
       const timeCons = {};  // name → { day: {start,end} }
       replies.forEach(r => { timeCons[r.name] = buildTimeCons(r); });
 
@@ -721,9 +760,168 @@
 
       let msg = `✓ ${results.length}件割り当てました`;
       if (shortages.length) msg += `\n\n【人数不足】\n${shortages.join('\n')}`;
+      if (memoLimits.length) msg += `\n\n【スタッフマスタのメモから出勤上限を適用】\n${memoLimits.join(' / ')}`;
       if (overStaffed.length) msg += `\n\n【★優先メンバーのため定員超で追加】\n${overStaffed.join('\n')}`;
       if (skipped.length) msg += `\n\n【△の時間を解釈できず未割当】\n${skipped.join(' / ')}\n→ 手動で調整するか、🤖Claude連携をお使いください`;
       alert(msg);
+    }
+
+    /* ===== 確定シフト（記録＋修正履歴） ===== */
+
+    // 割り当て指示メモは履歴の対象外
+    function currentCells() {
+      const manual = App.getManual(currentReqId);
+      const cells = {};
+      Object.keys(manual).forEach(k => { if (k !== 'assign_note') cells[k] = manual[k]; });
+      return cells;
+    }
+
+    function fmtStamp(iso) {
+      const d = new Date(iso);
+      if (isNaN(d)) return iso || '';
+      const p2 = n => String(n).padStart(2, '0');
+      return `${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+    }
+
+    // 2つのスナップショットの差分を日本語の行にする
+    function diffCells(oldCells, newCells, req) {
+      oldCells = oldCells || {}; newCells = newCells || {};
+      const dates = App.weekDates(req.ws);
+      const dayLabel = i => `${App.fmtMD(dates[i])}(${App.DOW_LABELS[i]})`;
+      const keys = {};
+      Object.keys(oldCells).forEach(k => keys[k] = 1);
+      Object.keys(newCells).forEach(k => keys[k] = 1);
+
+      const touched = {};   // "name@@day" -> true
+      const others = [];
+      Object.keys(keys).forEach(k => {
+        const a = oldCells[k] || '', b = newCells[k] || '';
+        if (a === b) return;
+        let m;
+        if ((m = k.match(/^s_(.+)_(\d)_(start|end|time|sub|main|sym)$/))) { touched[m[1] + '@@' + m[2]] = 1; return; }
+        if ((m = k.match(/^note_(\d)$/))) { others.push(`${dayLabel(+m[1])} 備考: ${a || '(空)'} → ${b || '(空)'}`); return; }
+        if ((m = k.match(/^h_(yoso|up|bup)_(\d)$/))) {
+          const L = { yoso: '予想', up: 'UP', bup: '物販' }[m[1]];
+          others.push(`${dayLabel(+m[2])} ${L}: ${a || '(空)'} → ${b || '(空)'}`); return;
+        }
+        if ((m = k.match(/^p_(.+)_(\d)$/))) { others.push(`${dayLabel(+m[2])} ${m[1]}人数: ${a || '(空)'} → ${b || '(空)'}`); return; }
+        others.push(`${k}: ${a || '(空)'} → ${b || '(空)'}`);
+      });
+
+      const summarize = (cells, name, d) => {
+        const get = f => cells[App._safeCellKey(`s_${name}_${d}_${f}`)] || '';
+        const pos = get('main'), sub = get('sub'), st = get('start'), en = get('end');
+        if (!pos && !sub && !st && !en) return '出勤なし';
+        const t = (st || en) ? `${st}${en}` : '';
+        return (pos || '—') + (sub ? `/サブ${sub}` : '') + (t ? ` ${t}` : '');
+      };
+
+      const lines = Object.keys(touched).map(g => {
+        const parts = g.split('@@');
+        const name = parts[0], d = +parts[1];
+        return { d, name, txt: `${dayLabel(d)} ${name}: ${summarize(oldCells, name, d)} → ${summarize(newCells, name, d)}` };
+      });
+      lines.sort((a, b) => a.d - b.d || (a.name < b.name ? -1 : 1));
+      return lines.map(l => l.txt).concat(others);
+    }
+
+    function renderConfirmStatus() {
+      const btn = document.getElementById('btn-confirm');
+      const badge = document.getElementById('confirm-badge');
+      const hist = document.getElementById('btn-history');
+      if (!btn) return;
+      const c = App.getConfirmed(currentReqId);
+      if (!c) {
+        btn.textContent = '✅ シフトを確定';
+        btn.style.background = '#059669';
+        badge.style.display = 'none';
+        hist.style.display = 'none';
+        return;
+      }
+      hist.style.display = '';
+      hist.textContent = `📜 履歴(${(c.history || []).length})`;
+      const req = App.getRequest(currentReqId);
+      const dirty = req ? diffCells(c.cells, currentCells(), req).length > 0 : false;
+      badge.style.display = '';
+      if (dirty) {
+        badge.innerHTML = `⚠ 未確定の修正あり（表示中は v${c.version}）`;
+        badge.style.background = '#F59E0B';
+        btn.textContent = '🔄 修正を確定';
+        btn.style.background = '#059669';
+      } else {
+        badge.innerHTML = `✅ 確定済み v${c.version}・${fmtStamp(c.at)}`;
+        badge.style.background = 'rgba(255,255,255,0.28)';
+        btn.textContent = '✅ 確定済み';
+        btn.style.background = 'rgba(255,255,255,0.2)';
+      }
+    }
+
+    function confirmShift() {
+      const req = App.getRequest(currentReqId);
+      if (!req) { App.toast('依頼データがありません', 'error'); return; }
+      const cells = currentCells();
+      const cur = App.getConfirmed(currentReqId);
+
+      let changes, msg;
+      if (!cur) {
+        const n = Object.keys(cells).filter(k => /^s_.+_\d_main$/.test(k)).length;
+        if (!n && !confirm('ポジションが1件も入力されていません。このまま確定しますか？')) return;
+        changes = [`初回確定（ポジション割り当て ${n}件）`];
+        msg = `このシフトを確定して記録します。
+確定した内容がタブレット（スタッフ用画面）に表示されます。
+
+よろしいですか？`;
+      } else {
+        changes = diffCells(cur.cells, cells, req);
+        if (!changes.length) { App.toast('前回の確定から変更はありません', 'warn'); return; }
+        const head = changes.slice(0, 12).join('\n');
+        const rest = changes.length > 12 ? `
+…ほか${changes.length - 12}件` : '';
+        msg = `v${cur.version + 1} として修正を確定します。
+
+【修正内容 ${changes.length}件】
+${head}${rest}
+
+よろしいですか？`;
+      }
+      if (!confirm(msg)) return;
+
+      const version = (cur ? cur.version : 0) + 1;
+      const at = new Date().toISOString();
+      const history = (cur && cur.history ? cur.history : []).concat([{ v: version, at, changes }]);
+      App.saveConfirmed(currentReqId, { version, at, cells, history });
+      App.toast(`v${version} として確定しました`, 'success');
+      renderConfirmStatus();
+    }
+
+    function openHistory() {
+      const c = App.getConfirmed(currentReqId);
+      const body = document.getElementById('history-body');
+      if (!c || !(c.history || []).length) {
+        body.innerHTML = '<div style="color:#94A3B8;font-size:0.9rem">まだ確定されていません。</div>';
+      } else {
+        body.innerHTML = c.history.slice().reverse().map(h => `
+          <div style="border:1.5px solid ${h.v === c.version ? '#A7F3D0' : '#E2E8F0'};background:${h.v === c.version ? '#F0FDF4' : '#fff'};border-radius:10px;padding:12px 14px;margin-bottom:10px">
+            <div style="font-weight:800;font-size:0.92rem;margin-bottom:6px">
+              v${h.v}${h.v === c.version ? '（最新・タブレット表示中）' : ''}
+              <span style="font-weight:500;color:#64748B;font-size:0.82rem;margin-left:8px">${fmtStamp(h.at)}</span>
+            </div>
+            <div style="font-size:0.84rem;color:#334155;line-height:1.7">
+              ${(h.changes || []).map(x => `・${escapeHtml(x)}`).join('<br>')}
+            </div>
+          </div>
+        `).join('');
+      }
+      document.getElementById('history-dialog').style.display = 'flex';
+    }
+    function closeHistory() { document.getElementById('history-dialog').style.display = 'none'; }
+
+    function unconfirmShift() {
+      if (!confirm('確定を取り消します。\n修正履歴もすべて削除され、タブレットにこの週は表示されなくなります。\n\nよろしいですか？')) return;
+      App.clearConfirmed(currentReqId);
+      closeHistory();
+      renderConfirmStatus();
+      App.toast('確定を取り消しました', 'warn');
     }
 
     /* ===== Claude連携 ===== */
