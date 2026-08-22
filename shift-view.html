@@ -735,9 +735,9 @@
         // ── 第2パス: 優先枠に入れなかった人を残り枠に配置 ──
         //（例: Wしかできない人がいるのにW枠が開いていない場合、W枠を追加で開く）
         const extraSlots = PRIORITY_SLOTS.slice(openSlots.length);
+        const extraNeeds = {};
+        extraSlots.forEach(p => { extraNeeds[p] = (extraNeeds[p] || 0) + 1; });
         if (extraSlots.length) {
-          const extraNeeds = {};
-          extraSlots.forEach(p => { extraNeeds[p] = (extraNeeds[p] || 0) + 1; });
           for (const person of sorted) {
             if (assignedToday.has(person.name)) continue;
             const cands = candsFor(person, extraNeeds);
@@ -745,6 +745,44 @@
             cands.sort((p1, p2) => PRIORITY_SLOTS.indexOf(p1) - PRIORITY_SLOTS.indexOf(p2));
             assignPerson(person, cands[0], extraNeeds);
           }
+        }
+        // 残った枠を needs にまとめる（以降の修復パスと不足集計で使う）
+        Object.keys(extraNeeds).forEach(p => {
+          if (extraNeeds[p] > 0) needs[p] = (needs[p] || 0) + extraNeeds[p];
+        });
+
+        // ── 修復パス: 空いている枠を「配置済みの人の移動＋余っている人」で埋める ──
+        //   例) 青木(K,W可)がKに入り、Kしかできない山口が余ってWが不足
+        //        → 青木をWへ移し、空いたKに山口を入れる（定員は超えない）
+        const byName = {};
+        available.forEach(r => { byName[r.name] = r; });
+        for (let guard = 0; guard < 12; guard++) {
+          const openPos = Object.keys(needs).filter(p => needs[p] > 0 && p !== 'R1');
+          const idle = sorted.filter(r => !assignedToday.has(r.name));
+          if (!openPos.length || !idle.length) break;
+          let moved = false;
+          for (const p of openPos) {
+            // p に移せる配置済みの人（できるポジションが多い人＝調整役から）
+            const movable = results
+              .filter(r => r.day === day && r.pos !== p && (meta[r.name].positions || []).indexOf(p) >= 0)
+              .sort((a, b) => (meta[b.name].positions || []).length - (meta[a.name].positions || []).length);
+            for (const mv of movable) {
+              const u = idle.find(x => (meta[x.name].positions || []).indexOf(mv.pos) >= 0);
+              const person = byName[mv.name];
+              if (!u || !person) continue;
+              const freed = mv.pos;
+              results.splice(results.indexOf(mv), 1);
+              assignedToday.delete(mv.name);
+              assignedCount[mv.name]--;
+              needs[freed] = (needs[freed] || 0) + 1;
+              assignPerson(person, p, needs);   // 多能な人を空いていた枠へ
+              assignPerson(u, freed, needs);    // 空いた枠に余っていた人を
+              moved = true;
+              break;
+            }
+            if (moved) break;
+          }
+          if (!moved) break;
         }
 
         // ── 第3パス: ★優先メンバーが未配置なら、非優先の人と入れ替える ──
