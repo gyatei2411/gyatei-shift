@@ -190,29 +190,7 @@
       };
       App.saveRequest(req);
 
-      const baseUrl = location.origin + location.pathname.replace(/admin\.html$/, 'reply.html');
-      const url = App.buildRequestUrl(baseUrl, { v: 1, id: req.id, ws: req.ws, shop: req.shop, staff: req.staff, closed: req.closed });
-      const lineText = `【ぎゃあてい シフト希望調整】\n${App.weekLabel(req.ws)}\n下のリンクから○△✕をご記入ください。\n${url}`;
-
-      const resultEl = document.getElementById('request-result');
-      resultEl.style.display = '';
-      resultEl.innerHTML = `
-        <div class="card" style="background:#F0FDF4;border:1.5px solid #BBF7D0">
-          <h2 style="color:var(--success)">✓ 依頼を作成しました</h2>
-          <div class="form-group" style="margin-top:10px">
-            <label class="form-label">依頼URL</label>
-            <div class="url-box">${url}</div>
-            <div class="url-info">URL長: ${url.length}文字 / スタッフ: ${staff.length}名</div>
-          </div>
-          <div class="btn-row">
-            <button class="btn btn-primary" id="copy-url-btn">URLコピー</button>
-            <button class="btn btn-outline" id="copy-text-btn">案内文コピー</button>
-            <a class="btn btn-line" href="${App.lineShareUrl(lineText)}" target="_blank">LINEで送る</a>
-          </div>
-        </div>
-      `;
-      document.getElementById('copy-url-btn').onclick = () => App.copyToClipboard(url).then(ok => App.toast(ok?'URLをコピーしました':'失敗', ok?'success':'error'));
-      document.getElementById('copy-text-btn').onclick = () => App.copyToClipboard(lineText).then(ok => App.toast(ok?'案内文をコピーしました':'失敗', ok?'success':'error'));
+      showRequestUrl(req.id, '✓ 依頼を作成しました', false);
 
       renderPastRequests();
       App.toast('依頼を作成しました', 'success');
@@ -238,6 +216,7 @@
                 <span style="color:var(--muted);font-size:0.85rem;margin-left:8px">対象 ${r.staff.length}名 / 回答 ${replies.length}名</span>
               </div>
               <div class="btn-row">
+                <button class="btn btn-primary btn-sm" onclick="showUrlAgain('${r.id}')" title="作成時と同じURLをもう一度表示します。送り忘れや再送に">🔗 URLを表示</button>
                 <button class="btn btn-outline btn-sm" onclick="setActive('${r.id}'); switchTab('aggregate')">集計を見る</button>
                 <button class="btn btn-danger-outline btn-sm" onclick="if(confirm('この依頼と回答をすべて削除しますか？')) { App.deleteRequest('${r.id}'); renderPastRequests(); App.toast('削除しました','success'); }">削除</button>
               </div>
@@ -275,6 +254,73 @@
       ta.value = '';
       App.toast(`${ok}件取込${updated ? ` / ${updated}件上書き` : ''}${skipped ? ` / ${skipped}件スキップ` : ''}`, skipped ? 'warn' : 'success');
       renderAggregate();
+    }
+
+    /* ===== 依頼URLの表示 ===== */
+
+    function replyUrlFor(req) {
+      // 同じフォルダの reply.html を指す（末尾がadmin.htmlでもディレクトリURLでも対応）
+      const path = location.pathname;
+      const dir = path.slice(0, path.lastIndexOf('/') + 1);
+      const baseUrl = location.origin + dir + 'reply.html';
+      return App.buildRequestUrl(baseUrl, {
+        v: 1, id: req.id, ws: req.ws, shop: req.shop,
+        staff: req.staff, closed: req.closed || []
+      });
+    }
+
+    function lineTextFor(req, url) {
+      return `【ぎゃあてい シフト希望調整】\n${App.weekLabel(req.ws)}\n下のリンクから○△✕をご記入ください。\n${url}`;
+    }
+
+    // 依頼URLは依頼の中身から決まるので、何度出しても常に同じURLになる
+    function showRequestUrl(reqId, title, isReissue) {
+      const req = App.getRequest(reqId);
+      if (!req) { App.toast('依頼が見つかりません', 'error'); return; }
+      const url = replyUrlFor(req);
+      const lineText = lineTextFor(req, url);
+
+      // 作成当時と現在のスタッフマスタの差分（送る前の注意喚起）
+      const now = App.getStaff();
+      const added = now.filter(n => (req.staff || []).indexOf(n) < 0);
+      let diffHtml = '';
+      if (added.length) {
+        diffHtml = `
+          <div style="margin-top:10px;padding:10px 12px;background:#FFFBEB;border:1.5px solid #FCD34D;border-radius:8px;font-size:0.84rem;color:#92400E">
+            ⚠ この依頼を作ったあとに入った人がいます: <strong>${added.join(' / ')}</strong><br>
+            このURLには含まれていないので、この人にも回答してほしい場合は
+            上の「依頼URLを生成」から新しく作り直してください。
+          </div>`;
+      }
+
+      const resultEl = document.getElementById('request-result');
+      resultEl.style.display = '';
+      resultEl.innerHTML = `
+        <div class="card" style="background:${isReissue ? '#EEF2FF' : '#F0FDF4'};border:1.5px solid ${isReissue ? '#C7D2FE' : '#BBF7D0'}">
+          <h2 style="color:${isReissue ? 'var(--primary)' : 'var(--success)'}">${title}</h2>
+          <p class="card-sub" style="margin:2px 0 0">${App.weekLabel(req.ws)}の依頼${isReissue ? '（何度表示しても同じURLです。すでに届いている回答はそのまま残ります）' : ''}</p>
+          <div class="form-group" style="margin-top:10px">
+            <label class="form-label">依頼URL</label>
+            <div class="url-box">${url}</div>
+            <div class="url-info">URL長: ${url.length}文字 / スタッフ: ${(req.staff || []).length}名</div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="copy-url-btn">URLコピー</button>
+            <button class="btn btn-outline" id="copy-text-btn">案内文コピー</button>
+            <a class="btn btn-line" href="${App.lineShareUrl(lineText)}" target="_blank">LINEで送る</a>
+          </div>
+          ${diffHtml}
+        </div>
+      `;
+      document.getElementById('copy-url-btn').onclick = () => App.copyToClipboard(url).then(ok => App.toast(ok ? 'URLをコピーしました' : '失敗', ok ? 'success' : 'error'));
+      document.getElementById('copy-text-btn').onclick = () => App.copyToClipboard(lineText).then(ok => App.toast(ok ? '案内文をコピーしました' : '失敗', ok ? 'success' : 'error'));
+      resultEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // 送り忘れたときなどに、作成時と同じURLをもう一度出す
+    function showUrlAgain(reqId) {
+      switchTab('create');
+      showRequestUrl(reqId, '🔗 依頼URL（作成時と同じURLです）', true);
     }
 
     function setActive(id) {
