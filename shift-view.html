@@ -774,23 +774,38 @@
           if (r.pos === 'T' && !r.pos2 && !(meta[r.name] || {}).t2extra && canPart2(r, 'T')) take(r);
         });
         // ③ 残りは2部の回数が少ない人から
+        //    ただし応援Tがいる日は、入れ替わりで上がる役として R2／R2d の人を先に入れる
+        const hasExtraT = todays.some(r => (meta[r.name] || {}).t2extra && canPart2(r, 'T'));
         todays.filter(r => !r.pos2 && !(meta[r.name] || {}).t2extra && canPart2(r, 'T'))
-          .sort((a, b) => second[a.name] - second[b.name] || assignedCount[b.name] - assignedCount[a.name])
+          .sort((a, b) => {
+            if (hasExtraT) {
+              const ar = (a.pos === 'R2' || a.pos === 'R2d') ? 0 : 1;
+              const br = (b.pos === 'R2' || b.pos === 'R2d') ? 0 : 1;
+              if (ar !== br) return ar - br;
+            }
+            return second[a.name] - second[b.name] || assignedCount[b.name] - assignedCount[a.name];
+          })
           .forEach(r => { if (tPicked.length < PART2_T) take(r); });
 
         if (tPicked.length < PART2_T) {
           for (let k = tPicked.length; k < PART2_T; k++) shortages2.push(`${dayName} 2部T`);
         }
 
-        // ④ 「応援T」の人（仕事が終わり次第合流）= 3名の枠外
+        // ④ 「応援T」の人（自分の業務が終わり次第、およそ16:30にTへ手伝いに来る）
+        //    → その日の2部Tは4人になり、うち1人が入れ替わりで16:30で退勤する
         todays.forEach(r => {
           if (!(meta[r.name] || {}).t2extra || r.pos2 || !canPart2(r, 'T')) return;
           r.pos2 = 'T';
           if (tPicked.length >= PART2_T) {
-            // 3名そろっているので、1人は先に上がる（16:30まで）
-            const early = tPicked.filter(x => !(meta[x.name] || {}).t2always)
-              .sort((a, b) => second[b.name] - second[a.name])[0];
-            if (early) early.early = true;
+            // 先に上がる人: R2系からTに入った人を優先（応援Tと入れ替わりで退勤）
+            const cands = tPicked.filter(x => !(meta[x.name] || {}).t2always);
+            cands.sort((a, b) => {
+              const ar = (a.pos === 'R2' || a.pos === 'R2d') ? 0 : 1;
+              const br = (b.pos === 'R2' || b.pos === 'R2d') ? 0 : 1;
+              if (ar !== br) return ar - br;
+              return second[b.name] - second[a.name];
+            });
+            if (cands[0]) cands[0].early = true;
           }
         });
 
@@ -813,8 +828,14 @@
 
       // manual セルへ書き込み（ここで初めて時刻を文字列にする）
       results.forEach(a => {
-        // 1部→2部でポジションが変わるなら 「R2→W」のように表示
-        const posText = a.pos2 ? (a.pos2 === a.pos ? a.pos : `${a.pos}→${a.pos2}`) : a.pos;
+        // 表記ルール
+        //  ・1部→2部でポジションが変わる → 「R2→W」
+        //  ・同じならそのまま → 「W」
+        //  ・応援Tと入れ替わりで16:30で上がる人 → 「R2→（T」（（付き）
+        const posText = !a.pos2 ? a.pos
+          : a.early
+            ? (a.pos === a.pos2 ? `（${a.pos2}` : `${a.pos}→（${a.pos2}`)
+            : (a.pos2 === a.pos ? a.pos : `${a.pos}→${a.pos2}`);
         const endNum = a.early ? EARLY_END : (a.pos2 ? a.tcEnd : a.en);
         App.setManualCell(currentReqId, `s_${a.name}_${a.day}_main`, posText);
         App.setManualCell(currentReqId, `s_${a.name}_${a.day}_start`, fmtStart(a.st));
@@ -1022,8 +1043,9 @@ ${head}${rest}
       txt += `## 2部の人数ルール\n`;
       txt += `- 2部T = 3名（1部から続けてTの人もこの3名に含む）\n`;
       txt += `- 《必ずT》の人は、出勤していれば基本2部はTにつける\n`;
-      txt += `- 《応援T》の人は他の仕事が終わり次第Tに来るので、3名の枠外で追加する。
-        その場合は3名のうち1人を先に上がらせ、その人の終業を -1630（16晊半）にする\n`;
+      txt += `- 《応援T》の人は自分の業務が終わり次第、およそ16:30にTへ手伝いに来る。\n`;
+      txt += `  この人が出勤している日は2部Tを「4人」にし、うち1人を入れ替わりで16:30で退勤させる\n`;
+      txt += `  先に上がる人は R2／R2d からTに入った人を優先し、表記を \"R2→（T\" 、終業を -1630 にする\n`;
       txt += `- 2部W = 1部のWのうち16時で上がる人数分だけつける
   （例: 1部Wが2人、1人は16時まで、1人は17時まで働けるなら、2部Wに新たにつけるのは1人だけ）\n`;
       txt += `- 《必ずT》《応援T》以外は、2部に入る回数が週でできるだけ均等になるように選ぶ\n\n`;
@@ -1053,6 +1075,7 @@ ${head}${rest}
       txt += '```json\n{"assign":[{"name":"青木","day":0,"pos":"K","start":"9","end":"-L"}]}\n```\n';
       txt += `- day: 0=月曜〜6=日曜\n`;
       txt += `- pos: 1部のみなら K/R2/R2d/W/T、2部も入るなら \"R2→W\" \"K→T\" の形。同じポジションを続けるなら \"W\" \"T\"\n`;
+      txt += `  16:30で入れ替わり退勤する人は \"R2→（T\" のように（を付ける\n`;
       txt += `- start例: "9" "930" "10" / end例: "-16"（1部のみ） "-L"（2部まで） "-1630"（先に上がるT）\n`;
       txt += `- 割り当てない人は含めない\n`;
 
