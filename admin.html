@@ -101,7 +101,7 @@
     <div class="tab-pane" id="tab-staff" style="display:none">
       <div class="card">
         <h2>スタッフ名マスタ</h2>
-        <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R2d / R1 / W / T）の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。<br><strong>★優先</strong>にチェックを入れると、社会保険加入者など<strong>必ずシフトに入れたいメンバー</strong>として、自動割り当てで最優先に配置されます。<br><strong>メモ</strong>に「<strong>週3日まで</strong>」のように書くと、自動割り当てがその人の週の出勤日数の上限として扱います（★優先より上限が優先されます）。</p>
+        <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R2d / R1 / W / T）の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。<br><strong>★優先</strong>にチェックを入れると、社会保険加入者など<strong>必ずシフトに入れたいメンバー</strong>として、自動割り当てで最優先に配置されます。<br><strong>メモ</strong>に「<strong>週3日まで</strong>」のように書くと、自動割り当てがその人の週の出勤日数の上限として扱います（★優先より上限が優先されます）。</p><div style="background:#FFF7ED;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;font-size:0.82rem;color:#92400E;margin-bottom:14px"><strong>1部（9:00〜16:00）</strong>と <strong>2部（16:00〜L）</strong>は別々に設定します。<br>2部のポジションは <strong>W</strong> と <strong>T</strong> の2つだけです。両方に入る人はシフト表に「<strong>R2→W</strong>」のように出ます（同じなら「W」のまま）。<br><strong>必ずT</strong>：出勤している日は必ず2部Tに入れる人にチェック。<br><strong>応援T</strong>：他の仕事が終わり次第Tに合流する人にチェック。T3人の枠外で追加され、代わりに1人が16:30上がりになります。</div>
         <div class="form-group">
           <div style="display:flex;gap:8px">
             <input type="text" class="form-input" id="new-staff-input" placeholder="スタッフ名を追加" onkeydown="if(event.key==='Enter') addStaff()">
@@ -446,7 +446,7 @@
       const el = document.getElementById('staff-master-list');
       if (!staff.length) { el.innerHTML = '<div class="empty-state">スタッフが登録されていません</div>'; return; }
       el.innerHTML = staff.map((n, i) => {
-        const m = meta[n] || { positions: [], note: '', priority: false };
+        const m = Object.assign({ positions: [], positions2: [], t2always: false, t2extra: false, note: '', priority: false }, meta[n] || {});
         const esc = n.replace(/'/g, "\\'");
         return `
         <div class="staff-master-row" style="flex-wrap:wrap;${m.priority ? 'background:#FFF7ED;border-color:#F59E0B' : ''}">
@@ -462,16 +462,35 @@
             <button class="btn btn-danger-outline btn-sm" onclick="removeStaff(${i})">削除</button>
           </div>
           <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:6px 0 2px">
-            <span style="font-size:0.72rem;color:var(--muted);font-weight:700">できるポジション:</span>
+            <span style="font-size:0.72rem;color:var(--muted);font-weight:700;min-width:92px">1部 9-16:</span>
             ${App.POSITIONS.map(p => `
               <label style="display:inline-flex;align-items:center;gap:3px;font-size:0.8rem;background:${m.positions.includes(p) ? '#EEF2FF' : '#fff'};border:1.5px solid ${m.positions.includes(p) ? 'var(--primary)' : 'var(--border)'};padding:3px 9px;border-radius:6px;cursor:pointer;font-weight:600">
-                <input type="checkbox" ${m.positions.includes(p) ? 'checked' : ''} onchange="togglePosition('${n.replace(/'/g, "\\'")}', '${p}', this.checked)">
+                <input type="checkbox" ${m.positions.includes(p) ? 'checked' : ''} onchange="togglePosition('${esc}', '${p}', this.checked)">
                 ${p}
               </label>
             `).join('')}
+          </div>
+          <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:2px 0 4px">
+            <span style="font-size:0.72rem;color:#B45309;font-weight:700;min-width:92px">2部 16-L:</span>
+            ${App.POSITIONS2.map(p => `
+              <label style="display:inline-flex;align-items:center;gap:3px;font-size:0.8rem;background:${m.positions2.includes(p) ? '#FFF7ED' : '#fff'};border:1.5px solid ${m.positions2.includes(p) ? '#F59E0B' : 'var(--border)'};padding:3px 9px;border-radius:6px;cursor:pointer;font-weight:600">
+                <input type="checkbox" ${m.positions2.includes(p) ? 'checked' : ''} onchange="togglePosition2('${esc}', '${p}', this.checked)">
+                ${p}
+              </label>
+            `).join('')}
+            <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.76rem;font-weight:700;color:${m.t2always ? '#B45309' : 'var(--muted)'};cursor:pointer;white-space:nowrap;margin-left:6px"
+              title="出勤している日は必ず2部Tに入れる">
+              <input type="checkbox" ${m.t2always ? 'checked' : ''} onchange="toggleT2Flag('${esc}', 't2always', this.checked)">
+              必ずT
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.76rem;font-weight:700;color:${m.t2extra ? '#B45309' : 'var(--muted)'};cursor:pointer;white-space:nowrap"
+              title="他の仕事が終わり次第Tに合流する。T3人の枠外で追加され、代わりに1人が16:30上がりになる">
+              <input type="checkbox" ${m.t2extra ? 'checked' : ''} onchange="toggleT2Flag('${esc}', 't2extra', this.checked)">
+              応援T
+            </label>
             <input type="text" placeholder="メモ（例: 週3日まで）" value="${(m.note || '').replace(/"/g, '&quot;')}"
               style="flex:1;min-width:140px;font-size:0.78rem;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px"
-              onchange="setStaffNote('${n.replace(/'/g, "\\'")}', this.value)">
+              onchange="setStaffNote('${esc}', this.value)">
           </div>
         </div>
       `;}).join('');
@@ -484,6 +503,30 @@
       else m.positions = m.positions.filter(p => p !== pos);
       App.setStaffMeta(name, m);
       renderStaffMaster();
+    }
+
+    // 2部（16時〜L）でできるポジション
+    function togglePosition2(name, pos, checked) {
+      const m = staffMetaOf(name);
+      if (checked) { if (!m.positions2.includes(pos)) m.positions2.push(pos); }
+      else m.positions2 = m.positions2.filter(p => p !== pos);
+      App.setStaffMeta(name, m);
+      renderStaffMaster();
+    }
+
+    // 2部Tの特別扱い（必ずT / 応援T）
+    function toggleT2Flag(name, key, checked) {
+      const m = staffMetaOf(name);
+      m[key] = !!checked;
+      if (checked && !m.positions2.includes('T')) m.positions2.push('T');
+      App.setStaffMeta(name, m);
+      renderStaffMaster();
+    }
+
+    function staffMetaOf(name) {
+      return Object.assign(
+        { positions: [], positions2: [], t2always: false, t2extra: false, note: '', priority: false },
+        App.getStaffMeta()[name] || {});
     }
 
     // 社保加入者など「必ず優先してシフトに入れる」メンバー

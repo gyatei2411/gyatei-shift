@@ -119,8 +119,10 @@ const App = {
     seenWelcome: 'sa_v4_seen_welcome'
   },
 
-  // ポジション一覧（割り当て可能）
+  // 1部(9-16)のポジション
   POSITIONS: ['K', 'R2', 'R2d', 'R1', 'W', 'T'],
+  // 2部(16-L)のポジション
+  POSITIONS2: ['W', 'T'],
 
   // Firebase が初期化済みかどうか
   fbReady: false,
@@ -288,7 +290,11 @@ const App = {
 
   /* ===== スタッフ別設定 (できるポジション・メモ) ===== */
 
-  // { 名前: { positions: ['K','R2'], note: '', priority: false } }
+  // { 名前: { positions:['K','R2'], positions2:['W','T'], t2always:false, t2extra:false, note:'', priority:false } }
+  // positions  … 1部(9-16)でできるポジション
+  // positions2 … 2部(16-L)でできるポジション（W / T）
+  // t2always   … 出勤日は必ず2部T
+  // t2extra    … 仕事が終わり次第2部Tに合流（3人の枠外）
   // priority=true … 社保加入者など、優先してシフトに入れるメンバー
   getStaffMeta() {
     return App._read(App.KEYS.staffmeta, {});
@@ -316,7 +322,11 @@ const App = {
       if (!data) return;  // ルール未設定・データなしなら localStorage を維持
       const all = {};
       Object.values(data).forEach(m => {
-        if (m && m.name) all[m.name] = { positions: m.positions || [], note: m.note || '', priority: !!m.priority };
+        if (m && m.name) all[m.name] = {
+          positions: m.positions || [], positions2: m.positions2 || [],
+          t2always: !!m.t2always, t2extra: !!m.t2extra,
+          note: m.note || '', priority: !!m.priority
+        };
       });
       App._write(App.KEYS.staffmeta, all);
       onUpdate && onUpdate();

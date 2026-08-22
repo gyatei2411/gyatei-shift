@@ -619,6 +619,9 @@
 
       // 1日の枠を優先順で定義（人数不足時は先頭から確保: K3 → R2d+R2の2名 → W1 → 残り）
       const PRIORITY_SLOTS = ['K', 'K', 'K', 'R2d', 'R2', 'W', 'R2', 'W', 'T'];
+      const PART1_END = 16;   // 1部の終業（掃除が終わるおよそ16時）
+      const PART2_T = 3;      // 2部Tの人数（1部から続ける人も含む）
+      const EARLY_END = 16.5; // 応援Tが入ったときに先に上がる人の終業
 
       const assignedCount = {};  // name → 週の割当日数
       replies.forEach(r => assignedCount[r.name] = 0);
@@ -672,30 +675,18 @@
           return (m.positions || []).filter(p => p !== 'R1' && needsMap[p]);
         };
 
-        // 時間決定（△の人はどのポジションでも可能時間内で配置）
+        // 1部（9時〜16時）の時間を決める。数値で保持し、2部の判定後に文字列化する
         const assignPerson = (person, pos, needsMap) => {
           const sym = person.d[day];
           const tc = sym === 't' ? getTimeCons(timeCons, person.name, day) : null;
           needsMap[pos]--;
           assignedToday.add(person.name);
           assignedCount[person.name]++;
-          let start, end;
-          if (tc) {
-            if ((pos === 'R2' || pos === 'R2d') && tc.start < 16 && tc.end > 9.5) {
-              // R2標準勤務帯(9:30-16)と重なる場合は交差部分で配置
-              start = fmtStart(Math.max(tc.start, 9.5));
-              end = fmtEnd(Math.min(tc.end, 16));
-            } else {
-              // それ以外はその人の可能時間をそのまま使用（全ポジション柔軟対応）
-              start = fmtStart(Math.max(tc.start, 9));
-              end = fmtEnd(tc.end);
-            }
-          } else if (pos === 'R2' || pos === 'R2d') {
-            start = '930'; end = '-16';
-          } else {
-            start = '9'; end = '-L';
-          }
-          results.push({ name: person.name, day, pos, start, end });
+          const base = (pos === 'R2' || pos === 'R2d') ? 9.5 : 9;   // R2系は9:30始まり
+          const st = tc ? Math.max(tc.start, base) : base;
+          const en = tc ? Math.min(tc.end, PART1_END) : PART1_END;  // 1部は16時まで
+          const tcEnd = tc ? tc.end : 99;                           // その人が働ける上限（99=ラスト）
+          results.push({ name: person.name, day, pos, st, en, tcEnd, pos2: null, early: false });
         };
 
         // ── 第1パス: 優先枠に「できるポジションが少ない人」から配置 ──
@@ -749,16 +740,92 @@
         });
       }
 
-      // manual セルへ書き込み
+      // ===== 2部（16時〜L）の割り当て =====
+      //  ・1部を全部決めてから検討する
+      //  ・Tは3名（1部から続ける人も含む）、Wは16時で上がる1部Wの人数分
+      //  ・回数ができるだけ均等になるように選ぶ
+      const second = {};      // name → 週の2部回数
+      replies.forEach(r => second[r.name] = 0);
+      const shortages2 = [];  // 2部の人数不足
+
+      const canPart2 = (r, p) => {
+        const m = meta[r.name] || {};
+        return (m.positions2 || []).indexOf(p) >= 0 && r.tcEnd > PART1_END;
+      };
+
+      for (let day = 0; day < 7; day++) {
+        if (closed.has(day)) continue;
+        const todays = results.filter(r => r.day === day);
+        if (!todays.length) continue;
+        const dayName = `${App.fmtMD(App.weekDates(req.ws)[day])}(${App.DOW_LABELS[day]})`;
+
+        // ---- 2部T（3名） ----
+        const tPicked = [];
+        const take = (r) => { r.pos2 = 'T'; tPicked.push(r); };
+
+        // ① 「必ずT」の人
+        todays.forEach(r => {
+          if (tPicked.length >= PART2_T) return;
+          if ((meta[r.name] || {}).t2always && !r.pos2 && canPart2(r, 'T')) take(r);
+        });
+        // ② 1部がTの人（そのまま続ける）
+        todays.forEach(r => {
+          if (tPicked.length >= PART2_T) return;
+          if (r.pos === 'T' && !r.pos2 && !(meta[r.name] || {}).t2extra && canPart2(r, 'T')) take(r);
+        });
+        // ③ 残りは2部の回数が少ない人から
+        todays.filter(r => !r.pos2 && !(meta[r.name] || {}).t2extra && canPart2(r, 'T'))
+          .sort((a, b) => second[a.name] - second[b.name] || assignedCount[b.name] - assignedCount[a.name])
+          .forEach(r => { if (tPicked.length < PART2_T) take(r); });
+
+        if (tPicked.length < PART2_T) {
+          for (let k = tPicked.length; k < PART2_T; k++) shortages2.push(`${dayName} 2部T`);
+        }
+
+        // ④ 「応援T」の人（仕事が終わり次第合流）= 3名の枠外
+        todays.forEach(r => {
+          if (!(meta[r.name] || {}).t2extra || r.pos2 || !canPart2(r, 'T')) return;
+          r.pos2 = 'T';
+          if (tPicked.length >= PART2_T) {
+            // 3名そろっているので、1人は先に上がる（16:30まで）
+            const early = tPicked.filter(x => !(meta[x.name] || {}).t2always)
+              .sort((a, b) => second[b.name] - second[a.name])[0];
+            if (early) early.early = true;
+          }
+        });
+
+        // ---- 2部W（1部Wのうち16時で上がる人数分） ----
+        const w1 = todays.filter(r => r.pos === 'W');
+        // そのまま2部Wを続けられる人（表記は W のまま）
+        const staying = w1.filter(r => !r.pos2 && canPart2(r, 'W'));
+        staying.forEach(r => { r.pos2 = 'W'; });
+        const needW = w1.length - staying.length;
+        const wPicked = [];
+        todays.filter(r => !r.pos2 && canPart2(r, 'W'))
+          .sort((a, b) => second[a.name] - second[b.name] || assignedCount[b.name] - assignedCount[a.name])
+          .forEach(r => { if (wPicked.length < needW) { r.pos2 = 'W'; wPicked.push(r); } });
+        if (wPicked.length < needW) {
+          for (let k = wPicked.length; k < needW; k++) shortages2.push(`${dayName} 2部W`);
+        }
+
+        todays.forEach(r => { if (r.pos2) second[r.name]++; });
+      }
+
+      // manual セルへ書き込み（ここで初めて時刻を文字列にする）
       results.forEach(a => {
-        App.setManualCell(currentReqId, `s_${a.name}_${a.day}_main`, a.pos);
-        App.setManualCell(currentReqId, `s_${a.name}_${a.day}_start`, a.start);
-        App.setManualCell(currentReqId, `s_${a.name}_${a.day}_end`, a.end);
+        // 1部→2部でポジションが変わるなら 「R2→W」のように表示
+        const posText = a.pos2 ? (a.pos2 === a.pos ? a.pos : `${a.pos}→${a.pos2}`) : a.pos;
+        const endNum = a.early ? EARLY_END : (a.pos2 ? a.tcEnd : a.en);
+        App.setManualCell(currentReqId, `s_${a.name}_${a.day}_main`, posText);
+        App.setManualCell(currentReqId, `s_${a.name}_${a.day}_start`, fmtStart(a.st));
+        App.setManualCell(currentReqId, `s_${a.name}_${a.day}_end`, fmtEnd(endNum));
       });
 
       render();
 
-      let msg = `✓ ${results.length}件割り当てました`;
+      const part2Count = results.filter(a => a.pos2).length;
+      let msg = `✓ ${results.length}件割り当てました（うち2部 ${part2Count}件）`;
+      if (shortages2.length) msg += `\n\n【2部の人数不足】\n${shortages2.join('\n')}`;
       if (shortages.length) msg += `\n\n【人数不足】\n${shortages.join('\n')}`;
       if (memoLimits.length) msg += `\n\n【スタッフマスタのメモから出勤上限を適用】\n${memoLimits.join(' / ')}`;
       if (overStaffed.length) msg += `\n\n【★優先メンバーのため定員超で追加】\n${overStaffed.join('\n')}`;
@@ -946,16 +1013,33 @@ ${head}${rest}
       txt += `- 人数不足の場合の優先順位: ①K3人 ②R2系2人（R2d優先） ③W1人 ④残り\n`;
       txt += `- ★★【最優先】名前に「★優先」が付いている人は社会保険加入者などのため、出勤可（○/△）の日は必ずシフトに入れること（定員9名を超えてでも入れる）\n`;
       txt += `- ★できるポジションが少ない人から優先的に配置し、多くのポジションができる人は後回しにして調整役とする（そうしないとシフトに入れない人が出る）\n\n`;
+      txt += `## 1部・2部の仕組み\n`;
+      txt += `- 1部 = 9:00〜16:00（掃除が終わるおよそ16時）。その後5分ほど終礼し、2部に残る人と退勤する人に分かれる\n`;
+      txt += `- 2部 = 16:00〜L（ラスト）。ポジションは W と T の2つだけ\n`;
+      txt += `- 1部だけの人は 9-16、両方入る人は 9-L\n`;
+      txt += `- 表記: 1部と2部でポジションが違うなら「R2→W」のように書く。同じなら「W」のまま\n`;
+      txt += `- 2部は先に1部を決めてから検討する。割り当てるのはその日に1部で出勤している人だけ\n\n`;
+      txt += `## 2部の人数ルール\n`;
+      txt += `- 2部T = 3名（1部から続けてTの人もこの3名に含む）\n`;
+      txt += `- 《必ずT》の人は、出勤していれば基本2部はTにつける\n`;
+      txt += `- 《応援T》の人は他の仕事が終わり次第Tに来るので、3名の枠外で追加する。
+        その場合は3名のうち1人を先に上がらせ、その人の終業を -1630（16晊半）にする\n`;
+      txt += `- 2部W = 1部のWのうち16時で上がる人数分だけつける
+  （例: 1部Wが2人、1人は16時まで、1人は17時まで働けるなら、2部Wに新たにつけるのは1人だけ）\n`;
+      txt += `- 《必ずT》《応援T》以外は、2部に入る回数が週でできるだけ均等になるように選ぶ\n\n`;
       txt += `## 出勤時間のルール\n`;
-      txt += `- ○（終日可）の人: 基本 9-L（9時からラストまで）\n`;
-      txt += `- R2/R2d に割り当てた○の人: 基本 930-16（9時半から16時）\n`;
+      txt += `- ○（終日可）の人: 1部のみなら 9-16、2部も入るなら 9-L\n`;
+      txt += `- R2/R2d に割り当てた○の人: 1部は 930-16（9時半から16時）\n`;
       txt += `- △の人: 「出勤可能時間・備考」に書かれた時間帯の範囲内で配置する（R2系でも例えば1030-1430のような時間で配置してよい）\n`;
       txt += `  ※「月:9:30-16 / 火:11-15:30」のように曜日別に書かれている場合はその曜日の指定を優先。曜日の指定がない記述はその人の△の日すべてに適用する\n\n`;
       txt += `## スタッフの回答（○=終日可 / △=条件付き / ✕=不可 / -=定休日）\n`;
       for (const r of replies) {
         const m = meta[r.name] || { positions: [] };
         txt += `- ${r.name}${m.priority ? '【★優先】' : ''}: [${r.d.split('').map((c, i) => `${App.DOW_LABELS[i]}=${c === 'o' ? '○' : c === 't' ? '△' : c === 'x' ? '✕' : '-'}`).join(' ')}]`;
-        txt += ` できるポジション: ${m.positions.length ? m.positions.join(',') : '未設定'}`;
+        txt += ` 1部: ${m.positions && m.positions.length ? m.positions.join(',') : '未設定'}`;
+        txt += ` / 2部: ${m.positions2 && m.positions2.length ? m.positions2.join(',') : 'なし'}`;
+        if (m.t2always) txt += ' 《必ずT》';
+        if (m.t2extra) txt += ' 《応援T》';
         if (m.note) txt += ` / 個人メモ: ${m.note}`;
         const nt = noteText(r);
         if (nt) txt += ` / 出勤可能時間・備考: ${nt}`;
@@ -967,7 +1051,10 @@ ${head}${rest}
       txt += `\n## 出力形式\n`;
       txt += `検討過程を簡潔に説明した後、最後に必ず次のJSON形式で出力してください。\n`;
       txt += '```json\n{"assign":[{"name":"青木","day":0,"pos":"K","start":"9","end":"-L"}]}\n```\n';
-      txt += `- day: 0=月曜〜6=日曜\n- pos: K/R2/R2d/W/T のいずれか\n- start例: "9" "930" "10" / end例: "-L" "-16" "-15"\n- 割り当てない人は含めない\n`;
+      txt += `- day: 0=月曜〜6=日曜\n`;
+      txt += `- pos: 1部のみなら K/R2/R2d/W/T、2部も入るなら \"R2→W\" \"K→T\" の形。同じポジションを続けるなら \"W\" \"T\"\n`;
+      txt += `- start例: "9" "930" "10" / end例: "-16"（1部のみ） "-L"（2部まで） "-1630"（先に上がるT）\n`;
+      txt += `- 割り当てない人は含めない\n`;
 
       App.copyToClipboard(txt).then(ok => {
         if (ok) alert('Claude用データをコピーしました！\n\nClaude（クロード）のチャットに貼り付けて送信してください。\nClaudeの回答のJSON部分をコピーして「📥結果取り込み」に貼り付ければ反映されます。');

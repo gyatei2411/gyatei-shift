@@ -313,8 +313,10 @@
           const sub = get(name, d, 'sub');
           const time = (get(name, d, 'start') + get(name, d, 'end')).trim();
           if (pos || time) {
-            const cls = POS_CLASS[pos] || 'p-etc';
-            if (pos) usedPos[pos] = cls;
+            // 「R2→W」のような 1部→2部 表記は 1部のポジションで色を決める
+            const head = String(pos).split('→')[0].trim();
+            const cls = POS_CLASS[head] || 'p-etc';
+            if (head && POS_CLASS[head]) usedPos[head] = cls;
             r += `<td class="cell ${cls}"><div class="ci">` +
               (pos ? `<span class="pos">${esc(pos)}${sub ? `<span class="sub">+${esc(sub)}</span>` : ''}</span>` : '') +
               (time ? `<span class="time">${esc(time)}</span>` : '') +
