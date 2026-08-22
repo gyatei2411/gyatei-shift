@@ -870,6 +870,15 @@
         todays.forEach(r => { if (r.pos2) second[r.name]++; });
       }
 
+      // 先に前回の割り当てを消す
+      //（消さずに上書きだけだと、今回外れた人のポジションが残って人数が増えてしまう）
+      const prev = App.getManual(currentReqId);
+      Object.keys(prev).forEach(k => {
+        const m = k.match(/^s_(.+)_(\d)_(main|start|end)$/);
+        if (!m || closed.has(+m[2])) return;
+        App.setManualCell(currentReqId, k, '');
+      });
+
       // manual セルへ書き込み（ここで初めて時刻を文字列にする）
       results.forEach(a => {
         // 表記ルール
