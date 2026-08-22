@@ -92,7 +92,18 @@
     }
     .shift-table .cell-sym {
       font-weight: 800; font-size: 14px; line-height: 1;
+      padding: 0;
     }
+    .shift-table .sym-select {
+      -webkit-appearance: none; -moz-appearance: none; appearance: none;
+      width: 100%; height: 100%; min-height: 24px;
+      border: none; background: transparent; cursor: pointer;
+      font: inherit; font-weight: 800; font-size: 15px; color: inherit;
+      text-align: center; text-align-last: center;
+      padding: 0;
+    }
+    .shift-table .sym-select:focus { outline: 2px solid var(--primary); outline-offset: -2px; }
+    .shift-table .sym-select option { font-size: 14px; color: #0F172A; background: #fff; }
     .shift-table .cell-sym[data-sym="o"] { background: #D1FAE5; color: #059669; }
     .shift-table .cell-sym[data-sym="t"] { background: #FEF3C7; color: #D97706; }
     .shift-table .cell-sym[data-sym="x"] { background: #FEE2E2; color: #DC2626; }
@@ -160,6 +171,7 @@
         zoom: var(--print-zoom, 1);
       }
       .shift-table th, .shift-table td { border-color: #000; }
+      .shift-table .sym-select { -webkit-appearance: none; appearance: none; background: transparent; }
       * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
   </style>
@@ -268,7 +280,8 @@
 
     function isEditing() {
       const ae = document.activeElement;
-      return ae && ae.closest && ae.closest('.shift-table') && ae.isContentEditable;
+      if (!ae || !ae.closest || !ae.closest('.shift-table')) return false;
+      return ae.isContentEditable || ae.tagName === 'SELECT';
     }
 
     function showError(msg) {
@@ -364,7 +377,11 @@
             ? manualSym
             : (autoSym === 'o' ? '○' : autoSym === 't' ? '△' : autoSym === 'x' ? '✕' : '');
           const dataSym = symChar === '○' ? 'o' : symChar === '△' ? 't' : (symChar === '✕' || symChar === '×') ? 'x' : '';
-          html += `<td class="editable cell-sym" contenteditable="plaintext-only" data-mkey="s_${name}_${i}_sym" data-sym="${dataSym}">${escapeHtml(symChar)}</td>`;
+          html += `<td class="cell-sym" data-sym="${dataSym}">` +
+            `<select class="sym-select" data-mkey="s_${name}_${i}_sym" onchange="saveSym(this)">` +
+            ['', '○', '△', '✕'].map(v =>
+              `<option value="${v}" ${v === symChar ? 'selected' : ''}>${v || '・'}</option>`).join('') +
+            `</select></td>`;
         }
         html += '</tr>';
       }
@@ -458,6 +475,15 @@
         const dataSym = val === '○' ? 'o' : val === '△' ? 't' : (val === '✕' || val === '×') ? 'x' : '';
         td.dataset.sym = dataSym;
       }
+      showSaved();
+      renderConfirmStatus();
+    }
+
+    // ○△✕ のプルダウン
+    function saveSym(sel) {
+      const td = sel.closest('td');
+      App.setManualCell(currentReqId, sel.dataset.mkey, sel.value);
+      td.dataset.sym = sel.value === '○' ? 'o' : sel.value === '△' ? 't' : sel.value === '✕' ? 'x' : '';
       showSaved();
       renderConfirmStatus();
     }
@@ -627,7 +653,7 @@
       replies.forEach(r => assignedCount[r.name] = 0);
       const shortages = [];   // 不足記録
       const skipped = [];     // △で時間解釈できず割当できなかった人
-      const overStaffed = []; // ★優先メンバーのため定員を超えて追加した記録
+      const swapped = [];     // ★優先メンバーのために入れ替えた記録
 
       const results = [];  // { name, day, pos, start, end }
 
@@ -721,15 +747,26 @@
           }
         }
 
-        // ── 第3パス: ★優先メンバーが未配置なら、定員を超えてでも必ず配置 ──
+        // ── 第3パス: ★優先メンバーが未配置なら、非優先の人と入れ替える ──
+        //     （定員（K3 / R2系3 / W2 / T1）は絶対に超えない）
+        const dLabel = `${App.fmtMD(App.weekDates(req.ws)[day])}(${App.DOW_LABELS[day]})`;
         for (const person of sorted) {
           if (!meta[person.name].priority || assignedToday.has(person.name)) continue;
           const cands = (meta[person.name].positions || []).filter(p => p !== 'R1');
           if (!cands.length) continue;
-          cands.sort((p1, p2) => PRIORITY_SLOTS.indexOf(p1) - PRIORITY_SLOTS.indexOf(p2));
-          const forced = { [cands[0]]: 1 };
-          assignPerson(person, cands[0], forced);
-          overStaffed.push(`${App.fmtMD(App.weekDates(req.ws)[day])}(${App.DOW_LABELS[day]}) ${person.name}→${cands[0]}`);
+          // 同じポジションに入っている非優先の人のうち、週の出勤日数が多い人と交代
+          const victims = results
+            .map((r, i) => ({ r, i }))
+            .filter(x => x.r.day === day && cands.indexOf(x.r.pos) >= 0 && !(meta[x.r.name] || {}).priority)
+            .sort((a, b) => assignedCount[b.r.name] - assignedCount[a.r.name]);
+          if (!victims.length) continue;   // 交代できなければ諦める（定員超にはしない）
+          const v = victims[0];
+          const pos = v.r.pos;
+          results.splice(v.i, 1);
+          assignedToday.delete(v.r.name);
+          assignedCount[v.r.name]--;
+          assignPerson(person, pos, { [pos]: 1 });
+          swapped.push(`${dLabel} ${pos}: ${v.r.name} → ${person.name}`);
         }
 
         // 埋まらなかった優先枠を不足として記録
@@ -857,7 +894,7 @@
       if (shortages2.length) msg += `\n\n【2部の人数不足】\n${shortages2.join('\n')}`;
       if (shortages.length) msg += `\n\n【人数不足】\n${shortages.join('\n')}`;
       if (memoLimits.length) msg += `\n\n【スタッフマスタのメモから出勤上限を適用】\n${memoLimits.join(' / ')}`;
-      if (overStaffed.length) msg += `\n\n【★優先メンバーのため定員超で追加】\n${overStaffed.join('\n')}`;
+      if (swapped.length) msg += `\n\n【★優先メンバーのため入れ替え】\n${swapped.join('\n')}`;
       if (skipped.length) msg += `\n\n【△の時間を解釈できず未割当】\n${skipped.join(' / ')}\n→ 手動で調整するか、🤖Claude連携をお使いください`;
       alert(msg);
     }
