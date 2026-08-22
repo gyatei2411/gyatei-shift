@@ -621,7 +621,7 @@
       const PRIORITY_SLOTS = ['K', 'K', 'K', 'R2d', 'R2', 'W', 'R2', 'W', 'T'];
       const PART1_END = 16;   // 1部の終業（掃除が終わるおよそ16時）
       const PART2_T = 3;      // 2部Tの人数（1部から続ける人も含む）
-      const EARLY_END = 16.5; // 応援Tが入ったときに先に上がる人の終業
+      const EARLY_END = 16.5; // 2部T3名のうち、1人が先に上がる時刻
 
       const assignedCount = {};  // name → 週の割当日数
       replies.forEach(r => assignedCount[r.name] = 0);
@@ -744,7 +744,7 @@
       //  ・1部を全部決めてから検討する
       //  ・1部がWの人は2部もWのまま（Tには行かない）
       //  ・Tは必ず3名まで。うち1人は16:30で早上がり
-      //  ・応援T（青木さん）は必ず2部Tに来るのでシフトには記入しない
+      //  ・「必ずT」の人は1部がW以外なら必ず2部T（シフトにも記入する）
       //  ・回数ができるだけ均等になるように選ぶ
       const second = {};      // name → 週の2部回数
       replies.forEach(r => second[r.name] = 0);
@@ -753,6 +753,11 @@
       const canPart2 = (r, p) => {
         const m = meta[r.name] || {};
         return (m.positions2 || []).indexOf(p) >= 0 && r.tcEnd > PART1_END;
+      };
+      // 「必ずT」の人（旧データの t2extra も同じ扱いにする）
+      const mustT = (name) => {
+        const m = meta[name] || {};
+        return !!(m.t2always || m.t2extra);
       };
 
       for (let day = 0; day < 7; day++) {
@@ -767,16 +772,16 @@
         w1.forEach(r => { if (canPart2(r, 'W')) r.pos2 = 'W'; });
         const needW = w1.filter(r => !r.pos2).length;   // 16時で上がる1部Wの人数
 
-        // ---- 2部T（必ず3名まで。応援Tの人はシフトに記入しないので除外） ----
+        // ---- 2部T（必ず3名まで） ----
         const tPicked = [];
         const take = (r) => { r.pos2 = 'T'; tPicked.push(r); };
         const isR2 = (r) => r.pos === 'R2' || r.pos === 'R2d';
-        const tOk = (r) => !r.pos2 && !(meta[r.name] || {}).t2extra && canPart2(r, 'T');
+        const tOk = (r) => !r.pos2 && canPart2(r, 'T');
 
         // ① 「必ずT」の人（1部がWの人は上でW確定済みなので自動的に対象外）
         todays.forEach(r => {
           if (tPicked.length >= PART2_T) return;
-          if ((meta[r.name] || {}).t2always && tOk(r)) take(r);
+          if (mustT(r.name) && tOk(r)) take(r);
         });
         // ② 1部がTの人（そのまま続ける）
         todays.forEach(r => {
@@ -797,9 +802,9 @@
         if (tPicked.length < PART2_T) {
           for (let k = tPicked.length; k < PART2_T; k++) shortages2.push(`${dayName} 2部T`);
         } else {
-          // ⑤ 3名そろったら、うち1人は16:30で早上がり（応援Tと入れ替わり）
+          // ⑤ 3名そろったら、うち1人は16:30で早上がり
           //    R2／R2d からTに入った人を優先。必ずTの人は除く
-          const cands = tPicked.filter(x => !(meta[x.name] || {}).t2always);
+          const cands = tPicked.filter(x => !mustT(x.name));
           cands.sort((a, b) => {
             const ar = isR2(a) ? 0 : 1, br = isR2(b) ? 0 : 1;
             if (ar !== br) return ar - br;
@@ -810,7 +815,7 @@
 
         // ---- 2部Wの補充（16時で上がる1部Wの人数分） ----
         const wPicked = [];
-        todays.filter(r => !r.pos2 && !(meta[r.name] || {}).t2extra && canPart2(r, 'W'))
+        todays.filter(r => !r.pos2 && canPart2(r, 'W'))
           .sort((a, b) => second[a.name] - second[b.name] || assignedCount[b.name] - assignedCount[a.name])
           .forEach(r => { if (wPicked.length < needW) { r.pos2 = 'W'; wPicked.push(r); } });
         if (wPicked.length < needW) {
@@ -825,7 +830,7 @@
         // 表記ルール
         //  ・1部→2部でポジションが変わる → 「R2→W」
         //  ・同じならそのまま → 「W」
-        //  ・応援Tと入れ替わりで16:30で上がる人 → 「R2→（T」（（付き）
+        //  ・16:30で先に上がる人 → 「R2→（T」（（付き）
         const posText = !a.pos2 ? a.pos
           : a.early
             ? (a.pos === a.pos2 ? `（${a.pos2}` : `${a.pos}→（${a.pos2}`)
@@ -1039,7 +1044,7 @@ ${head}${rest}
       txt += `- 2部T = **必ず3名まで**（1部から続けてTの人もこの3名に含む）\n`;
       txt += `- 3名のうち1人は **16:30で早上がり**。R2／R2dからTに入った人を優先し、表記を \"R2→（T\"、終業を -1630 にする\n`;
       txt += `  （別の固定メンバーがその時間にTへ手伝いに来て入れ替わるため）\n`;
-      txt += `- 《応援T》の人は必ず2部Tに来るのが分かっているので、**2部を割り当てない**（1部だけ記入）\n`;
+      txt += `- 《必ずT》の人は、1部がW以外なら必ず2部Tにつける（3名のうちの1人として数える）\n`;
       txt += `- 2部W = 1部Wのうち16時で上がる人がいれば、その人数分だけ別の人をつける\n`;
       txt += `- 《必ずT》以外は、2部に入る回数が週でできるだけ均等になるように選ぶ\n\n`;
       txt += `## 出勤時間のルール\n`;
@@ -1053,8 +1058,7 @@ ${head}${rest}
         txt += `- ${r.name}${m.priority ? '【★優先】' : ''}: [${r.d.split('').map((c, i) => `${App.DOW_LABELS[i]}=${c === 'o' ? '○' : c === 't' ? '△' : c === 'x' ? '✕' : '-'}`).join(' ')}]`;
         txt += ` 1部: ${m.positions && m.positions.length ? m.positions.join(',') : '未設定'}`;
         txt += ` / 2部: ${m.positions2 && m.positions2.length ? m.positions2.join(',') : 'なし'}`;
-        if (m.t2always) txt += ' 《必ずT》';
-        if (m.t2extra) txt += ' 《応援T》';
+        if (m.t2always || m.t2extra) txt += ' 《必ずT》';
         if (m.note) txt += ` / 個人メモ: ${m.note}`;
         const nt = noteText(r);
         if (nt) txt += ` / 出勤可能時間・備考: ${nt}`;

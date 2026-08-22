@@ -101,7 +101,7 @@
     <div class="tab-pane" id="tab-staff" style="display:none">
       <div class="card">
         <h2>スタッフ名マスタ</h2>
-        <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R2d / R1 / W / T）の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。<br><strong>★優先</strong>にチェックを入れると、社会保険加入者など<strong>必ずシフトに入れたいメンバー</strong>として、自動割り当てで最優先に配置されます。<br><strong>メモ</strong>に「<strong>週3日まで</strong>」のように書くと、自動割り当てがその人の週の出勤日数の上限として扱います（★優先より上限が優先されます）。</p><div style="background:#FFF7ED;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;font-size:0.82rem;color:#92400E;margin-bottom:14px"><strong>1部（9:00〜16:00）</strong>と <strong>2部（16:00〜L）</strong>は別々に設定します。<br>2部のポジションは <strong>W</strong> と <strong>T</strong> の2つだけです。両方に入る人はシフト表に「<strong>R2→W</strong>」のように出ます（同じなら「W」のまま）。<br><strong>1部がWの人は2部もWのまま</strong>です（Tには行きません）。<br><strong>2部Tは必ず1日3名まで</strong>。うち1人は16:30上がりになります（R2／R2dから来た人を優先）。<br><strong>必ずT</strong>：出勤日は2部Tに入れる人にチェック（ただし1部がWの日はWのまま）。<br><strong>応援T（記入なし）</strong>：必ず2部Tに来るのが分かっている人にチェック。シフトには記入されません。</div>
+        <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R2d / R1 / W / T）の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。<br><strong>★優先</strong>にチェックを入れると、社会保険加入者など<strong>必ずシフトに入れたいメンバー</strong>として、自動割り当てで最優先に配置されます。<br><strong>メモ</strong>に「<strong>週3日まで</strong>」のように書くと、自動割り当てがその人の週の出勤日数の上限として扱います（★優先より上限が優先されます）。</p><div style="background:#FFF7ED;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;font-size:0.82rem;color:#92400E;margin-bottom:14px"><strong>1部（9:00〜16:00）</strong>と <strong>2部（16:00〜L）</strong>は別々に設定します。<br>2部のポジションは <strong>W</strong> と <strong>T</strong> の2つだけです。両方に入る人はシフト表に「<strong>R2→W</strong>」のように出ます（同じなら「W」のまま）。<br><strong>1部がWの人は2部もWのまま</strong>です（Tには行きません）。<br><strong>2部Tは必ず1日3名まで</strong>。うち1人は16:30上がりになります（R2／R2dから来た人を優先）。<br><strong>必ずT</strong>：1部がW以外の日は必ず2部Tにつける人にチェック（青木さん・西川さん）。3名のうちの1人として数えます。</div>
         <div class="form-group">
           <div style="display:flex;gap:8px">
             <input type="text" class="form-input" id="new-staff-input" placeholder="スタッフ名を追加" onkeydown="if(event.key==='Enter') addStaff()">
@@ -493,6 +493,7 @@
       if (!staff.length) { el.innerHTML = '<div class="empty-state">スタッフが登録されていません</div>'; return; }
       el.innerHTML = staff.map((n, i) => {
         const m = Object.assign({ positions: [], positions2: [], t2always: false, t2extra: false, note: '', priority: false }, meta[n] || {});
+        m.mustT = !!(m.t2always || m.t2extra);   // 旧データの応援Tも「必ずT」として扱う
         const esc = n.replace(/'/g, "\\'");
         return `
         <div class="staff-master-row" style="flex-wrap:wrap;${m.priority ? 'background:#FFF7ED;border-color:#F59E0B' : ''}">
@@ -524,15 +525,10 @@
                 ${p}
               </label>
             `).join('')}
-            <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.76rem;font-weight:700;color:${m.t2always ? '#B45309' : 'var(--muted)'};cursor:pointer;white-space:nowrap;margin-left:6px"
-              title="出勤している日は必ず2部Tに入れる（ただし1部がWの日はWのまま）">
-              <input type="checkbox" ${m.t2always ? 'checked' : ''} onchange="toggleT2Flag('${esc}', 't2always', this.checked)">
+            <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.76rem;font-weight:700;color:${m.mustT ? '#B45309' : 'var(--muted)'};cursor:pointer;white-space:nowrap;margin-left:6px"
+              title="1部がW以外の日は、必ず2部Tにつける（1部がWの日はWのまま）">
+              <input type="checkbox" ${m.mustT ? 'checked' : ''} onchange="toggleT2Flag('${esc}', this.checked)">
               必ずT
-            </label>
-            <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.76rem;font-weight:700;color:${m.t2extra ? '#B45309' : 'var(--muted)'};cursor:pointer;white-space:nowrap"
-              title="必ず2部Tに来るのが分かっているので、シフトには記入しない。代わりに2部T3名のうち1人が16:30上がりになる">
-              <input type="checkbox" ${m.t2extra ? 'checked' : ''} onchange="toggleT2Flag('${esc}', 't2extra', this.checked)">
-              応援T（記入なし）
             </label>
             <input type="text" placeholder="メモ（例: 週3日まで）" value="${(m.note || '').replace(/"/g, '&quot;')}"
               style="flex:1;min-width:140px;font-size:0.78rem;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px"
@@ -560,10 +556,11 @@
       renderStaffMaster();
     }
 
-    // 2部Tの特別扱い（必ずT / 応援T）
-    function toggleT2Flag(name, key, checked) {
+    // 「必ずT」：1部がW以外の日は必ず2部Tにつける
+    function toggleT2Flag(name, checked) {
       const m = staffMetaOf(name);
-      m[key] = !!checked;
+      m.t2always = !!checked;
+      m.t2extra = false;                 // 旧「応援T」は使わないのでここで消す
       if (checked && !m.positions2.includes('T')) m.positions2.push('T');
       App.setStaffMeta(name, m);
       renderStaffMaster();
