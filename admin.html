@@ -550,11 +550,11 @@
               週
               <input type="number" min="0" max="7" value="${m.daysMin == null ? '' : m.daysMin}" placeholder="-"
                 style="width:44px;text-align:center;font-size:0.78rem;padding:3px 4px;border:1.5px solid var(--border);border-radius:6px"
-                onchange="setDays('${esc}', 'daysMin', this.value)">
+                onchange="setDays('${esc}', 'daysMin', this)">
               〜
               <input type="number" min="0" max="7" value="${m.daysMax == null ? '' : m.daysMax}" placeholder="-"
                 style="width:44px;text-align:center;font-size:0.78rem;padding:3px 4px;border:1.5px solid var(--border);border-radius:6px"
-                onchange="setDays('${esc}', 'daysMax', this.value)">
+                onchange="setDays('${esc}', 'daysMax', this)">
               回
             </span>
             <input type="text" placeholder="メモ" value="${(m.note || '').replace(/"/g, '&quot;')}"
@@ -615,15 +615,23 @@
     }
 
     // 週の希望出勤回数（空欄なら制限なし）
-    function setDays(name, key, val) {
+    //  ※ ここで一覧を再描画すると、もう片方に入力中の値が消えてしまうので再描画しない
+    function setDays(name, key, el) {
       const m = staffMetaOf(name);
-      const v = String(val).trim();
+      const v = String(el.value).trim();
       m[key] = v === '' ? null : Math.max(0, Math.min(7, parseInt(v, 10) || 0));
+      // 下限 ＞ 上限 にならないように揃える
       if (m.daysMin != null && m.daysMax != null && m.daysMin > m.daysMax) {
         if (key === 'daysMin') m.daysMax = m.daysMin; else m.daysMin = m.daysMax;
       }
       App.setStaffMeta(name, m);
-      renderStaffMaster();
+      // 表示だけその場で合わせる
+      const row = el.closest('.staff-master-row');
+      const nums = row ? row.querySelectorAll('input[type=number]') : [];
+      if (nums.length === 2) {
+        nums[0].value = m.daysMin == null ? '' : m.daysMin;
+        nums[1].value = m.daysMax == null ? '' : m.daysMax;
+      }
     }
 
     function setStaffNote(name, note) {
@@ -739,7 +747,12 @@
             renderAggregate();
           });
           subscribeAll();
-          App.subscribeStaffMeta(() => renderStaffMaster());
+          App.subscribeStaffMeta(() => {
+            // スタッフ管理を入力中は再描画しない（入力値が消えるのを防ぐ）
+            const ae = document.activeElement;
+            if (ae && ae.closest && ae.closest('#staff-master-list')) return;
+            renderStaffMaster();
+          });
         }
         renderCreate();
       }, 100);
