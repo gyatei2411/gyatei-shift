@@ -426,13 +426,15 @@ const App = {
     const ref = App.fbDB.ref('requests');
     const cb = (snap) => {
       const data = snap.val() || {};
-      const reqs = [];
       const confirmedAll = App.getConfirmedAll();
       const manualAll = App._read(App.KEYS.manual, {});
+      // ローカルの依頼は消さず、Firebase 側の内容を上書きマージする
+      const byId = {};
+      App.getRequests().forEach(r => { byId[r.id] = r; });
       Object.keys(data).forEach(id => {
         const r = data[id] || {};
         if (!r.ws) return;
-        reqs.push({ id, ws: r.ws, shop: r.shop || '', staff: r.staff || [], closed: r.closed || [], createdAt: r.createdAt || '' });
+        byId[id] = { id, ws: r.ws, shop: r.shop || '', staff: r.staff || [], closed: r.closed || [], createdAt: r.createdAt || '' };
         manualAll[id] = r.manual || {};
         if (r.confirmed) {
           const c = r.confirmed;
@@ -443,6 +445,7 @@ const App = {
           delete confirmedAll[id];
         }
       });
+      const reqs = Object.keys(byId).map(k => byId[k]);
       App._write(App.KEYS.requests, reqs);
       App._write(App.KEYS.manual, manualAll);
       App._write(App.KEYS.confirmed, confirmedAll);

@@ -689,10 +689,19 @@
         updateConnectionBadge();
         // 既存の依頼すべてに購読開始
         if (App.isOnline()) {
-          App.getRequests().forEach(r => App.subscribeReplies(r.id, () => {
-            renderAggregate();
+          const subscribeAll = () => {
+            App.getRequests().forEach(r => App.subscribeReplies(r.id, () => {
+              renderAggregate();
+              renderPastRequests();
+            }));
+          };
+          // 他の端末で作られた依頼も一覧に出す
+          App.subscribeRequests(() => {
+            subscribeAll();
             renderPastRequests();
-          }));
+            renderAggregate();
+          });
+          subscribeAll();
           App.subscribeStaffMeta(() => renderStaffMaster());
         }
         renderCreate();

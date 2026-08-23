@@ -265,6 +265,7 @@
         return;
       }
       if (App.isOnline()) {
+        App.subscribeRequests(deferredRender);   // 他の端末で作られた依頼でも開けるように
         App.subscribeReplies(currentReqId, deferredRender);
         App.subscribeManual(currentReqId, deferredRender);
         App.subscribeConfirmed(currentReqId, renderConfirmStatus);
