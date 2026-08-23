@@ -295,7 +295,10 @@ const App = {
   // positions2 … 2部(16-L)でできるポジション（W / T）
   // t2always   … 出勤日は必ず2部T
   // t2extra    … 仕事が終わり次第2部Tに合流（3人の枠外）
-  // priority=true … 社保加入者など、優先してシフトに入れるメンバー
+  // rank       … '' (無印) / 'priority'(★優先) / 'housewife'(主婦) / 'student'(学生)
+  //              優先順位: ★優先 > 主婦 > 無印 > 学生
+  // daysMin/Max … 週の希望出勤回数（例: 2〜3回）。Max が自動割り当ての上限
+  // priority   … 旧データ互換（rank が無ければ priority=true を ★優先 とみなす）
   getStaffMeta() {
     return App._read(App.KEYS.staffmeta, {});
   },
@@ -325,6 +328,7 @@ const App = {
         if (m && m.name) all[m.name] = {
           positions: m.positions || [], positions2: m.positions2 || [],
           t2always: !!m.t2always, t2extra: !!m.t2extra,
+          rank: m.rank || '', daysMin: m.daysMin || null, daysMax: m.daysMax || null,
           note: m.note || '', priority: !!m.priority
         };
       });
@@ -374,6 +378,20 @@ const App = {
   /* ===== 確定シフト（スナップショット＋修正履歴） ===== */
 
   // { reqId: { version, at, cells:{...}, history:[{v, at, changes:[...]}] } }
+  // スタッフの区分を数値にする（小さいほど優先）
+  //   0=★優先  1=主婦  2=無印  3=学生
+  RANK_ORDER: { priority: 0, housewife: 1, '': 2, student: 3 },
+  RANK_LABEL: { priority: '\u2605\u512a\u5148', housewife: '\u4e3b\u5a66', student: '\u5b66\u751f' },
+  rankOf(meta) {
+    const m = meta || {};
+    const r = m.rank || (m.priority ? 'priority' : '');
+    return App.RANK_ORDER[r] !== undefined ? App.RANK_ORDER[r] : 2;
+  },
+  rankKey(meta) {
+    const m = meta || {};
+    return m.rank || (m.priority ? 'priority' : '');
+  },
+
   getConfirmedAll() { return App._read(App.KEYS.confirmed, {}); },
   getConfirmed(reqId) { return App.getConfirmedAll()[reqId] || null; },
 

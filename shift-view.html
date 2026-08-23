@@ -632,14 +632,33 @@
 
       if (!confirm('自動割り当てを実行します。\n既存のポジション・時間の手入力は上書きされます。よろしいですか？')) return;
 
-      // 出勤日数の上限: 今週の「割り当て指示」が最優先、無ければスタッフマスタの個人メモ
+      // 出勤日数の上限: 「割り当て指示」> スタッフマスタの週□〜□回 > 個人メモ
       const maxDays = parseMaxDays(assignNote, replies.map(r => r.name));
-      const memoLimits = [];  // 個人メモ由来の上限（適用結果を報告する）
+      const memoLimits = [];
       replies.forEach(r => {
         if (maxDays[r.name] !== undefined) return;
-        const v = parseMaxDaysFromMemo((meta[r.name] || {}).note);
+        const m = meta[r.name] || {};
+        if (m.daysMax != null && m.daysMax !== '') {
+          maxDays[r.name] = Number(m.daysMax);
+          const lo = (m.daysMin != null && m.daysMin !== '') ? `${m.daysMin}〜` : '';
+          memoLimits.push(`${r.name}: 週${lo}${m.daysMax}回`);
+          return;
+        }
+        const v = parseMaxDaysFromMemo(m.note);
         if (v !== undefined) { maxDays[r.name] = v; memoLimits.push(`${r.name}: 週${v}日まで`); }
       });
+
+      // 区分（★優先 > 主婦 > 無印 > 学生）と、均等化の分母となる希望回数
+      const rankOf = (name) => App.rankOf(meta[name] || {});
+      const wantDays = {};   // 名前 → 「出勤できると言ってくれた回数」
+      replies.forEach(r => {
+        let n = 0;
+        for (let i = 0; i < 7; i++) if (!closed.has(i) && (r.d[i] === 'o' || r.d[i] === 't')) n++;
+        if (maxDays[r.name] !== undefined) n = Math.min(n, maxDays[r.name]);
+        wantDays[r.name] = Math.max(1, n);
+      });
+      // 充足度（少ない人から入れる）= すでに入った日数 ÷ 希望回数
+      const fillRate = (name) => assignedCount[name] / wantDays[name];
 
       const timeCons = {};  // name → { day: {start,end} }
       replies.forEach(r => { timeCons[r.name] = buildTimeCons(r); });
@@ -681,12 +700,15 @@
         const needs = {};  // pos → 残り枠数
         openSlots.forEach(p => { needs[p] = (needs[p] || 0) + 1; });
 
-        // ★★ ①優先メンバー（社保加入者など）を最優先
-        // ★  ②できるポジションが少ない人から先に配置（多能な人は後回し=調整役）
+        // 配置する順番
+        //  ① 区分：★優先 > 主婦 > 無印 > 学生
+        //  ② 希望回数に対する充足度が低い人（削るときは1人に集中させない）
+        //  ③ できるポジションが少ない人（多能な人は調整役として後回し）
         const sorted = available.slice().sort((a, b) => {
-          const qa = meta[a.name].priority ? 0 : 1;
-          const qb = meta[b.name].priority ? 0 : 1;
-          if (qa !== qb) return qa - qb;
+          const ra = rankOf(a.name), rb = rankOf(b.name);
+          if (ra !== rb) return ra - rb;
+          const fa = fillRate(a.name), fb = fillRate(b.name);
+          if (Math.abs(fa - fb) > 1e-9) return fa - fb;
           const pa = (meta[a.name].positions || []).length;
           const pb = (meta[b.name].positions || []).length;
           if (pa !== pb) return pa - pb;
@@ -768,7 +790,8 @@
               .filter(r => r.day === day && r.pos !== p && (meta[r.name].positions || []).indexOf(p) >= 0)
               .sort((a, b) => (meta[b.name].positions || []).length - (meta[a.name].positions || []).length);
             for (const mv of movable) {
-              const u = idle.find(x => (meta[x.name].positions || []).indexOf(mv.pos) >= 0);
+              const u = idle.filter(x => (meta[x.name].positions || []).indexOf(mv.pos) >= 0)
+                .sort((p, q) => rankOf(p.name) - rankOf(q.name) || fillRate(p.name) - fillRate(q.name))[0];
               const person = byName[mv.name];
               if (!u || !person) continue;
               const freed = mv.pos;
@@ -790,14 +813,14 @@
         //     （定員（K3 / R2系3 / W2 / T1）は絶対に超えない）
         const dLabel = `${App.fmtMD(App.weekDates(req.ws)[day])}(${App.DOW_LABELS[day]})`;
         for (const person of sorted) {
-          if (!meta[person.name].priority || assignedToday.has(person.name)) continue;
+          if (rankOf(person.name) !== 0 || assignedToday.has(person.name)) continue;
           const cands = (meta[person.name].positions || []).filter(p => p !== 'R1');
           if (!cands.length) continue;
-          // 同じポジションに入っている非優先の人のうち、週の出勤日数が多い人と交代
+          // 同じポジションに入っている優先度の低い人のうち、充足度が高い人と交代
           const victims = results
             .map((r, i) => ({ r, i }))
-            .filter(x => x.r.day === day && cands.indexOf(x.r.pos) >= 0 && !(meta[x.r.name] || {}).priority)
-            .sort((a, b) => assignedCount[b.r.name] - assignedCount[a.r.name]);
+            .filter(x => x.r.day === day && cands.indexOf(x.r.pos) >= 0 && rankOf(x.r.name) > 0)
+            .sort((a, b) => rankOf(b.r.name) - rankOf(a.r.name) || fillRate(b.r.name) - fillRate(a.r.name));
           if (!victims.length) continue;   // 交代できなければ諦める（定員超にはしない）
           const v = victims[0];
           const pos = v.r.pos;
@@ -948,7 +971,7 @@
       let msg = `✓ ${results.length}件割り当てました（うち2部 ${part2Count}件）`;
       if (shortages2.length) msg += `\n\n【2部の人数不足】\n${shortages2.join('\n')}`;
       if (shortages.length) msg += `\n\n【人数不足】\n${shortages.join('\n')}`;
-      if (memoLimits.length) msg += `\n\n【スタッフマスタのメモから出勤上限を適用】\n${memoLimits.join(' / ')}`;
+      if (memoLimits.length) msg += `\n\n【週の希望回数を上限として適用】\n${memoLimits.join(' / ')}`;
       if (swapped.length) msg += `\n\n【★優先メンバーのため入れ替え】\n${swapped.join('\n')}`;
       if (skipped.length) msg += `\n\n【△の時間を解釈できず未割当】\n${skipped.join(' / ')}\n→ 手動で調整するか、🤖Claude連携をお使いください`;
       alert(msg);
@@ -1132,7 +1155,9 @@ ${head}${rest}
       txt += `## ポジションと1日の必要人数（計9名にできるだけ近づける）\n`;
       txt += `- K: 3人\n- R2系: 3人（うちR2dが必ず1人。表記はR2dとR2）\n- W: 2人\n- T: 1人\n- R1: 0人（使わない）\n`;
       txt += `- 人数不足の場合の優先順位: ①K3人 ②R2系2人（R2d優先） ③W1人 ④残り\n`;
-      txt += `- ★★【最優先】名前に「★優先」が付いている人は社会保険加入者などのため、出勤可（○/△）の日は必ずシフトに入れること（定員9名を超えてでも入れる）\n`;
+      txt += `- シフトに入れる優先順位は **【★優先】> 【主婦】> 無印 > 【学生】**。ただし**定員（計9名）は絶対に超えない**\n`;
+      txt += `- 各人の「週□回まで」が書いてあれば、その回数を**上限**とする\n`;
+      txt += `- 人数を削るときは **希望回数に対する充足度が高い人から削る**。1人を3日削るのではなく、3人を1日ずつ削って均す\n`;
       txt += `- ★できるポジションが少ない人から優先的に配置し、多くのポジションができる人は後回しにして調整役とする（そうしないとシフトに入れない人が出る）\n\n`;
       txt += `## 1部・2部の仕組み\n`;
       txt += `- 1部 = 9:00〜16:00（掃除が終わるおよそ16時）。その後5分ほど終礼し、2部に残る人と退勤する人に分かれる\n`;
@@ -1158,7 +1183,10 @@ ${head}${rest}
       txt += `## スタッフの回答（○=終日可 / △=条件付き / ✕=不可 / -=定休日）\n`;
       for (const r of replies) {
         const m = meta[r.name] || { positions: [] };
-        txt += `- ${r.name}${m.priority ? '【★優先】' : ''}: [${r.d.split('').map((c, i) => `${App.DOW_LABELS[i]}=${c === 'o' ? '○' : c === 't' ? '△' : c === 'x' ? '✕' : '-'}`).join(' ')}]`;
+        const rkLabel = { priority: '【★優先】', housewife: '【主婦】', student: '【学生】' }[App.rankKey(m)] || '';
+        const dLim = (m.daysMax != null && m.daysMax !== '')
+          ? `【週${(m.daysMin != null && m.daysMin !== '') ? m.daysMin + '〜' : ''}${m.daysMax}回】` : '';
+        txt += `- ${r.name}${rkLabel}${dLim}: [${r.d.split('').map((c, i) => `${App.DOW_LABELS[i]}=${c === 'o' ? '○' : c === 't' ? '△' : c === 'x' ? '✕' : '-'}`).join(' ')}]`;
         txt += ` 1部: ${m.positions && m.positions.length ? m.positions.join(',') : '未設定'}`;
         txt += ` / 2部: ${m.positions2 && m.positions2.length ? m.positions2.join(',') : 'なし'}`;
         if (m.t2always) txt += ' 《必ずT》';

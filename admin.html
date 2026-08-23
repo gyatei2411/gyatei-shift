@@ -101,7 +101,10 @@
     <div class="tab-pane" id="tab-staff" style="display:none">
       <div class="card">
         <h2>スタッフ名マスタ</h2>
-        <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R2d / R1 / W / T）の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。<br><strong>★優先</strong>にチェックを入れると、社会保険加入者など<strong>必ずシフトに入れたいメンバー</strong>として、自動割り当てで最優先に配置されます。<br><strong>メモ</strong>に「<strong>週3日まで</strong>」のように書くと、自動割り当てがその人の週の出勤日数の上限として扱います（★優先より上限が優先されます）。</p><div style="background:#FFF7ED;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;font-size:0.82rem;color:#92400E;margin-bottom:14px"><strong>1部（9:00〜16:00）</strong>と <strong>2部（16:00〜L）</strong>は別々に設定します。<br>2部のポジションは <strong>W</strong> と <strong>T</strong> の2つだけです。両方に入る人はシフト表に「<strong>R2→W</strong>」のように出ます（同じなら「W」のまま）。<br><strong>K（調理場）は1部・2部を通してK</strong>。時間は 9-L になります（TやWには回りません）。<br><strong>1部がWの人は2部もWのまま</strong>です（Tには行きません）。<br><strong>2部Tは必ず1日3名まで</strong>。<br><strong>必ずT</strong>：1部がW以外の日は必ず2部Tにつける人（西川さん）。シフトに表記され、3名の1人として数えます。<br><strong>応援T</strong>：2部Tへヘルプに行く人（青木さん）。<strong>シフトにTは表記せず</strong>、終業だけLまでになります（例：K 9-L）。3名には数えません。<br>応援Tの人が出勤する日は、<strong>3名のうち1人が16:30上がり</strong>（表記「R2→（T」）になります。</div>
+        <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R2d / R1 / W / T）の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。<br>名前の横の <strong>★優先 / 主婦 / 学生</strong> で区分を選べます（もう一度押すと無印）。<br>
+        シフトに入れる優先順位は <strong>★優先 ＞ 主婦 ＞ 無印 ＞ 学生</strong> です。<br>
+        <strong>週□〜□回</strong>：〇をつけても全部は入らない人の希望回数。<strong>右側（上限）を超えては割り当てません</strong>。空欄なら制限なし。<br>
+        人数を削るときは、<strong>希望回数に対する充足度が高い人から削ります</strong>（1人を3日削るのではなく、3人を1日ずつ）。</p><div style="background:#FFF7ED;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;font-size:0.82rem;color:#92400E;margin-bottom:14px"><strong>1部（9:00〜16:00）</strong>と <strong>2部（16:00〜L）</strong>は別々に設定します。<br>2部のポジションは <strong>W</strong> と <strong>T</strong> の2つだけです。両方に入る人はシフト表に「<strong>R2→W</strong>」のように出ます（同じなら「W」のまま）。<br><strong>K（調理場）は1部・2部を通してK</strong>。時間は 9-L になります（TやWには回りません）。<br><strong>1部がWの人は2部もWのまま</strong>です（Tには行きません）。<br><strong>2部Tは必ず1日3名まで</strong>。<br><strong>必ずT</strong>：1部がW以外の日は必ず2部Tにつける人（西川さん）。シフトに表記され、3名の1人として数えます。<br><strong>応援T</strong>：2部Tへヘルプに行く人（青木さん）。<strong>シフトにTは表記せず</strong>、終業だけLまでになります（例：K 9-L）。3名には数えません。<br>応援Tの人が出勤する日は、<strong>3名のうち1人が16:30上がり</strong>（表記「R2→（T」）になります。</div>
         <div class="form-group">
           <div style="display:flex;gap:8px">
             <input type="text" class="form-input" id="new-staff-input" placeholder="スタッフ名を追加" onkeydown="if(event.key==='Enter') addStaff()">
@@ -492,16 +495,24 @@
       const el = document.getElementById('staff-master-list');
       if (!staff.length) { el.innerHTML = '<div class="empty-state">スタッフが登録されていません</div>'; return; }
       el.innerHTML = staff.map((n, i) => {
-        const m = Object.assign({ positions: [], positions2: [], t2always: false, t2extra: false, note: '', priority: false }, meta[n] || {});
+        const m = Object.assign({ positions: [], positions2: [], t2always: false, t2extra: false,
+                                  rank: '', daysMin: null, daysMax: null, note: '', priority: false }, meta[n] || {});
+        const rk = App.rankKey(m);
+        const RC = { priority: '#B45309', housewife: '#0369A1', student: '#7E22CE' };
+        const RBG = { priority: '#FFF7ED', housewife: '#F0F9FF', student: '#FAF5FF' };
         const esc = n.replace(/'/g, "\\'");
         return `
-        <div class="staff-master-row" style="flex-wrap:wrap;${m.priority ? 'background:#FFF7ED;border-color:#F59E0B' : ''}">
-          <span class="name">${n}${m.priority ? ' <span style="font-size:0.68rem;color:#B45309;font-weight:700">優先</span>' : ''}</span>
-          <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.76rem;font-weight:700;color:${m.priority ? '#B45309' : 'var(--muted)'};cursor:pointer;white-space:nowrap"
-            title="社保加入者など、必ず優先してシフトに入れるメンバー">
-            <input type="checkbox" ${m.priority ? 'checked' : ''} onchange="togglePriority('${esc}', this.checked)">
-            ★優先
-          </label>
+        <div class="staff-master-row" style="flex-wrap:wrap;${rk ? `background:${RBG[rk]};border-color:${RC[rk]}` : ''}">
+          <span class="name">${n}${rk ? ` <span style="font-size:0.68rem;color:${RC[rk]};font-weight:700">${App.RANK_LABEL[rk]}</span>` : ''}</span>
+          <span style="display:inline-flex;gap:4px" title="シフトに入れる優先順位：★優先 ＞ 主婦 ＞ 無印 ＞ 学生">
+            ${['priority','housewife','student'].map(k => `
+              <button class="btn btn-sm" onclick="setRank('${esc}', '${k}')"
+                style="padding:3px 10px;font-size:0.76rem;font-weight:700;border-radius:6px;cursor:pointer;
+                       border:1.5px solid ${rk === k ? RC[k] : 'var(--border)'};
+                       background:${rk === k ? RC[k] : '#fff'};color:${rk === k ? '#fff' : 'var(--muted)'}">
+                ${App.RANK_LABEL[k]}
+              </button>`).join('')}
+          </span>
           <div class="actions">
             <button class="btn btn-outline btn-sm" onclick="moveStaff(${i}, -1)">↑</button>
             <button class="btn btn-outline btn-sm" onclick="moveStaff(${i}, 1)">↓</button>
@@ -534,8 +545,20 @@
               <input type="checkbox" ${m.t2extra ? 'checked' : ''} onchange="toggleT2Flag('${esc}', 't2extra', this.checked)">
               応援T
             </label>
-            <input type="text" placeholder="メモ（例: 週3日まで）" value="${(m.note || '').replace(/"/g, '&quot;')}"
-              style="flex:1;min-width:140px;font-size:0.78rem;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px"
+            <span style="display:inline-flex;align-items:center;gap:3px;font-size:0.76rem;font-weight:700;color:var(--muted);white-space:nowrap;margin-left:6px"
+              title="週に何回入りたいか。上限（右側）を超えてシフトはつけません。例: 2〜3回">
+              週
+              <input type="number" min="0" max="7" value="${m.daysMin == null ? '' : m.daysMin}" placeholder="-"
+                style="width:44px;text-align:center;font-size:0.78rem;padding:3px 4px;border:1.5px solid var(--border);border-radius:6px"
+                onchange="setDays('${esc}', 'daysMin', this.value)">
+              〜
+              <input type="number" min="0" max="7" value="${m.daysMax == null ? '' : m.daysMax}" placeholder="-"
+                style="width:44px;text-align:center;font-size:0.78rem;padding:3px 4px;border:1.5px solid var(--border);border-radius:6px"
+                onchange="setDays('${esc}', 'daysMax', this.value)">
+              回
+            </span>
+            <input type="text" placeholder="メモ" value="${(m.note || '').replace(/"/g, '&quot;')}"
+              style="flex:1;min-width:120px;font-size:0.78rem;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px"
               onchange="setStaffNote('${esc}', this.value)">
           </div>
         </div>
@@ -576,15 +599,29 @@
 
     function staffMetaOf(name) {
       return Object.assign(
-        { positions: [], positions2: [], t2always: false, t2extra: false, note: '', priority: false },
+        { positions: [], positions2: [], t2always: false, t2extra: false,
+          rank: '', daysMin: null, daysMax: null, note: '', priority: false },
         App.getStaffMeta()[name] || {});
     }
 
-    // 社保加入者など「必ず優先してシフトに入れる」メンバー
-    function togglePriority(name, checked) {
-      const meta = App.getStaffMeta();
-      const m = meta[name] || { positions: [], note: '', priority: false };
-      m.priority = !!checked;
+    // 区分（★優先 / 主婦 / 学生）。同じボタンをもう一度押すと無印に戻る
+    function setRank(name, key) {
+      const m = staffMetaOf(name);
+      const cur = App.rankKey(m);
+      m.rank = (cur === key) ? '' : key;
+      m.priority = (m.rank === 'priority');   // 旧フィールドも合わせておく
+      App.setStaffMeta(name, m);
+      renderStaffMaster();
+    }
+
+    // 週の希望出勤回数（空欄なら制限なし）
+    function setDays(name, key, val) {
+      const m = staffMetaOf(name);
+      const v = String(val).trim();
+      m[key] = v === '' ? null : Math.max(0, Math.min(7, parseInt(v, 10) || 0));
+      if (m.daysMin != null && m.daysMax != null && m.daysMin > m.daysMax) {
+        if (key === 'daysMin') m.daysMax = m.daysMin; else m.daysMin = m.daysMax;
+      }
       App.setStaffMeta(name, m);
       renderStaffMaster();
     }
