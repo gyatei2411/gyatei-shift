@@ -89,6 +89,7 @@
     /* 出勤していないが「出られる」と答えた日 */
     td.cell.av-o { background: #123024; color: #4ADE80; }
     td.cell.av-t { background: #2E2410; color: #FBBF24; }
+    td.cell.av-m { background: #241C36; color: #C4B5FD; }
     td.cell .mark { font-size: 24px; font-weight: 900; line-height: 1; }
 
     /* 今週シフトが1日もない人（表の下に小さくまとめる） */
@@ -105,7 +106,22 @@
     .resting .rt-person .rt-day { font-weight: 800; margin-left: 5px; }
     .resting .rt-person .rt-o { color: #4ADE80; }
     .resting .rt-person .rt-t { color: #FBBF24; }
+    .resting .rt-person .rt-m { color: #C4B5FD; }
     .resting .rt-none { opacity: 0.55; }
+
+    /* 下段の情報行（休み・まかない・メモ） */
+    tr.info td.name { font-size: 17px; padding: 2px 12px; background: #16202F; color: #94A3B8; }
+    tr.info td.v {
+      background: #131C2E; color: #CBD5E1; border-radius: 6px;
+      height: 34px; padding: 2px 6px; font-size: 17px; font-weight: 700;
+      white-space: normal; line-height: 1.2;
+    }
+    tr.info.fam td.name { background: #2A2110; color: #FCD34D; }
+    tr.info.fam td.v { background: #241D0E; color: #FCD34D; }
+    tr.info.mkn td.name { background: #10251B; color: #6EE7B7; }
+    tr.info.mkn td.v { background: #0E2318; color: #6EE7B7; font-size: 26px; font-weight: 900; }
+    tr.info td.v.blank { color: #475569; font-weight: 500; }
+    tr.info td.closedday { background: #0B1220; }
 
     /* 人数が多い週は1行にまとめて、その分だけ文字を大きく見せる */
     table.board.compact td.cell { height: 42px; }
@@ -446,9 +462,10 @@
           }
           // 出勤していない日 → ○/△で出せると答えていれば交代候補として表示
           const sym = symOf(name, d);
-          if (sym === 'o' || sym === 't') {
+          if (sym === 'o' || sym === 't' || sym === 'm') {
             usedAvail = true;
-            r += `<td class="cell av-${sym}"><div class="ci"><span class="mark">${sym === 'o' ? '○' : '△'}</span></div></td>`;
+            const mk = sym === 'o' ? '○' : sym === 't' ? '△' : '未';
+            r += `<td class="cell av-${sym}"><div class="ci"><span class="mark">${mk}</span></div></td>`;
           } else {
             r += '<td class="cell off"></td>';
           }
@@ -457,6 +474,28 @@
       };
 
       for (const name of names) html += rowFor(name);
+
+      // 休み（家族）/ まかない / メモ
+      const cell = (k) => cells[App._safeCellKey(k)] || '';
+      const worksCount = (d) => names.filter(n => worksOn(n, d)).length;
+      const infoRow = (cls, label, fn) => {
+        let r = `<tr class="info ${cls}"><td class="name">${label}</td>`;
+        for (let d = 0; d < 7; d++) {
+          if (closed.has(d)) { r += '<td class="cell closedday"></td>'; continue; }
+          const v = fn(d);
+          r += `<td class="v${v ? '' : ' blank'}">${v || '・'}</td>`;
+        }
+        return r + '</tr>';
+      };
+      const anyFam = [0,1,2,3,4,5,6].some(d => !closed.has(d) && cell(`fam_off_${d}`));
+      const anyMemo = [0,1,2,3,4,5,6].some(d => !closed.has(d) && cell(`memo_${d}`));
+      if (anyFam) html += infoRow('fam', '休み', d => esc(cell(`fam_off_${d}`)));
+      html += infoRow('mkn', 'まかない', d => {
+        const off = App.parseFamilyOff(cell(`fam_off_${d}`));
+        return String(worksCount(d) + App.FAMILY.length - off.length);
+      });
+      if (anyMemo) html += infoRow('', 'メモ', d => esc(cell(`memo_${d}`)));
+
       html += '</tbody></table>';
 
       // 今週シフトなしの人は、表の下に小さくまとめて出す（在籍していることが分かるように）
@@ -467,9 +506,10 @@
           for (let d = 0; d < 7; d++) {
             if (closed.has(d)) continue;
             const sm = symOf(n, d);
-            if (sm === 'o' || sm === 't') {
+            if (sm === 'o' || sm === 't' || sm === 'm') {
               usedAvail = true;
-              days.push(`<span class="rt-day rt-${sm}">${App.DOW_LABELS[d]}${sm === 'o' ? '○' : '△'}</span>`);
+              const mk = sm === 'o' ? '○' : sm === 't' ? '△' : '未';
+              days.push(`<span class="rt-day rt-${sm}">${App.DOW_LABELS[d]}${mk}</span>`);
             }
           }
           return `<span class="rt-person${days.length ? '' : ' rt-none'}">${esc(n)}${days.join('')}</span>`;
@@ -487,7 +527,8 @@
       let leg = order.filter(p => usedPos[p]).map(p => `<span><i class="${usedPos[p]}">${p}</i></span>`).join('');
       if (usedAvail) {
         leg += '<span style="margin-left:14px"><i style="background:#123024;color:#4ADE80">○</i>' +
-               '<i style="background:#2E2410;color:#FBBF24">△</i>この日は出られると回答（交代を頼めます）</span>';
+               '<i style="background:#2E2410;color:#FBBF24">△</i>この日は出られると回答（交代を頼めます）' +
+               '<i style="background:#241C36;color:#C4B5FD;margin-left:10px">未</i>未定（入れるか未定）</span>';
       }
       leg += '<span style="margin-left:auto">時間の「L」＝ラストまで</span>';
       document.getElementById('legend').innerHTML = leg;

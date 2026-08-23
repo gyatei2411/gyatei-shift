@@ -69,7 +69,7 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label">出勤可否（○=終日出勤OK / △=条件付き / ✕=不可）</label>
+          <label class="form-label">出勤可否（○=終日OK / △=条件付き / ✕=不可 / 未=まだ分からない）</label>
           <div class="bulk-actions">
             <button onclick="bulkSet('o')">全部 ○</button>
             <button onclick="bulkSet('x')">全部 ✕</button>
@@ -184,8 +184,8 @@
             <div class="day-row-head">
               <span class="day-label">${App.fmtMD(d)} (${day})</span>
             </div>
-            <div class="symbol-row symbol-row-3">
-              ${['o','t','x'].map(s => `
+            <div class="symbol-row">
+              ${['o','t','x','m'].map(s => `
                 <button type="button" class="sym-btn" data-sym="${s}" data-day="${i}" onclick="setDay(${i},'${s}',this)">
                   ${App.SYMBOLS[s].mark}<br><span style="font-size:0.7rem;font-weight:500;color:var(--muted)">${App.SYMBOLS[s].label}</span>
                 </button>

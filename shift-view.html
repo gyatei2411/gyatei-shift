@@ -107,6 +107,7 @@
     .shift-table .cell-sym[data-sym="o"] { background: #D1FAE5; color: #059669; }
     .shift-table .cell-sym[data-sym="t"] { background: #FEF3C7; color: #D97706; }
     .shift-table .cell-sym[data-sym="x"] { background: #FEE2E2; color: #DC2626; }
+    .shift-table .cell-sym[data-sym="m"] { background: #EDE9FE; color: #7C3AED; }
 
     /* 定休日セル */
     .shift-table td.closed-cell {
@@ -121,6 +122,13 @@
     .shift-table .row-pos { height: 18px; background: #F8FAFC; }
     .shift-table .row-pos td.lbl { background: #E0E7FF; color: var(--primary); font-weight: 700; text-align: center; font-size: 10px; }
     .shift-table .row-pos td.cnt { font-size: 11px; font-weight: 600; }
+
+    .shift-table .row-fam { height: 20px; background: #FFFDF5; }
+    .shift-table .row-fam td.lbl { background: #FEF3C7; color: #92400E; font-weight: 700; text-align: left; padding-left: 6px; font-size: 10px; }
+    .shift-table .row-fam td.famcell { font-size: 11px; font-weight: 700; color: #92400E; }
+    .shift-table .row-mkn { height: 20px; background: #F0FDF4; }
+    .shift-table .row-mkn td.lbl { background: #DCFCE7; color: #166534; font-weight: 700; text-align: left; padding-left: 6px; font-size: 10px; }
+    .shift-table .row-mkn td.mkn { font-size: 13px; font-weight: 800; color: #166534; }
 
     .shift-table .row-note { height: 24px; }
     .shift-table .row-note td.lbl { background: #F1F5F9; font-weight: 700; text-align: left; padding-left: 6px; font-size: 10px; }
@@ -148,6 +156,7 @@
     .sv-legend i.o { background: #D1FAE5; color: #059669; }
     .sv-legend i.t { background: #FEF3C7; color: #D97706; }
     .sv-legend i.x { background: #FEE2E2; color: #DC2626; }
+    .sv-legend i.m { background: #EDE9FE; color: #7C3AED; }
 
     .sv-error { max-width: 600px; margin: 40px auto; padding: 30px; background: #fff; border-radius: 12px; text-align: center; }
     .sv-error h2 { color: var(--danger); margin-bottom: 8px; }
@@ -187,6 +196,7 @@
         <span><i class="o">○</i>終日可</span>
         <span><i class="t">△</i>条件付</span>
         <span><i class="x">✕</i>不可</span>
+        <span><i class="m">未</i>未定</span>
       </div>
       <span id="confirm-badge" style="display:none;font-size:0.8rem;font-weight:800;background:rgba(255,255,255,0.28);padding:7px 11px;border-radius:8px"></span>
       <button id="btn-confirm" onclick="confirmShift()" style="background:#059669">✅ シフトを確定</button>
@@ -289,6 +299,15 @@
       document.getElementById('content').innerHTML = `<div class="sv-error"><h2>⚠ エラー</h2><p>${msg}</p></div>`;
     }
 
+    // まかないの必要数 = その日出勤するスタッフ ＋ 休みでない家族
+    function makanaiOf(day, names, manual) {
+      const g = (n, f) => manual[App._safeCellKey(`s_${n}_${day}_${f}`)] || '';
+      const staff = names.filter(n => g(n, 'main') || g(n, 'start') || g(n, 'end')).length;
+      const off = App.parseFamilyOff(manual[App._safeCellKey(`fam_off_${day}`)]);
+      const fam = App.FAMILY.length - off.length;
+      return { staff, fam, total: staff + fam };
+    }
+
     // 手入力セル: contenteditable + data-mkey
     function edCell(mkey, cls, manual, extra = '') {
       const val = manual[App._safeCellKey(mkey)] || '';
@@ -319,7 +338,7 @@
       replies.forEach(r => { replyMap[r.name] = r; });
 
       const dayCounts = dates.map((_, i) => {
-        const c = { o: 0, t: 0, x: 0 };
+        const c = { o: 0, t: 0, x: 0, m: 0 };
         for (const r of replies) { const s = r.d[i]; if (c[s] !== undefined) c[s]++; }
         return c;
       });
@@ -376,19 +395,44 @@
           const autoSym = reply ? (reply.d[i] || '') : '';
           const symChar = manualSym !== undefined && manualSym !== ''
             ? manualSym
-            : (autoSym === 'o' ? '○' : autoSym === 't' ? '△' : autoSym === 'x' ? '✕' : '');
-          const dataSym = symChar === '○' ? 'o' : symChar === '△' ? 't' : (symChar === '✕' || symChar === '×') ? 'x' : '';
+            : (autoSym === 'o' ? '○' : autoSym === 't' ? '△' : autoSym === 'x' ? '✕' : autoSym === 'm' ? '未' : '');
+          const dataSym = symChar === '○' ? 'o' : symChar === '△' ? 't' : symChar === '未' ? 'm'
+            : (symChar === '✕' || symChar === '×') ? 'x' : '';
           html += `<td class="cell-sym" data-sym="${dataSym}">` +
             `<select class="sym-select" data-mkey="s_${name}_${i}_sym" onchange="saveSym(this)">` +
-            ['', '○', '△', '✕'].map(v =>
+            ['', '○', '△', '✕', '未'].map(v =>
               `<option value="${v}" ${v === symChar ? 'selected' : ''}>${v || '・'}</option>`).join('') +
             `</select></td>`;
         }
         html += '</tr>';
       }
 
+      // 休み（家族）/ まかない / メモ
+      const famTitle = App.FAMILY.map(k => `${k}=${App.FAMILY_FULL[k]}`).join(' ・ ');
+      html += `<tr class="row-fam"><td class="lbl" title="その日休む家族を入力（${famTitle}）。例: 会奥">休み</td>`;
+      for (let i = 0; i < 7; i++) {
+        if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
+        html += edCell(`fam_off_${i}`, 'famcell', manual, 'colspan="3"');
+      }
+      html += '<td></td></tr>';
+
+      html += `<tr class="row-mkn"><td class="lbl" title="スタッフの出勤人数 ＋ 家族の出勤人数">まかない</td>`;
+      for (let i = 0; i < 7; i++) {
+        if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
+        const mk = makanaiOf(i, orderedNames, manual);
+        html += `<td colspan="3" class="mkn" data-mkn="${i}" title="スタッフ${mk.staff}名 ＋ 家族${mk.fam}名">${mk.total}</td>`;
+      }
+      html += '<td></td></tr>';
+
+      html += `<tr class="row-note"><td class="lbl">メモ</td>`;
+      for (let i = 0; i < 7; i++) {
+        if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
+        html += edCell(`memo_${i}`, 'gnote', manual, 'colspan="3"');
+      }
+      html += '<td></td></tr>';
+
       // ○/△/✕ 自動集計
-      [['o','○'],['t','△'],['x','✕']].forEach(([s, lbl]) => {
+      [['o','○'],['t','△'],['x','✕'],['m','未']].forEach(([s, lbl]) => {
         html += `<tr class="row-pos"><td class="lbl">${lbl}</td>`;
         for (let i = 0; i < 7; i++) {
           if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
@@ -472,6 +516,7 @@
       if (!mkey) return;
       const val = td.textContent.trim();
       App.setManualCell(currentReqId, mkey, val);
+      if (mkey.indexOf('fam_off_') === 0) refreshMakanai();
       if (mkey.endsWith('_sym')) {
         const dataSym = val === '○' ? 'o' : val === '△' ? 't' : (val === '✕' || val === '×') ? 'x' : '';
         td.dataset.sym = dataSym;
@@ -484,9 +529,25 @@
     function saveSym(sel) {
       const td = sel.closest('td');
       App.setManualCell(currentReqId, sel.dataset.mkey, sel.value);
-      td.dataset.sym = sel.value === '○' ? 'o' : sel.value === '△' ? 't' : sel.value === '✕' ? 'x' : '';
+      td.dataset.sym = sel.value === '○' ? 'o' : sel.value === '△' ? 't'
+        : sel.value === '✕' ? 'x' : sel.value === '未' ? 'm' : '';
       showSaved();
       renderConfirmStatus();
+    }
+
+    // 休み欄を直したら、その日のまかないを引き直す（全体再描画はしない）
+    function refreshMakanai() {
+      const req = App.getRequest(currentReqId);
+      if (!req) return;
+      const manual = App.getManual(currentReqId);
+      const replies = App.getReplies(currentReqId);
+      const names = req.staff.slice();
+      replies.forEach(r => { if (!names.includes(r.name)) names.push(r.name); });
+      document.querySelectorAll('.shift-table td[data-mkn]').forEach(td => {
+        const mk = makanaiOf(+td.dataset.mkn, names, manual);
+        td.textContent = mk.total;
+        td.title = `スタッフ${mk.staff}名 ＋ 家族${mk.fam}名`;
+      });
     }
 
     function showSaved() {
@@ -995,7 +1056,9 @@
     }
 
     // 2つのスナップショットの差分を日本語の行にする
-    function diffCells(oldCells, newCells, req) {
+    // includeQuiet=true のときだけ「休み（家族）・メモ」の変更を 1行だけ含める
+    //（履歴には残さないが、未確定の判定には使う）
+    function diffCells(oldCells, newCells, req, includeQuiet) {
       oldCells = oldCells || {}; newCells = newCells || {};
       const dates = App.weekDates(req.ws);
       const dayLabel = i => `${App.fmtMD(dates[i])}(${App.DOW_LABELS[i]})`;
@@ -1005,12 +1068,14 @@
 
       const touched = {};   // "name@@day" -> true
       const others = [];
+      let quiet = 0;        // 休み（家族）・メモの変更件数
       Object.keys(keys).forEach(k => {
         const a = oldCells[k] || '', b = newCells[k] || '';
         if (a === b) return;
         let m;
         if ((m = k.match(/^s_(.+)_(\d)_(start|end|time|sub|main|sym)$/))) { touched[m[1] + '@@' + m[2]] = 1; return; }
         if ((m = k.match(/^note_(\d)$/))) { others.push(`${dayLabel(+m[1])} 備考: ${a || '(空)'} → ${b || '(空)'}`); return; }
+        if (/^(fam_off_|memo_)\d$/.test(k)) { quiet++; return; }   // 履歴には残さない
         if ((m = k.match(/^h_(yoso|up|bup)_(\d)$/))) {
           const L = { yoso: '予想', up: 'UP', bup: '物販' }[m[1]];
           others.push(`${dayLabel(+m[2])} ${L}: ${a || '(空)'} → ${b || '(空)'}`); return;
@@ -1033,7 +1098,9 @@
         return { d, name, txt: `${dayLabel(d)} ${name}: ${summarize(oldCells, name, d)} → ${summarize(newCells, name, d)}` };
       });
       lines.sort((a, b) => a.d - b.d || (a.name < b.name ? -1 : 1));
-      return lines.map(l => l.txt).concat(others);
+      const out = lines.map(l => l.txt).concat(others);
+      if (includeQuiet && quiet) out.push(`休み・メモの修正 ${quiet}件`);
+      return out;
     }
 
     function renderConfirmStatus() {
@@ -1052,7 +1119,7 @@
       hist.style.display = '';
       hist.textContent = `📜 履歴(${(c.history || []).length})`;
       const req = App.getRequest(currentReqId);
-      const dirty = req ? diffCells(c.cells, currentCells(), req).length > 0 : false;
+      const dirty = req ? diffCells(c.cells, currentCells(), req, true).length > 0 : false;
       badge.style.display = '';
       if (dirty) {
         badge.innerHTML = `⚠ 未確定の修正あり（表示中は v${c.version}）`;
@@ -1083,8 +1150,23 @@
 
 よろしいですか？`;
       } else {
-        changes = diffCells(cur.cells, cells, req);
-        if (!changes.length) { App.toast('前回の確定から変更はありません', 'warn'); return; }
+        changes = diffCells(cur.cells, cells, req, false);   // 休み・メモは履歴に残さない
+        if (!diffCells(cur.cells, cells, req, true).length) {
+          App.toast('前回の確定から変更はありません', 'warn'); return;
+        }
+        if (!changes.length) {
+          // 休み（家族）・メモだけの修正 → 履歴は増やさず、中身だけ差し替える
+          if (!confirm('休み（家族）・メモの修正をタブレットに反映します。' + '\\n' +
+                       '（バージョンは増やさず、変更履歴にも残しません）' + '\\n\\n' +
+                       'よろしいですか？')) return;
+          const av = App.getReplies(currentReqId).map(r => ({ n: r.name, d: r.d }));
+          App.saveConfirmed(currentReqId, {
+            version: cur.version, at: new Date().toISOString(), cells, avail: av, history: cur.history
+          });
+          App.toast('休み・メモを反映しました', 'success');
+          renderConfirmStatus();
+          return;
+        }
         const head = changes.slice(0, 12).join('\n');
         const rest = changes.length > 12 ? `
 …ほか${changes.length - 12}件` : '';
@@ -1180,13 +1262,13 @@ ${head}${rest}
       txt += `- R2/R2d に割り当てた○の人: 1部は 930-16（9時半から16時）\n`;
       txt += `- △の人: 「出勤可能時間・備考」に書かれた時間帯の範囲内で配置する（R2系でも例えば1030-1430のような時間で配置してよい）\n`;
       txt += `  ※「月:9:30-16 / 火:11-15:30」のように曜日別に書かれている場合はその曜日の指定を優先。曜日の指定がない記述はその人の△の日すべてに適用する\n\n`;
-      txt += `## スタッフの回答（○=終日可 / △=条件付き / ✕=不可 / -=定休日）\n`;
+      txt += `## スタッフの回答（○=終日可 / △=条件付き / ✕=不可 / 未=未定（割り当てない）/ -=定休日）\n`;
       for (const r of replies) {
         const m = meta[r.name] || { positions: [] };
         const rkLabel = { priority: '【★優先】', housewife: '【主婦】', student: '【学生】' }[App.rankKey(m)] || '';
         const dLim = (m.daysMax != null && m.daysMax !== '')
           ? `【週${(m.daysMin != null && m.daysMin !== '') ? m.daysMin + '〜' : ''}${m.daysMax}回】` : '';
-        txt += `- ${r.name}${rkLabel}${dLim}: [${r.d.split('').map((c, i) => `${App.DOW_LABELS[i]}=${c === 'o' ? '○' : c === 't' ? '△' : c === 'x' ? '✕' : '-'}`).join(' ')}]`;
+        txt += `- ${r.name}${rkLabel}${dLim}: [${r.d.split('').map((c, i) => `${App.DOW_LABELS[i]}=${c === 'o' ? '○' : c === 't' ? '△' : c === 'x' ? '✕' : c === 'm' ? '未' : '-'}`).join(' ')}]`;
         txt += ` 1部: ${m.positions && m.positions.length ? m.positions.join(',') : '未設定'}`;
         txt += ` / 2部: ${m.positions2 && m.positions2.length ? m.positions2.join(',') : 'なし'}`;
         if (m.t2always) txt += ' 《必ずT》';

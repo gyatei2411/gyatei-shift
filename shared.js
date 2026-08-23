@@ -20,7 +20,8 @@ const App = {
   SYMBOLS: {
     o: { mark: '○', label: '出勤可', color: '#10B981', bg: '#D1FAE5' },
     t: { mark: '△', label: '条件付き', color: '#D97706', bg: '#FEF3C7' },
-    x: { mark: '✕', label: '不可', color: '#DC2626', bg: '#FEE2E2' }
+    x: { mark: '✕', label: '不可', color: '#DC2626', bg: '#FEE2E2' },
+    m: { mark: '未', label: '未定', color: '#7C3AED', bg: '#EDE9FE' }
   },
 
   /* ===== 日付ユーティリティ ===== */
@@ -123,6 +124,21 @@ const App = {
   POSITIONS: ['K', 'R2', 'R2d', 'R1', 'W', 'T'],
   // 2部(16-L)のポジション
   POSITIONS2: ['W', 'T'],
+
+  // 家族（役職）。まかないの人数に含める
+  //   店=店長 / 若奥=若奥さん / 奥=奥さん / 会=会長
+  FAMILY: ['\u5e97', '\u82e5\u5965', '\u5965', '\u4f1a'],
+  FAMILY_FULL: { '\u5e97': '\u5e97\u9577', '\u82e5\u5965': '\u82e5\u5965\u3055\u3093', '\u5965': '\u5965\u3055\u3093', '\u4f1a': '\u4f1a\u9577' },
+
+  // 「会奥」のような文字列から、その日休む家族を拾う
+  //   ※ 「若奥」を先に取る（「奥」と間違えないため）
+  parseFamilyOff(txt) {
+    let t = String(txt || '');
+    const off = [];
+    if (t.indexOf('\u82e5\u5965') >= 0) { off.push('\u82e5\u5965'); t = t.split('\u82e5\u5965').join(''); }
+    ['\u5e97', '\u5965', '\u4f1a'].forEach(k => { if (t.indexOf(k) >= 0) off.push(k); });
+    return off;
+  },
 
   // Firebase が初期化済みかどうか
   fbReady: false,

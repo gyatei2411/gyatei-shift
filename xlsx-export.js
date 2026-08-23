@@ -109,7 +109,7 @@ const XlsxExport = (() => {
   }
 
   function symToChar(sym) {
-    return ({ o: '○', t: '△', x: '✕' })[sym] || '';
+    return ({ o: '○', t: '△', x: '✕', m: '未' })[sym] || '';
   }
 
   return { generate };

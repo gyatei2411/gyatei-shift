@@ -390,13 +390,14 @@
           matrixHtml += '<td style="background:#F1F5F9;color:#94A3B8;font-size:0.75rem">－</td>';
           continue;
         }
-        const counts = { o: 0, t: 0, x: 0 };
+        const counts = { o: 0, t: 0, x: 0, m: 0 };
         orderedReplies.forEach(r => { const s = r.d[i]; if (counts[s] !== undefined) counts[s]++; });
         matrixHtml += `<td>
           <div class="summary-counts">
             <span class="cnt-o">○ ${counts.o}</span>
             <span class="cnt-t">△ ${counts.t}</span>
             <span class="cnt-x">✕ ${counts.x}</span>
+            ${counts.m ? `<span style="color:#7C3AED">未 ${counts.m}</span>` : ''}
           </div>
         </td>`;
       }
