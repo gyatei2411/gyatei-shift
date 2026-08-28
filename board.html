@@ -293,14 +293,51 @@
     .leg-note { color: #94A3B8; font-size: 14px; line-height: 1.7; }
     .leg-note b { color: #E2E8F0; }
 
-    /* 縦向きのスマホに「横向きにすると見やすい」と出す */
-    .rotate-tip {
-      flex: 0 0 auto; display: none; align-items: center; justify-content: center; gap: 8px;
-      margin: 4px 10px 0; padding: 8px 10px; border-radius: 10px;
-      background: #1E293B; border: 1px solid #334155; color: #CBD5E1;
-      font-size: 13px; font-weight: 700;
+
+    /* ===== 細い画面（スマホ縦向き） =====
+       縦には余裕があっても**横幅**で縮尺が決まるので、
+       名前列・余白・2部の表記を細くして表全体の幅を縮めると文字が大きくなる */
+    @media (max-width: 700px) {
+      .topbar { padding: 4px 10px; gap: 6px 8px; font-size: 11px; }
+      .topbar .week { font-size: 17px; }
+      .topbar .stamp { font-size: 10px; }
+      .topbar button { padding: 4px 9px; font-size: 11px; border-radius: 6px; }
+      .topbar .spacer { display: none; }
+      .topbar .lbl { display: none; }   /* アイコン・日付だけにして1行に収める */
+      .topbar button { padding: 4px 8px; font-size: 14px; line-height: 1.1; }
+      .topbar .stamp { flex: 1 1 100%; order: 9; margin-top: -2px; }
+      .badge-draft { font-size: 10px; padding: 2px 7px; }
+      .lastfix { display: none; }          /* 内容は「📜 変更履歴」から見られる */
+      .resting { font-size: 11px; padding: 4px 8px 0; line-height: 1.5; gap: 5px; }
+      .resting .rt-person { padding: 1px 6px; }
+
+      table.board, table.board.compact { border-spacing: 1px; }
+      table.board td.name, table.board.compact td.name {
+        min-width: 52px; font-size: 21px; padding: 1px 5px; border-radius: 5px;
+      }
+      table.board th.day, table.board.compact th.day {
+        min-width: 0; padding: 2px 3px; border-radius: 5px;
+      }
+      table.board th.day .d-date { font-size: 14px; line-height: 1.1; }
+      table.board th.day .d-dow { font-size: 10px; }
+      table.board td.cell, table.board.compact td.cell {
+        min-width: 0; height: auto; padding: 2px 3px; border-radius: 5px;
+      }
+      table.board td.cell .ci, table.board.compact td.cell .ci {
+        flex-direction: column; align-items: center; gap: 0;
+      }
+      table.board td.cell .pos, table.board.compact td.cell .pos { font-size: 30px; }
+      /* 2部と 0部 はぐっと小さく＝セルの幅が縮まる＝全体が大きく見える */
+      table.board td.cell .pos .p2, table.board.compact td.cell .pos .p2 { font-size: 13px; }
+      table.board td.cell .sub, table.board.compact td.cell .sub {
+        font-size: 12px; padding: 0 3px; margin-right: 3px; vertical-align: 2px;
+      }
+      table.board td.cell .time, table.board.compact td.cell .time { font-size: 20px; }
+      table.board td.cell .mark { font-size: 20px; }
+      table.board tr.info td.name { font-size: 11px; padding: 1px 5px; }
+      table.board tr.info td.v { height: 22px; font-size: 15px; padding: 1px 3px; }
+      table.board tr.info.mkn td.v { font-size: 18px; }
     }
-    .rotate-tip .ico { font-size: 17px; }
 
     /* 背の低い画面（スマホ横向き）は上下をとにかく詰める */
     @media (max-height: 500px) {
@@ -312,6 +349,26 @@
       .lastfix { display: none; }
       .resting { font-size: 12px; padding: 3px 10px 0; line-height: 1.4; max-height: 42px; overflow: hidden; }
       .resting .rt-person { padding: 1px 7px; }
+
+      /* 表を縦に詰める。文字は大きいままなので、全体を入れても小さくなりすぎない
+         ※ compact より強い選択子にしておくこと */
+      table.board, table.board.compact { border-spacing: 1px; }
+      table.board th.day, table.board.compact th.day { padding: 1px 6px; min-width: 100px; }
+      table.board th.day .d-date { font-size: 16px; line-height: 1.05; }
+      table.board th.day .d-dow { font-size: 11px; }
+      table.board td.name, table.board.compact td.name { font-size: 17px; padding: 0 8px; min-width: 92px; }
+      table.board td.cell, table.board.compact td.cell { height: 26px; padding: 0 5px; min-width: 100px; }
+      table.board td.cell .ci, table.board.compact td.cell .ci {
+        flex-direction: row; align-items: baseline; gap: 7px;
+      }
+      table.board td.cell .pos, table.board.compact td.cell .pos { font-size: 24px; }
+      table.board td.cell .time, table.board.compact td.cell .time { font-size: 16px; }
+      table.board td.cell .sub, table.board.compact td.cell .sub { font-size: 13px; padding: 0 4px; margin-right: 3px; }
+      table.board td.cell .pos .p2, table.board.compact td.cell .pos .p2 { font-size: 15px; }
+      table.board td.cell .mark { font-size: 18px; }
+      table.board tr.info td.name { font-size: 13px; padding: 0 8px; }
+      table.board tr.info td.v { height: 22px; font-size: 14px; padding: 0 5px; }
+      table.board tr.info.mkn td.v { font-size: 18px; }
     }
 
     .msg {
@@ -327,16 +384,12 @@
       <span class="badge-draft" id="draft-badge" style="display:none">未確定（下書き）</span>
       <span class="stamp" id="stamp"></span>
       <span class="spacer"></span>
-      <button id="btn-prev" onclick="moveWeek(-1)">◀ 前の週</button>
-      <button id="btn-next" onclick="moveWeek(1)">次の週 ▶</button>
-      <button id="btn-hist" onclick="openHistory()" style="display:none">📜 変更履歴</button>
-      <button onclick="openLegend()">❔ 記号</button>
-      <button id="btn-bvmode" onclick="toggleBoardMode()">📱 1日ずつ</button>
-      <button onclick="App.forceUpdate ? App.forceUpdate() : location.reload()">🔄 更新</button>
-    </div>
-
-    <div class="rotate-tip" id="rotate-tip">
-      <span class="ico">📱↻</span>スマホを<b style="color:#F8FAFC">横向き</b>にすると、1週間全体が見えます
+      <button id="btn-prev" onclick="moveWeek(-1)" title="前の週">◀<span class="lbl"> 前の週</span></button>
+      <button id="btn-next" onclick="moveWeek(1)" title="次の週"><span class="lbl">次の週 </span>▶</button>
+      <button id="btn-hist" onclick="openHistory()" style="display:none" title="変更履歴">📜<span class="lbl"> 変更履歴</span><span class="cnt"></span></button>
+      <button onclick="openLegend()" title="記号の見方">❔<span class="lbl"> 記号</span></button>
+      <button id="btn-bvmode" onclick="toggleBoardMode()" title="1日ずつ / 1週間"></button>
+      <button onclick="App.forceUpdate ? App.forceUpdate() : location.reload()" title="最新に更新">🔄<span class="lbl"> 更新</span></button>
     </div>
 
     <div class="fit-wrap" id="fit-wrap">
@@ -380,8 +433,6 @@
     let cursor = 0;       // reqIds 内の現在位置
 
     function init() {
-      // 読み込み直後は幅が確定していないことがあるので、ここでもう一度見る
-      if (!bvManual) bvMode = (window.innerWidth <= BV_NARROW) ? 'day' : 'week';
       App.initFirebase();
       if (App.isOnline()) {
         App.subscribeSettings(() => {});
@@ -453,7 +504,7 @@
         return;
       }
       btn.style.display = '';
-      btn.textContent = `📜 変更履歴(${hist.length - 1})`;
+      btn.innerHTML = `📜<span class="lbl"> 変更履歴</span>(${hist.length - 1})`;
 
       // 表の下に「直近の修正」を短く出す（初回確定だけなら出さない）
       const last = hist[hist.length - 1];
@@ -526,7 +577,10 @@
       const dates = App.weekDates(req.ws);
       const todayStr = new Date().toISOString().slice(0, 10);
 
-      document.getElementById('week-label').textContent = App.weekLabel(req.ws);
+      // 狭い画面では曜日を省いて 1行に収める
+      document.getElementById('week-label').innerHTML =
+        `${App.fmtMD(dates[0])}<span class="lbl">(${App.DOW_LABELS[0]})</span>` +
+        `〜${App.fmtMD(dates[6])}<span class="lbl">(${App.DOW_LABELS[6]})</span>`;
       document.getElementById('draft-badge').style.display = conf ? 'none' : '';
       document.getElementById('stamp').textContent = conf
         ? `確定 v${conf.version}・${fmtStamp(conf.at)}${(conf.history || []).length > 1 ? `（修正${conf.history.length - 1}回）` : ''}`
@@ -676,7 +730,6 @@
       updateBoardModeBtn();
 
       buildLegend(usedPos, usedAvail, used0, used2);
-      updateRotateTip();
 
       fit();
     }
@@ -684,7 +737,7 @@
 
     /* ===== スマホ用：1日ずつの一覧（見るだけ・編集不可） ===== */
     const BV_NARROW = 700;
-    let bvMode = (window.innerWidth <= BV_NARROW) ? 'day' : 'week';
+    let bvMode = 'week';   // 縦向きでもまずは1週間を見せる
     let bvManual = false;
     let bvDay = null;
 
@@ -696,7 +749,10 @@
 
     function updateBoardModeBtn() {
       const b = document.getElementById('btn-bvmode');
-      if (b) b.textContent = (bvMode === 'day') ? '\uD83D\uDCC5 1週間' : '\uD83D\uDCF1 1日ずつ';
+      if (!b) return;
+      b.innerHTML = (bvMode === 'day')
+        ? '\uD83D\uDCC5<span class="lbl"> 1週間</span>'
+        : '\uD83D\uDCF1<span class="lbl"> 1日ずつ</span>';
     }
 
     function setBvDay(d) { bvDay = d; render(); }
@@ -763,13 +819,8 @@
       return h;
     }
 
-    window.addEventListener('resize', () => {
-      updateRotateTip();
-      if (bvManual) return;
-      const want = (window.innerWidth <= BV_NARROW) ? 'day' : 'week';
-      if (want !== bvMode) { bvMode = want; render(); }
-    });
-    window.addEventListener('orientationchange', () => setTimeout(() => { updateRotateTip(); fit(); }, 300));
+    window.addEventListener('resize', () => fit());
+    window.addEventListener('orientationchange', () => setTimeout(fit, 300));
 
 
     /* ===== 記号の見方（普段は出さない。「❔ 記号」で開く） ===== */
@@ -827,13 +878,6 @@
     function openLegend() { document.getElementById('leg-back').classList.add('open'); }
     function closeLegend() { document.getElementById('leg-back').classList.remove('open'); }
 
-    // 縦向きのスマホで週表示のときだけ「横向きに」と出す
-    function updateRotateTip() {
-      const tip = document.getElementById('rotate-tip');
-      if (!tip) return;
-      const portraitPhone = window.innerWidth <= BV_NARROW && window.innerHeight > window.innerWidth;
-      tip.style.display = portraitPhone ? 'flex' : 'none';
-    }
 
     // 表を画面いっぱいまで拡大／縮小する（縦横どちらも余白を残さない）
     function fit() {
@@ -843,7 +887,7 @@
       if (!inner.firstElementChild) return;
       const table = inner.querySelector('table');
       const shortScreen = window.innerHeight <= 500;   // スマホ横向き
-      if (table) table.style.width = '';
+      if (table) { table.style.width = ''; table.style.height = ''; }
       inner.style.transform = 'scale(1)';
       inner.style.left = '0px';
       inner.style.marginBottom = '0px';
@@ -853,18 +897,26 @@
       let w = inner.scrollWidth, h = inner.scrollHeight;
       if (!w || !h) return;
       const availW = wrap.clientWidth, availH = wrap.clientHeight;
+
       if (shortScreen) {
-        // 縦に合わせて縮めると読めないので、横幅だけに合わせて縦はスクロール
+        // 横向きは高さが足りない。縦にも合わせると読めないので、
+        // 横幅だけに合わせて縦はスクロールさせる
         const s2 = Math.min(availW / w, 1);
         inner.style.transform = `scale(${s2})`;
         inner.style.marginBottom = Math.round(h * s2 - h) + 'px';
         inner.style.marginLeft = Math.max(0, (availW - w * s2) / 2) + 'px';
         return;
       }
+
       let s = Math.min(availW / w, availH / h);
       // 高さで頭打ちなら、横方向の余りを列幅に配って文字をさらに大きく見せる
       if (table && availW / w > availH / h) {
         table.style.width = Math.floor(availW / s) + 'px';
+        w = inner.scrollWidth; h = inner.scrollHeight;
+        s = Math.min(availW / w, availH / h);
+      } else if (table && availH / h > availW / w) {
+        // 逆に幅で頭打ち（スマホ縦向き）なら、行の高さを伸ばして画面を使い切る
+        table.style.height = Math.floor(availH / s) + 'px';
         w = inner.scrollWidth; h = inner.scrollHeight;
         s = Math.min(availW / w, availH / h);
       }
