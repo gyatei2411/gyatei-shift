@@ -80,16 +80,21 @@
     td.cell .ci { display: flex; flex-direction: column; align-items: center; justify-content: center; }
     td.cell .pos {
       font-size: 30px; font-weight: 900; line-height: 1.05; letter-spacing: 0.02em;
+      white-space: nowrap;
     }
+    /* 2部（16時〜L）の部分は 1部より小さく */
+    td.cell .pos .p2 { font-size: 20px; font-weight: 800; opacity: 0.9; letter-spacing: 0; }
+    .board.compact td.cell .pos .p2 { font-size: 17px; }
     td.cell .time {
       font-size: 20px; font-weight: 800; line-height: 1.15;
     }
-    /* 0部（9:00〜9:30 朝の準備）。ポジションの左に小さく出す */
+    /* 0部（9:00〜9:30 朝の準備）。ポジションの左に 1部より小さく出す */
     td.cell .sub {
-      font-size: 15px; font-weight: 800; vertical-align: 3px; margin-right: 5px;
-      background: rgba(255,255,255,0.16); border-radius: 5px; padding: 1px 5px;
+      font-size: 18px; font-weight: 800; vertical-align: 3px; margin-right: 6px;
+      background: rgba(255,255,255,0.20); border: 1px solid rgba(255,255,255,0.30);
+      border-radius: 6px; padding: 0 6px; letter-spacing: 0;
     }
-    .board.compact td.cell .sub { font-size: 13px; padding: 0 4px; margin-right: 3px; }
+    .board.compact td.cell .sub { font-size: 15px; padding: 0 4px; margin-right: 4px; }
 
     /* 出勤していないが「出られる」と答えた日 */
     td.cell.av-o { background: #123024; color: #4ADE80; }
@@ -447,6 +452,7 @@
       const usedPos = {};
       let usedAvail = false;
       let used0 = false;
+      let used2 = false;
 
       const rowFor = (name) => {
         let r = `<tr><td class="name">${esc(name)}</td>`;
@@ -455,14 +461,22 @@
           const pos = get(name, d, 'main');
           const sub = get(name, d, 'sub');
           if (sub) used0 = true;
+          if (String(pos).indexOf('→') >= 0) used2 = true;
           const time = (get(name, d, 'start') + get(name, d, 'end')).trim();
           if (pos || time) {
             // 「R2→W」のような 1部→2部 表記は 1部のポジションで色を決める
-            const head = String(pos).split('→')[0].replace(/[（(）)]/g, '').trim();
+            const seg = String(pos).split('→');
+            const part1 = seg[0];                         // 1部（大きく）
+            const part2 = seg.slice(1).join('→');        // 2部（小さく）
+            const head = part1.replace(/[（(）)]/g, '').trim();
             const cls = POS_CLASS[head] || 'p-etc';
             if (head && POS_CLASS[head]) usedPos[head] = cls;
             r += `<td class="cell ${cls}"><div class="ci">` +
-              (pos ? `<span class="pos">${sub ? `<span class="sub">${esc(sub)}</span>` : ''}${esc(pos)}</span>` : '') +
+              (pos ? `<span class="pos">` +
+                (sub ? `<span class="sub">${esc(sub)}</span>` : '') +
+                esc(part1) +
+                (part2 ? `<span class="p2">→${esc(part2)}</span>` : '') +
+                `</span>` : '') +
               (time ? `<span class="time">${esc(time)}</span>` : '') +
               `</div></td>`;
             continue;
@@ -538,9 +552,14 @@
                '<i style="background:#241C36;color:#C4B5FD;margin-left:10px">未</i>未定（入れるか未定）</span>';
       }
       if (used0) {
-        leg += '<span style="margin-left:14px"><i style="background:rgba(255,255,255,0.16);color:#E2E8F0">C</i>' +
-               'ポジションの左の小さい印＝0部（9時〜9時半 朝の準備）' +
-               ' C=クリーン / 1F=一階の準備 / Rj=レストラン準備 / Tj=テイクアウト準備 / m=盛り付け</span>';
+        leg += '<span style="margin-left:14px"><i style="background:rgba(255,255,255,0.20);color:#E2E8F0">C</i>' +
+               '左の小さい印＝<b>0部</b>（9:00〜9:30 朝の準備）' +
+               ' C=クリーン / 1F=一階の準備 / Rj=レストラン準備 / Tj=テイクアウト準備 / m=盛り付け' +
+               '（「C・m」は 9時からC → 10時からm）</span>';
+      }
+      if (used2) {
+        leg += '<span style="margin-left:14px"><b style="font-size:20px">R2</b>' +
+               '<b style="font-size:14px;opacity:0.9">→W</b>　小さい方が <b>2部</b>（16時〜L）のポジション</span>';
       }
       leg += '<span style="margin-left:auto">時間の「L」＝ラストまで</span>';
       document.getElementById('legend').innerHTML = leg;
