@@ -232,7 +232,7 @@
     🌅 <strong>0部（9:00〜9:30 朝の準備）</strong>　ポジションの<strong>左の枠</strong>に入ります。
     <b>C</b>=クリーン（廊下の掃除・1日1人） /
     <b>1F</b>=一階の準備（1日1人） /
-    <b>m</b>=盛り付け（基本W1名・時間不問）　…毎日つけます。
+    <b>m</b>=盛り付け（<b>Wの人だけ</b>・時間不問）　…毎日つけます。
     <b>Rj</b>=レストラン準備ヘルプ / <b>Tj</b>=テイクアウト準備　…
     9時から出られる人が
     <input type="number" id="morning-base" min="0" max="20"
@@ -242,6 +242,7 @@
     <br>基本の始業は <b>K・T=9時</b> / <b>R2・R2d=9時半</b> / <b>W=10時</b>ですが、
     <b>C・1F・Rj・Tj がついた人は9時出勤</b>になります（mは時間不問なので変わりません）。
     <b>K・T の人には0部はつけません</b>（もともと始業9時なので、つくのは R2・R2d・R1・W の人）。
+    <b>C・1F・Rj・Tj のどれかと m は兼任できます</b>（表記は「<b>C・m</b>」。9時からC、10時からm）。
     つける順番は <b>★優先 ＞ 主婦 ＞ 無印 ＞ 学生</b>。
     <span style="opacity:0.85">（つけられる人がいないときは無理につけず、備考に「⚠ 0部未配置」と出します）</span>
   </div>
@@ -1052,7 +1053,9 @@
       //  ・C（クリーン）と1F（一階の準備）は 1日 1人ずつ
       //  ・C / 1F / Rj / Tj は 9:00〜9:30 の仕事。**ついた人は始業を9時に前倒し**する
       //    （R2は基本930、Wは基本10時だが、0部がつけば9時出勤になる）
-      //  ・m（盛り付け）は時間に関わらない。基本は1部Wの人から1名。始業は変えない
+      //  ・m（盛り付け）は 1部がWの人にしかつけない。時間不問なので始業は変えない
+      //  ・C/1F/Rj/Tj のどれかと m の両方がつくのは OK。そのときは「C・m」と表記
+      //    （9時からC（掃除）→ 10時からm（盛り付け）という流れ）
       //  ・**1部が K または T の人には0部をつけない**（もともと始業9時で自分の準備があるため）
       //    → 0部がつくのは R2 / R2d / R1 / W の人
       //  ・Rj / Tj は「9時から出られる人数」が基準人数に満たない日だけ発生する
@@ -1077,27 +1080,29 @@
         // 9時から出られる人（○の人と、△で9時開始 OK の人）
         const morning = todays.filter(r => (r.tcStart || 0) <= 9);
         const can0 = (r, p) => ((meta[r.name] || {}).positions0 || []).indexOf(p) >= 0;
-        const used = new Set();   // 0部は1人1役
+        const used = new Set();   // 9:00〜9:30 の仕事（C/1F/Rj/Tj）は1人1役
 
         // その日立てる0部を決める（Rj/Tj は朝が人数不足の日だけ）
-        const wanted = ['C', '1F', 'm'];
+        //  ※ m は最後。先に時間枠の仕事を配ってから決める
+        const wanted = ['C', '1F'];
         if (morning.length < MORNING_BASE) wanted.push('Rj', 'Tj');
+        wanted.push('m');
 
         wanted.forEach(p => {
           const anytime = App.POSITIONS0_ANYTIME.indexOf(p) >= 0;
-          const pool = (anytime ? todays : morning).filter(r => zeroOk(r) && !used.has(r.name) && can0(r, p));
+          // m：1部がWの人限定。時間不問なので C/1F/Rj/Tj との兼任も OK
+          // それ以外：9時から出られる人から、1人1役
+          const pool = (p === 'm')
+            ? todays.filter(r => r.pos === 'W' && can0(r, 'm'))
+            : morning.filter(r => zeroOk(r) && !used.has(r.name) && can0(r, p));
           if (!pool.length) { (zeroShort[day] = zeroShort[day] || []).push(p); return; }
           pool.sort((a, b) => {
-            if (p === 'm') {   // 盛り付けは基本W1名
-              const aw = a.pos === 'W' ? 0 : 1, bw = b.pos === 'W' ? 0 : 1;
-              if (aw !== bw) return aw - bw;
-            }
             const ra = rankOf(a.name), rb = rankOf(b.name);   // ★優先 > 主婦 > 無印 > 学生
             if (ra !== rb) return ra - rb;
             return zeroCount[a.name] - zeroCount[b.name] || assignedCount[b.name] - assignedCount[a.name];
           });
           const pick = pool[0];
-          used.add(pick.name);
+          if (!anytime) used.add(pick.name);   // 時間枠の仕事だけ 1人1役
           zeroCount[pick.name]++;
           // 9:00〜9:30 の仕事がついた人は始業を9時に前倒し（m は時間不問なのでそのまま）
           if (!anytime) pick.st = 9;
@@ -1136,9 +1141,16 @@
         App.setManualCell(currentReqId, `s_${a.name}_${a.day}_end`, fmtEnd(endNum));
       });
 
-      // 0部はポジションの左の枠（sub）へ
+      // 0部はポジションの左の枠（sub）へ。
+      // 同じ人に2つついたら「C・m」のように並べる（9時からC → 10時からm）
+      const zeroText = {};
       zeroResults.forEach(z => {
-        App.setManualCell(currentReqId, `s_${z.name}_${z.day}_sub`, z.pos0);
+        const k = z.name + '@@' + z.day;
+        (zeroText[k] = zeroText[k] || []).push(z.pos0);
+      });
+      Object.keys(zeroText).forEach(k => {
+        const i = k.lastIndexOf('@@');
+        App.setManualCell(currentReqId, `s_${k.slice(0, i)}_${k.slice(i + 2)}_sub`, zeroText[k].join('・'));
       });
 
       // つけられなかった0部は、備考に注意書きを残す（無理にはつけない）
@@ -1165,6 +1177,7 @@
         msg += `\n→ 空欄のままにし、備考に「${Z_TAG}」と出しています`;
         msg += `\n　（スタッフ管理の「0部 9-930」にチェックを入れるとつくようになります）`;
         msg += `\n　※ 1部が K または T の人には0部をつけません（もともと始業9時のため）`;
+        msg += `\n　※ m（盛り付け）は 1部が W の人にしかつけません`;
       }
       if (shortages2.length) msg += `\n\n【2部の人数不足】\n${shortages2.join('\n')}`;
       if (shortages.length) msg += `\n\n【人数不足】\n${shortages.join('\n')}`;
@@ -1400,7 +1413,9 @@ ${head}${rest}
       txt += `  → 0部がつくのは **R2 / R2d / R1 / W** の人だけ\n`;
       txt += `- **C / 1F / Rj / Tj は 9:00〜9:30 の仕事**。ついた人は **start を "9" にする**\n`;
       txt += `  （R2は基本930、Wは基本10時だが、0部がつけば9時出勤になる。△の人は9時から出られる場合だけ）\n`;
-      txt += `- m（盛り付け）は時間に関わらないが0部欄に書く。**基本は1部Wの人から1名**。始業は変えない\n`;
+      txt += `- m（盛り付け）は **1部がWの人にしかつけない**（1日1人）。時間不問なので始業は変えない\n`;
+      txt += `- C/1F/Rj/Tj は **1人1役**だが、**そのうちの1つと m の両方を同じ人につけてもよい**\n`;
+      txt += `  その場合 pos0 は \"C・m\" のように・でつなぐ（9時からCで掃除 → 10時からmで盛り付け、start は \"9\"）\n`;
       txt += `- Rj（レストラン準備ヘルプ）・Tj（テイクアウト準備）は **9時から出られる人が${App.getMorningBase()}人未満の日だけ**発生する（1人ずつ）\n`;
       txt += `- **つける順番は 【★優先】> 【主婦】> 無印 > 【学生】**。同じ区分なら週の0部回数が少ない人から\n`;
       txt += `- 0部は **1人1役**。できる人がいなければ**無理につけず、その日は空欄のまま**にして理由を書く\n\n`;
@@ -1438,7 +1453,7 @@ ${head}${rest}
       txt += `- pos: 1部のみなら K/R2/R2d/W/T、2部も入るなら \"R2→W\" \"K→T\" の形。同じポジションを続けるなら \"W\" \"T\"\n`;
       txt += `  16:30で入れ替わり退勤する人は \"R2→（T\" のように（を付ける\n`;
       txt += `- start例: "9" "930" "10" / end例: "-16"（1部のみ） "-L"（2部まで） "-1630"（先に上がるT）\n`;
-      txt += `- pos0: 0部のポジション（C / 1F / Rj / Tj / m）。つかない人は省略\n`;
+      txt += `- pos0: 0部のポジション（C / 1F / Rj / Tj / m）。両方つくなら \"C・m\"。つかない人は省略\n`;
       txt += `- 割り当てない人は含めない\n`;
 
       App.copyToClipboard(txt).then(ok => {
