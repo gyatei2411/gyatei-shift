@@ -262,6 +262,7 @@
     function init() {
       App.initFirebase();
       if (App.isOnline()) {
+        App.subscribeSettings(() => {});
         App.subscribeRequests(
           () => { fbError = false; pickWeeks(); render(); },
           () => { fbError = true; render(); }

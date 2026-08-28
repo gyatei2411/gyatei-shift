@@ -18,6 +18,7 @@
     <h1>📅 シフト管理（ぎゃあてい）</h1>
     <div class="header-actions">
       <span id="connection-badge" class="conn-badge">⚪ ローカル</span>
+      <button onclick="App.forceUpdate()" title="アプリを最新にして再読み込みします（スマホで古い画面が出るときに）">🔄 最新に更新</button>
       <button onclick="exportData()" title="バックアップ">💾 書出</button>
       <button onclick="importData()" title="復元">📥 復元</button>
     </div>
@@ -132,13 +133,16 @@
 
     function updateConnectionBadge() {
       const el = document.getElementById('connection-badge');
+      const p2 = n => String(n).padStart(2, '0');
+      const t = App.lastSyncAt ? `${p2(App.lastSyncAt.getHours())}:${p2(App.lastSyncAt.getMinutes())}` : '';
       if (App.isOnline()) {
-        el.textContent = '🟢 オンライン同期';
+        el.textContent = t ? `🟢 同期済 ${t}` : '🟢 オンライン同期';
         el.className = 'conn-badge online';
       } else {
-        el.textContent = '⚪ ローカル';
+        el.textContent = '⚪ ローカル（未同期）';
         el.className = 'conn-badge';
       }
+      el.title = `アプリ v${App.VERSION}` + (t ? ` / 最終同期 ${t}` : '');
       // オフラインモードでは取り込み欄を表示
       const off = document.getElementById('offline-import');
       if (off) off.style.display = App.isOnline() ? 'none' : '';
@@ -764,8 +768,17 @@
             subscribeAll();
             renderPastRequests();
             renderAggregate();
+            updateConnectionBadge();
           });
           subscribeAll();
+          // 名簿・基準人数を全端末で共有
+          App.subscribeSettings(() => {
+            updateConnectionBadge();
+            const ae = document.activeElement;
+            if (ae && ae.closest && ae.closest('#staff-master-list')) return;
+            renderStaffMaster();
+            renderCreate();
+          });
           App.subscribeStaffMeta(() => {
             // スタッフ管理を入力中は再描画しない（入力値が消えるのを防ぐ）
             const ae = document.activeElement;

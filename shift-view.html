@@ -210,7 +210,7 @@
       <button onclick="copyForClaude()">🤖 Claude用コピー</button>
       <button onclick="openImportDialog()">📥 結果取り込み</button>
       <button class="primary" onclick="printFit()">🖨 印刷</button>
-      <button onclick="location.reload()">🔄 更新</button>
+      <button onclick="App.forceUpdate()" title="アプリを最新にして再読み込み">🔄 最新に更新</button>
       <a href="admin.html">← 管理画面に戻る</a>
     </div>
   </div>
@@ -302,6 +302,7 @@
         App.subscribeReplies(currentReqId, deferredRender);
         App.subscribeManual(currentReqId, deferredRender);
         App.subscribeConfirmed(currentReqId, renderConfirmStatus);
+        App.subscribeSettings(deferredRender);   // 朝の基準人数などの共通設定
       }
       render();
     }

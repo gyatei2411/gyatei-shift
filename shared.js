@@ -109,6 +109,10 @@ const App = {
 
   /* ===== Firebase / localStorage ハイブリッド ===== */
 
+  // アプリのバージョン（更新したらここを書き換える）
+  VERSION: '2026.08.28',
+  lastSyncAt: null,   // Firebase から最後に受け取った時刻
+
   KEYS: {
     requests: 'sa_v4_requests',
     replies:  'sa_v4_replies',
@@ -145,6 +149,7 @@ const App = {
   setMorningBase(n) {
     const v = Math.max(0, Math.min(20, parseInt(n, 10) || 0));
     App._write(App.KEYS.morningBase, v);
+    App._pushSetting('morningBase', v);
     return v;
   },
 
@@ -394,10 +399,64 @@ const App = {
     App._write(App.KEYS.staff, App.DEFAULT_STAFF.slice());
     return App.DEFAULT_STAFF.slice();
   },
-  setStaff(list) { App._write(App.KEYS.staff, list); },
+  setStaff(list) {
+    App._write(App.KEYS.staff, list);
+    App._pushSetting('staff', list);
+  },
   resetStaffToDefault() {
     App._write(App.KEYS.staff, App.DEFAULT_STAFF.slice());
+    App._pushSetting('staff', App.DEFAULT_STAFF.slice());
     return App.DEFAULT_STAFF.slice();
+  },
+
+  /* ===== 端末間で共有する設定（スタッフ名簿・朝の基準人数） ===== */
+  //  スタッフ名簿はもともとその端末の中だけに保存されていたので、
+  //  スマホで開くと初期名簿のままになっていた。settings に入れて全端末で共有する
+  _pushSetting(key, val) {
+    if (!App.fbReady) return;
+    App.fbDB.ref('settings/' + key).set(val)
+      .catch(e => console.warn('FB settings save failed (ルール未設定の可能性):', e.message));
+  },
+
+  subscribeSettings(onUpdate) {
+    if (!App.fbReady) return null;
+    const lkey = 'settings';
+    if (App.fbListeners[lkey]) App.fbListeners[lkey]();
+    const ref = App.fbDB.ref('settings');
+    const cb = (snap) => {
+      const d = snap.val() || {};
+      let changed = false;
+      const list = Array.isArray(d.staff) ? d.staff.filter(Boolean) : null;
+      if (list && list.length) {
+        App._write(App.KEYS.staff, list);
+        changed = true;
+      } else {
+        // Firebase にまだ名簿がない → この端末の名簿が初期値と違うなら初回登録する
+        //（初期名簿のままの端末からは上書きしない）
+        const local = App._read(App.KEYS.staff, null);
+        if (local && local.length && local.join('|') !== App.DEFAULT_STAFF.join('|')) {
+          App._pushSetting('staff', local);
+        }
+      }
+      if (d.morningBase != null && !isNaN(parseInt(d.morningBase, 10))) {
+        App._write(App.KEYS.morningBase, parseInt(d.morningBase, 10));
+        changed = true;
+      }
+      App.lastSyncAt = new Date();
+      if (changed) onUpdate && onUpdate();
+    };
+    ref.on('value', cb, () => {});
+    App.fbListeners[lkey] = () => ref.off('value', cb);
+    return App.fbListeners[lkey];
+  },
+
+  // アプリのファイルを強制的に取り直してから再読み込み
+  //（スマホは古い HTML/JS を抛え込むことがあるため）
+  forceUpdate() {
+    const files = ['shared.js', 'xlsx-export.js', 'firebase-config.js', 'style.css',
+                   'admin.html', 'shift-view.html', 'board.html', 'reply.html'];
+    return Promise.all(files.map(f => fetch(f, { cache: 'reload' }).catch(() => {})))
+      .then(() => { location.reload(); });
   },
 
   getActiveRequest() { return App._read(App.KEYS.active, null); },
@@ -513,6 +572,7 @@ const App = {
       App._write(App.KEYS.requests, reqs);
       App._write(App.KEYS.manual, manualAll);
       App._write(App.KEYS.confirmed, confirmedAll);
+      App.lastSyncAt = new Date();
       onUpdate && onUpdate();
     };
     ref.on('value', cb, (err) => {
