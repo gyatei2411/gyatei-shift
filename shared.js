@@ -117,7 +117,35 @@ const App = {
     manual:   'sa_v4_manual',
     staffmeta: 'sa_v4_staffmeta',
     confirmed: 'sa_v4_confirmed',
-    seenWelcome: 'sa_v4_seen_welcome'
+    seenWelcome: 'sa_v4_seen_welcome',
+    morningBase: 'sa_v4_morning_base'
+  },
+
+  // 0部(9:00-9:30 の朝の準備)のポジション
+  //   1部の仕事の前にやる仕事。シフト表では 1部/2部 の左の枠に書く
+  POSITIONS0: ['C', '1F', 'Rj', 'Tj', 'm'],
+  POSITIONS0_FULL: {
+    'C':  'クリーン（廊下の掃除）・1日 1人',
+    '1F': '一階の準備・1日 1人',
+    'Rj': 'レストラン準備ヘルプ・朝の人数が不足する日だけ',
+    'Tj': 'テイクアウト準備・朝の人数が不足する日だけ',
+    'm':  '盛り付け（基本W1名）・時間は問わない'
+  },
+  // 時刻ではなく仕事の中身で決まるポジション（9時出勤でなくてもよい）
+  POSITIONS0_ANYTIME: ['m'],
+  // 朝の人数が足りない日にだけ発生するポジション
+  POSITIONS0_SHORT: ['Rj', 'Tj'],
+
+  // 朝（9時出勤）の基準人数。これを下回った日は Rj・Tj を立てる
+  getMorningBase() {
+    const v = App._read(App.KEYS.morningBase, null);
+    const n = parseInt(v, 10);
+    return (isNaN(n) || n < 0) ? 6 : n;
+  },
+  setMorningBase(n) {
+    const v = Math.max(0, Math.min(20, parseInt(n, 10) || 0));
+    App._write(App.KEYS.morningBase, v);
+    return v;
   },
 
   // 1部(9-16)のポジション
@@ -307,6 +335,7 @@ const App = {
   /* ===== スタッフ別設定 (できるポジション・メモ) ===== */
 
   // { 名前: { positions:['K','R2'], positions2:['W','T'], t2always:false, t2extra:false, note:'', priority:false } }
+  // positions0 … 0部(9:00-9:30 朝の準備)でできるポジション（C / 1F / Rj / Tj / m）
   // positions  … 1部(9-16)でできるポジション
   // positions2 … 2部(16-L)でできるポジション（W / T）
   // t2always   … 出勤日は必ず2部T
@@ -342,6 +371,7 @@ const App = {
       const all = {};
       Object.values(data).forEach(m => {
         if (m && m.name) all[m.name] = {
+          positions0: m.positions0 || [],
           positions: m.positions || [], positions2: m.positions2 || [],
           t2always: !!m.t2always, t2extra: !!m.t2extra,
           rank: m.rank || '', daysMin: m.daysMin || null, daysMax: m.daysMax || null,

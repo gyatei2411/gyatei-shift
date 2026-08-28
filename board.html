@@ -84,7 +84,12 @@
     td.cell .time {
       font-size: 20px; font-weight: 800; line-height: 1.15;
     }
-    td.cell .sub { font-size: 13px; font-weight: 700; opacity: 0.75; }
+    /* 0部（9:00〜9:30 朝の準備）。ポジションの左に小さく出す */
+    td.cell .sub {
+      font-size: 15px; font-weight: 800; vertical-align: 3px; margin-right: 5px;
+      background: rgba(255,255,255,0.16); border-radius: 5px; padding: 1px 5px;
+    }
+    .board.compact td.cell .sub { font-size: 13px; padding: 0 4px; margin-right: 3px; }
 
     /* 出勤していないが「出られる」と答えた日 */
     td.cell.av-o { background: #123024; color: #4ADE80; }
@@ -441,6 +446,7 @@
 
       const usedPos = {};
       let usedAvail = false;
+      let used0 = false;
 
       const rowFor = (name) => {
         let r = `<tr><td class="name">${esc(name)}</td>`;
@@ -448,6 +454,7 @@
           if (closed.has(d)) { r += '<td class="cell closedday"></td>'; continue; }
           const pos = get(name, d, 'main');
           const sub = get(name, d, 'sub');
+          if (sub) used0 = true;
           const time = (get(name, d, 'start') + get(name, d, 'end')).trim();
           if (pos || time) {
             // 「R2→W」のような 1部→2部 表記は 1部のポジションで色を決める
@@ -455,7 +462,7 @@
             const cls = POS_CLASS[head] || 'p-etc';
             if (head && POS_CLASS[head]) usedPos[head] = cls;
             r += `<td class="cell ${cls}"><div class="ci">` +
-              (pos ? `<span class="pos">${esc(pos)}${sub ? `<span class="sub">+${esc(sub)}</span>` : ''}</span>` : '') +
+              (pos ? `<span class="pos">${sub ? `<span class="sub">${esc(sub)}</span>` : ''}${esc(pos)}</span>` : '') +
               (time ? `<span class="time">${esc(time)}</span>` : '') +
               `</div></td>`;
             continue;
@@ -529,6 +536,11 @@
         leg += '<span style="margin-left:14px"><i style="background:#123024;color:#4ADE80">○</i>' +
                '<i style="background:#2E2410;color:#FBBF24">△</i>この日は出られると回答（交代を頼めます）' +
                '<i style="background:#241C36;color:#C4B5FD;margin-left:10px">未</i>未定（入れるか未定）</span>';
+      }
+      if (used0) {
+        leg += '<span style="margin-left:14px"><i style="background:rgba(255,255,255,0.16);color:#E2E8F0">C</i>' +
+               'ポジションの左の小さい印＝0部（9時〜9時半 朝の準備）' +
+               ' C=クリーン / 1F=一階の準備 / Rj=レストラン準備 / Tj=テイクアウト準備 / m=盛り付け</span>';
       }
       leg += '<span style="margin-left:auto">時間の「L」＝ラストまで</span>';
       document.getElementById('legend').innerHTML = leg;

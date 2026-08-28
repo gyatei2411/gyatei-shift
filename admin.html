@@ -496,7 +496,7 @@
       const el = document.getElementById('staff-master-list');
       if (!staff.length) { el.innerHTML = '<div class="empty-state">スタッフが登録されていません</div>'; return; }
       el.innerHTML = staff.map((n, i) => {
-        const m = Object.assign({ positions: [], positions2: [], t2always: false, t2extra: false,
+        const m = Object.assign({ positions0: [], positions: [], positions2: [], t2always: false, t2extra: false,
                                   rank: '', daysMin: null, daysMax: null, note: '', priority: false }, meta[n] || {});
         const rk = App.rankKey(m);
         const RC = { priority: '#B45309', housewife: '#0369A1', student: '#7E22CE' };
@@ -518,6 +518,15 @@
             <button class="btn btn-outline btn-sm" onclick="moveStaff(${i}, -1)">↑</button>
             <button class="btn btn-outline btn-sm" onclick="moveStaff(${i}, 1)">↓</button>
             <button class="btn btn-danger-outline btn-sm" onclick="removeStaff(${i})">削除</button>
+          </div>
+          <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:6px 0 2px">
+            <span style="font-size:0.72rem;color:#0F766E;font-weight:700;min-width:92px" title="9:00〜9:30 の朝の準備。シフト表ではポジションの左の枠に入ります">0部 9-930:</span>
+            ${App.POSITIONS0.map(p => `
+              <label title="${App.POSITIONS0_FULL[p]}" style="display:inline-flex;align-items:center;gap:3px;font-size:0.8rem;background:${m.positions0.includes(p) ? '#ECFDF5' : '#fff'};border:1.5px solid ${m.positions0.includes(p) ? '#0F766E' : 'var(--border)'};padding:3px 9px;border-radius:6px;cursor:pointer;font-weight:600">
+                <input type="checkbox" ${m.positions0.includes(p) ? 'checked' : ''} onchange="togglePosition0('${esc}', '${p}', this.checked)">
+                ${p}
+              </label>
+            `).join('')}
           </div>
           <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:6px 0 2px">
             <span style="font-size:0.72rem;color:var(--muted);font-weight:700;min-width:92px">1部 9-16:</span>
@@ -575,6 +584,15 @@
       renderStaffMaster();
     }
 
+    // 0部（9:00〜9:30 朝の準備）でできるポジション
+    function togglePosition0(name, pos, checked) {
+      const m = staffMetaOf(name);
+      if (checked) { if (!m.positions0.includes(pos)) m.positions0.push(pos); }
+      else m.positions0 = m.positions0.filter(p => p !== pos);
+      App.setStaffMeta(name, m);
+      renderStaffMaster();
+    }
+
     // 2部（16時〜L）でできるポジション
     function togglePosition2(name, pos, checked) {
       const m = staffMetaOf(name);
@@ -600,7 +618,7 @@
 
     function staffMetaOf(name) {
       return Object.assign(
-        { positions: [], positions2: [], t2always: false, t2extra: false,
+        { positions0: [], positions: [], positions2: [], t2always: false, t2extra: false,
           rank: '', daysMin: null, daysMax: null, note: '', priority: false },
         App.getStaffMeta()[name] || {});
     }

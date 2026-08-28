@@ -90,6 +90,10 @@
     .shift-table .cell-time {
       background: #FAFBFC; font-size: 10px; color: #4338CA; font-weight: 600;
     }
+    /* 0部（9:00〜9:30 朝の準備）。ポジションの左の枠 */
+    .shift-table .cell-sub {
+      background: #F0FDFA; font-size: 10px; color: #0F766E; font-weight: 800;
+    }
     .shift-table .cell-sym {
       font-weight: 800; font-size: 14px; line-height: 1;
       padding: 0;
@@ -222,6 +226,23 @@
     <textarea id="assign-note" placeholder="例: 山口は3日間○だが2日だけ出勤にする / 青木は必ずK"
       style="width:100%;margin-top:6px;min-height:48px;border:1.5px solid #FCD34D;border-radius:6px;padding:8px;font-size:0.85rem;font-family:inherit"
       onchange="saveAssignNote(this.value)"></textarea>
+  </div>
+
+  <div class="sv-edit-hint" style="background:#F0FDFA;border-color:#5EEAD4;color:#0F766E">
+    🌅 <strong>0部（9:00〜9:30 朝の準備）</strong>　ポジションの<strong>左の枠</strong>に入ります。
+    <b>C</b>=クリーン（廊下の掃除・1日1人） /
+    <b>1F</b>=一階の準備（1日1人） /
+    <b>m</b>=盛り付け（基本W1名・時間不問）　…毎日つけます。
+    <b>Rj</b>=レストラン準備ヘルプ / <b>Tj</b>=テイクアウト準備　…
+    9時から出られる人が
+    <input type="number" id="morning-base" min="0" max="20"
+      style="width:52px;text-align:center;font-size:0.85rem;font-weight:800;padding:3px 4px;border:1.5px solid #5EEAD4;border-radius:6px"
+      onchange="saveMorningBase(this.value)">
+    <strong>人未満の日だけ</strong>つけます。
+    <br>基本の始業は <b>K・T=9時</b> / <b>R2・R2d=9時半</b> / <b>W=10時</b>ですが、
+    <b>C・1F・Rj・Tj がついた人は9時出勤</b>になります（mは時間不問なので変わりません）。
+    つける順番は <b>★優先 ＞ 主婦 ＞ 無印 ＞ 学生</b>。
+    <span style="opacity:0.85">（つけられる人がいないときは無理につけず、備考に「⚠ 0部未配置」と出します）</span>
   </div>
 
   <!-- 取り込みダイアログ -->
@@ -389,7 +410,7 @@
         html += '<tr class="row-staff-bot">';
         for (let i = 0; i < 7; i++) {
           if (closed.has(i)) { html += '<td class="closed-cell"></td><td class="closed-cell"></td><td class="closed-cell">休</td>'; continue; }
-          html += edCell(`s_${name}_${i}_sub`, '', manual);
+          html += edCell(`s_${name}_${i}_sub`, 'cell-sub', manual);
           html += edCell(`s_${name}_${i}_main`, '', manual);
           const manualSym = manual[App._safeCellKey(`s_${name}_${i}_sym`)];
           const autoSym = reply ? (reply.d[i] || '') : '';
@@ -482,10 +503,20 @@
       if (noteEl && document.activeElement !== noteEl) {
         noteEl.value = manual[App._safeCellKey('assign_note')] || '';
       }
+      const mbEl = document.getElementById('morning-base');
+      if (mbEl && document.activeElement !== mbEl) mbEl.value = App.getMorningBase();
       attachEditHandlers();
       renderConfirmStatus();
       const boardLink = document.getElementById('link-board');
       if (boardLink) boardLink.href = 'board.html?id=' + encodeURIComponent(currentReqId);
+    }
+
+    // 朝（9時出勤）の基準人数。週をまたいで共通の設定
+    function saveMorningBase(val) {
+      const v = App.setMorningBase(val);
+      const el = document.getElementById('morning-base');
+      if (el) el.value = v;
+      showSaved();
     }
 
     function saveAssignNote(val) {
@@ -565,7 +596,18 @@
     //    _default = 曜日指定なしの時間 → △をつけた全日に適用)
     // 時刻1つ分のパターン: "9" "9:30" "9時" "9時半" "930" "9時30分"
     // → 3つのキャプチャ（時 / 分パターンA / 分パターンB）を持つ
-    const TIME_TOKEN = '(\\d{1,2})(?:[:：時]\\s*(30|半)\\s*分?|時|(30|半))?';
+    const TIME_TOKEN = '(\\d{1,2})(?:[:：時]\\s*(\\d{1,2}|半)\\s*分?|時|(30|半))?';
+    // 分を時間（小数）にする。「:00」は0分なので足さない
+    //（30分単位でない半端な分は、始業は遅い側・終業は早い側に丸めて安全側に寄せる）
+    function minOf(a, b, isStart) {
+      const v = (a === undefined || a === null || a === '') ? b : a;
+      if (v === undefined || v === null || v === '') return 0;
+      if (v === '半') return 0.5;
+      const mm = parseInt(v, 10);
+      if (isNaN(mm) || mm === 0) return 0;
+      if (mm === 30) return 0.5;
+      return isStart ? (mm < 30 ? 0.5 : 1) : (mm < 30 ? 0 : 0.5);
+    }
     const SEP = '\\s*(?:[-−ー－〜～~]+|から)\\s*';
 
     function parseTimeConstraints(gnote) {
@@ -579,27 +621,28 @@
       for (const part of parts) {
         // 曜日の抽出（複数曜日対応: 「火・木は…」）
         const days = [];
-        const dowMatches = part.match(/[月火水木金土日](?=曜|[はの・、]|$)/g) || part.match(/[月火水木金土日]曜/g);
+        // 「月:9:30-16」「土日は…」のような書き方も拾う
+        const dowMatches = part.match(/[月火水木金土日](?=[月火水木金土日]|曜|[はの・、:：]|$)/g) || part.match(/[月火水木金土日]曜/g);
         if (dowMatches) dowMatches.forEach(m => { const d = dowMap[m[0]]; if (d !== undefined && !days.includes(d)) days.push(d); });
 
         let start = null, end = null;
         // "9-15" "9時-15時半" "9:30-16" "930-16" "11時から15時" パターン
         let m = part.match(new RegExp(TIME_TOKEN + SEP + TIME_TOKEN));
         if (m) {
-          start = parseFloat(m[1]) + ((m[2] || m[3]) ? 0.5 : 0);
-          end = parseFloat(m[4]) + ((m[5] || m[6]) ? 0.5 : 0);
+          start = parseFloat(m[1]) + minOf(m[2], m[3], true);
+          end = parseFloat(m[4]) + minOf(m[5], m[6], false);
         } else if ((m = part.match(new RegExp(TIME_TOKEN + SEP + '(?:L|l|Ｌ|ラスト|ラストまで|最後)')))) {
           // "9-L" "9時〜ラスト" → 終業はラストまで
-          start = parseFloat(m[1]) + ((m[2] || m[3]) ? 0.5 : 0);
+          start = parseFloat(m[1]) + minOf(m[2], m[3], true);
           end = 99;
         } else {
           // "17時以降" "17時半から" パターン
           m = part.match(new RegExp(TIME_TOKEN + '\\s*分?\\s*(?:以降|以後|から)'));
-          if (m) { start = parseFloat(m[1]) + ((m[2] || m[3]) ? 0.5 : 0); end = 99; }
+          if (m) { start = parseFloat(m[1]) + minOf(m[2], m[3], true); end = 99; }
           else {
             // "15時まで" パターン
             m = part.match(new RegExp(TIME_TOKEN + '\\s*分?\\s*(?:まで|迄)'));
-            if (m) { start = 0; end = parseFloat(m[1]) + ((m[2] || m[3]) ? 0.5 : 0); }
+            if (m) { start = 0; end = parseFloat(m[1]) + minOf(m[2], m[3], false); }
           }
         }
         if (start === null && end === null) continue;
@@ -792,11 +835,14 @@
           needsMap[pos]--;
           assignedToday.add(person.name);
           assignedCount[person.name]++;
-          const base = (pos === 'R2' || pos === 'R2d') ? 9.5 : 9;   // R2系は9:30始まり
+          // 基本の始業: R2系は9:30 / Wは10:00 / それ以外（K・T）は9:00
+          //（0部（C/1F/Rj/Tj）がついた人はあとで9時に前倒しする）
+          const base = (pos === 'R2' || pos === 'R2d') ? 9.5 : (pos === 'W' ? 10 : 9);
           const st = tc ? Math.max(tc.start, base) : base;
           const en = tc ? Math.min(tc.end, PART1_END) : PART1_END;  // 1部は16時まで
           const tcEnd = tc ? tc.end : 99;                           // その人が働ける上限（99=ラスト）
-          results.push({ name: person.name, day, pos, st, en, tcEnd, pos2: null, early: false });
+          const tcStart = tc ? tc.start : 0;                        // その人が出られる最も早い時刻
+          results.push({ name: person.name, day, pos, st, en, tcEnd, tcStart, pos2: null, early: false });
         };
 
         // ── 第1パス: 優先枠に「できるポジションが少ない人」から配置 ──
@@ -1000,11 +1046,69 @@
         todays.forEach(r => { if (r.pos2) second[r.name]++; });
       }
 
+      // ===== 0部（9:00〜9:30 朝の準備）の割り当て =====
+      //  ・1部・2部を全部決めてから、その日出勤する人の中でつける
+      //  ・C（クリーン）と1F（一階の準備）は 1日 1人ずつ
+      //  ・C / 1F / Rj / Tj は 9:00〜9:30 の仕事。**ついた人は始業を9時に前倒し**する
+      //    （R2は基本930、Wは基本10時だが、0部がつけば9時出勤になる）
+      //  ・m（盛り付け）は時間に関わらない。基本は1部Wの人から1名。始業は変えない
+      //  ・Rj / Tj は「9時から出られる人数」が基準人数に満たない日だけ発生する
+      //  ・【優先】★優先 > 主婦 > 無印 > 学生 の順につける（同じ区分なら週の回数が少ない人）
+      //  ・つけられないときは無理につけず、備考に注意書きを残す
+      const MORNING_BASE = App.getMorningBase();
+      const zeroCount = {};      // name → 週の0部回数（均等化用）
+      replies.forEach(r => zeroCount[r.name] = 0);
+      const zeroResults = [];    // { name, day, pos0 }
+      const zeroShort = {};      // day → つけられなかった0部の配列
+      const zeroShortLines = [];
+
+      for (let day = 0; day < 7; day++) {
+        if (closed.has(day)) continue;
+        const todays = results.filter(r => r.day === day);
+        if (!todays.length) continue;
+        const dayName = `${App.fmtMD(App.weekDates(req.ws)[day])}(${App.DOW_LABELS[day]})`;
+
+        // 9時から出られる人（○の人と、△で9時開始 OK の人）
+        const morning = todays.filter(r => (r.tcStart || 0) <= 9);
+        const can0 = (r, p) => ((meta[r.name] || {}).positions0 || []).indexOf(p) >= 0;
+        const used = new Set();   // 0部は1人1役
+
+        // その日立てる0部を決める（Rj/Tj は朝が人数不足の日だけ）
+        const wanted = ['C', '1F', 'm'];
+        if (morning.length < MORNING_BASE) wanted.push('Rj', 'Tj');
+
+        wanted.forEach(p => {
+          const anytime = App.POSITIONS0_ANYTIME.indexOf(p) >= 0;
+          const pool = (anytime ? todays : morning).filter(r => !used.has(r.name) && can0(r, p));
+          if (!pool.length) { (zeroShort[day] = zeroShort[day] || []).push(p); return; }
+          pool.sort((a, b) => {
+            if (p === 'm') {   // 盛り付けは基本W1名
+              const aw = a.pos === 'W' ? 0 : 1, bw = b.pos === 'W' ? 0 : 1;
+              if (aw !== bw) return aw - bw;
+            }
+            const ra = rankOf(a.name), rb = rankOf(b.name);   // ★優先 > 主婦 > 無印 > 学生
+            if (ra !== rb) return ra - rb;
+            return zeroCount[a.name] - zeroCount[b.name] || assignedCount[b.name] - assignedCount[a.name];
+          });
+          const pick = pool[0];
+          used.add(pick.name);
+          zeroCount[pick.name]++;
+          // 9:00〜9:30 の仕事がついた人は始業を9時に前倒し（m は時間不問なのでそのまま）
+          if (!anytime) pick.st = 9;
+          zeroResults.push({ name: pick.name, day, pos0: p });
+        });
+
+        if (zeroShort[day]) {
+          const why = zeroShort[day].map(p => `${p}（${App.POSITIONS0_FULL[p]}）`).join(' / ');
+          zeroShortLines.push(`${dayName} ▶ ${why}`);
+        }
+      }
+
       // 先に前回の割り当てを消す
       //（消さずに上書きだけだと、今回外れた人のポジションが残って人数が増えてしまう）
       const prev = App.getManual(currentReqId);
       Object.keys(prev).forEach(k => {
-        const m = k.match(/^s_(.+)_(\d)_(main|start|end)$/);
+        const m = k.match(/^s_(.+)_(\d)_(main|start|end|sub)$/);
         if (!m || closed.has(+m[2])) return;
         App.setManualCell(currentReqId, k, '');
       });
@@ -1026,10 +1130,35 @@
         App.setManualCell(currentReqId, `s_${a.name}_${a.day}_end`, fmtEnd(endNum));
       });
 
+      // 0部はポジションの左の枠（sub）へ
+      zeroResults.forEach(z => {
+        App.setManualCell(currentReqId, `s_${z.name}_${z.day}_sub`, z.pos0);
+      });
+
+      // つけられなかった0部は、備考に注意書きを残す（無理にはつけない）
+      const Z_TAG = '⚠ 0部未配置:';
+      for (let day = 0; day < 7; day++) {
+        if (closed.has(day)) continue;
+        const nk = `note_${day}`;
+        const cur = App.getManual(currentReqId)[App._safeCellKey(nk)] || '';
+        let base = cur.split(Z_TAG)[0].trim();
+        while (base.length && (base.slice(-1) === '/' || base.slice(-1) === ' ')) base = base.slice(0, -1).trim();
+        const miss = zeroShort[day];
+        const txt = (miss && miss.length)
+          ? (base ? `${base} / ${Z_TAG}${miss.join('・')}` : `${Z_TAG}${miss.join('・')}`)
+          : base;
+        if (txt !== cur) App.setManualCell(currentReqId, nk, txt);
+      }
+
       render();
 
       const part2Count = results.filter(a => a.pos2).length;
-      let msg = `✓ ${results.length}件割り当てました（うち2部 ${part2Count}件）`;
+      let msg = `✓ ${results.length}件割り当てました（うち2部 ${part2Count}件 / 0部 ${zeroResults.length}件）`;
+      if (zeroShortLines.length) {
+        msg += `\n\n【0部をつけられなかった日】\n${zeroShortLines.join('\n')}`;
+        msg += `\n→ 空欄のままにし、備考に「${Z_TAG}」と出しています`;
+        msg += `\n　（スタッフ管理の「0部 9-930」にチェックを入れるとつくようになります）`;
+      }
       if (shortages2.length) msg += `\n\n【2部の人数不足】\n${shortages2.join('\n')}`;
       if (shortages.length) msg += `\n\n【人数不足】\n${shortages.join('\n')}`;
       if (memoLimits.length) msg += `\n\n【週の希望回数を上限として適用】\n${memoLimits.join(' / ')}`;
@@ -1257,9 +1386,20 @@ ${head}${rest}
       txt += `  《応援T》が出勤する日だけ、3名のうち1人を \"R2→（T\" -1630 にして入れ替わりで上がらせる\n`;
       txt += `- 2部W = 1部Wのうち16時で上がる人がいれば、その人数分だけ別の人をつける\n`;
       txt += `- 《必ずT》以外は、2部に入る回数が週でできるだけ均等になるように選ぶ\n\n`;
+      txt += `## 0部（9:00〜9:30 朝の準備）\n`;
+      txt += `- 1部の仕事の**前**にやる仕事。割り当ては pos0 として別に出力する（シフト表ではポジションの左の枠に入る）\n`;
+      txt += `- C（クリーン＝廊下の掃除）・1F（一階の準備）は **1日 1人ずつ**\n`;
+      txt += `- **C / 1F / Rj / Tj は 9:00〜9:30 の仕事**。ついた人はポジションに関係なく **start を "9" にする**\n`;
+      txt += `  （R2は基本930、Wは基本10時だが、0部がつけば9時出勤になる。△の人は9時から出られる場合だけ）\n`;
+      txt += `- m（盛り付け）は時間に関わらないが0部欄に書く。**基本は1部Wの人から1名**。始業は変えない\n`;
+      txt += `- Rj（レストラン準備ヘルプ）・Tj（テイクアウト準備）は **9時から出られる人が${App.getMorningBase()}人未満の日だけ**発生する（1人ずつ）\n`;
+      txt += `- **つける順番は 【★優先】> 【主婦】> 無印 > 【学生】**。同じ区分なら週の0部回数が少ない人から\n`;
+      txt += `- 0部は **1人1役**。できる人がいなければ**無理につけず、その日は空欄のまま**にして理由を書く\n\n`;
       txt += `## 出勤時間のルール\n`;
-      txt += `- ○（終日可）の人: Kなら 9-L、1部のみなら 9-16、2部も入るなら 9-L\n`;
-      txt += `- R2/R2d に割り当てた○の人: 1部は 930-16（9時半から16時）\n`;
+
+      txt += `- **基本の始業**: K・T = **9**、R2・R2d = **930**、W = **10**\n`;
+      txt += `  ※ただし 0部（C/1F/Rj/Tj）がついた人は **9** に前倒しする\n`;
+      txt += `- ○（終日可）の人: Kなら 9-L、1部のみなら 上記の始業-16、2部も入るなら 上記の始業-L\n`;
       txt += `- △の人: 「出勤可能時間・備考」に書かれた時間帯の範囲内で配置する（R2系でも例えば1030-1430のような時間で配置してよい）\n`;
       txt += `  ※「月:9:30-16 / 火:11-15:30」のように曜日別に書かれている場合はその曜日の指定を優先。曜日の指定がない記述はその人の△の日すべてに適用する\n\n`;
       txt += `## スタッフの回答（○=終日可 / △=条件付き / ✕=不可 / 未=未定（割り当てない）/ -=定休日）\n`;
@@ -1269,7 +1409,8 @@ ${head}${rest}
         const dLim = (m.daysMax != null && m.daysMax !== '')
           ? `【週${(m.daysMin != null && m.daysMin !== '') ? m.daysMin + '〜' : ''}${m.daysMax}回】` : '';
         txt += `- ${r.name}${rkLabel}${dLim}: [${r.d.split('').map((c, i) => `${App.DOW_LABELS[i]}=${c === 'o' ? '○' : c === 't' ? '△' : c === 'x' ? '✕' : c === 'm' ? '未' : '-'}`).join(' ')}]`;
-        txt += ` 1部: ${m.positions && m.positions.length ? m.positions.join(',') : '未設定'}`;
+        txt += ` 0部: ${m.positions0 && m.positions0.length ? m.positions0.join(',') : 'なし'}`;
+        txt += ` / 1部: ${m.positions && m.positions.length ? m.positions.join(',') : '未設定'}`;
         txt += ` / 2部: ${m.positions2 && m.positions2.length ? m.positions2.join(',') : 'なし'}`;
         if (m.t2always) txt += ' 《必ずT》';
         if (m.t2extra) txt += ' 《応援T・表記なし》';
@@ -1283,11 +1424,12 @@ ${head}${rest}
       if (assignNote) txt += `\n## 管理者からの割り当て指示（最優先で従うこと）\n${assignNote}\n`;
       txt += `\n## 出力形式\n`;
       txt += `検討過程を簡潔に説明した後、最後に必ず次のJSON形式で出力してください。\n`;
-      txt += '```json\n{"assign":[{"name":"青木","day":0,"pos":"K","start":"9","end":"-L"}]}\n```\n';
+      txt += '```json\n{"assign":[{"name":"青木","day":0,"pos":"K","pos0":"C","start":"9","end":"-L"}]}\n```\n';
       txt += `- day: 0=月曜〜6=日曜\n`;
       txt += `- pos: 1部のみなら K/R2/R2d/W/T、2部も入るなら \"R2→W\" \"K→T\" の形。同じポジションを続けるなら \"W\" \"T\"\n`;
       txt += `  16:30で入れ替わり退勤する人は \"R2→（T\" のように（を付ける\n`;
       txt += `- start例: "9" "930" "10" / end例: "-16"（1部のみ） "-L"（2部まで） "-1630"（先に上がるT）\n`;
+      txt += `- pos0: 0部のポジション（C / 1F / Rj / Tj / m）。つかない人は省略\n`;
       txt += `- 割り当てない人は含めない\n`;
 
       App.copyToClipboard(txt).then(ok => {
@@ -1327,6 +1469,7 @@ ${head}${rest}
       for (const a of data.assign) {
         if (!a.name || a.day === undefined || !a.pos) continue;
         App.setManualCell(currentReqId, `s_${a.name}_${a.day}_main`, a.pos);
+        App.setManualCell(currentReqId, `s_${a.name}_${a.day}_sub`, a.pos0 || '');
         if (a.start) App.setManualCell(currentReqId, `s_${a.name}_${a.day}_start`, String(a.start));
         if (a.end) App.setManualCell(currentReqId, `s_${a.name}_${a.day}_end`, String(a.end));
         count++;
