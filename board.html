@@ -46,6 +46,8 @@
     /* 表を画面いっぱいに拡大する領域 */
     .fit-wrap { flex: 1 1 auto; position: relative; overflow: hidden; }
     .fit-inner { position: absolute; top: 0; left: 0; transform-origin: top left; }
+    /* スマホ横向き: 横は1週間ぶん、縦はスクロール（文字を小さくしすぎない） */
+    .fit-wrap.scrolly { overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
     /* ===== シフト表 ===== */
     table.board { border-collapse: separate; border-spacing: 3px; }
@@ -256,6 +258,62 @@
     .bv-irow.mkn .l, .bv-irow.mkn .v { color: #6EE7B7; }
     .bv-irow.mkn .v { font-size: 22px; font-weight: 900; }
 
+    /* 記号の説明は普段は出さない（「❔ 記号」で開く） */
+    .legend { display: none !important; }
+
+    /* 記号の見方・オーバーレイ */
+    .leg-back {
+      position: fixed; inset: 0; background: rgba(2,6,23,0.88); z-index: 500;
+      display: none; align-items: center; justify-content: center; padding: 20px;
+    }
+    .leg-back.open { display: flex; }
+    .leg-box {
+      background: #0F172A; border: 1px solid #334155; border-radius: 14px;
+      max-width: 720px; width: 100%; max-height: 88vh; display: flex; flex-direction: column;
+    }
+    .leg-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 18px; border-bottom: 1px solid #1E293B;
+    }
+    .leg-head h2 { color: #F8FAFC; font-size: 19px; font-weight: 800; }
+    .leg-head button {
+      background: #1E293B; color: #E2E8F0; border: 1px solid #334155;
+      border-radius: 8px; padding: 8px 16px; font-size: 15px; font-weight: 700;
+      cursor: pointer; font-family: inherit;
+    }
+    .leg-body { overflow-y: auto; padding: 14px 18px 20px; -webkit-overflow-scrolling: touch; }
+    .leg-sec { margin-bottom: 16px; }
+    .leg-sec h3 { color: #94A3B8; font-size: 13px; font-weight: 800; margin-bottom: 8px; }
+    .leg-items { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+    .leg-item { display: flex; align-items: center; gap: 7px; color: #CBD5E1; font-size: 15px; line-height: 1.5; }
+    .leg-item i {
+      font-style: normal; font-weight: 900; font-size: 16px;
+      border-radius: 6px; padding: 3px 10px; min-width: 34px; text-align: center;
+    }
+    .leg-note { color: #94A3B8; font-size: 14px; line-height: 1.7; }
+    .leg-note b { color: #E2E8F0; }
+
+    /* 縦向きのスマホに「横向きにすると見やすい」と出す */
+    .rotate-tip {
+      flex: 0 0 auto; display: none; align-items: center; justify-content: center; gap: 8px;
+      margin: 4px 10px 0; padding: 8px 10px; border-radius: 10px;
+      background: #1E293B; border: 1px solid #334155; color: #CBD5E1;
+      font-size: 13px; font-weight: 700;
+    }
+    .rotate-tip .ico { font-size: 17px; }
+
+    /* 背の低い画面（スマホ横向き）は上下をとにかく詰める */
+    @media (max-height: 500px) {
+      .topbar { padding: 3px 10px; gap: 8px; font-size: 11px; }
+      .topbar .week { font-size: 15px; }
+      .topbar .stamp { display: none; }
+      .topbar button { padding: 3px 8px; font-size: 11px; }
+      .badge-draft { font-size: 11px; padding: 2px 8px; }
+      .lastfix { display: none; }
+      .resting { font-size: 12px; padding: 3px 10px 0; line-height: 1.4; max-height: 42px; overflow: hidden; }
+      .resting .rt-person { padding: 1px 7px; }
+    }
+
     .msg {
       color: #94A3B8; text-align: center; padding: 60px 20px; font-size: 20px; line-height: 1.9;
     }
@@ -272,8 +330,13 @@
       <button id="btn-prev" onclick="moveWeek(-1)">◀ 前の週</button>
       <button id="btn-next" onclick="moveWeek(1)">次の週 ▶</button>
       <button id="btn-hist" onclick="openHistory()" style="display:none">📜 変更履歴</button>
+      <button onclick="openLegend()">❔ 記号</button>
       <button id="btn-bvmode" onclick="toggleBoardMode()">📱 1日ずつ</button>
       <button onclick="App.forceUpdate ? App.forceUpdate() : location.reload()">🔄 更新</button>
+    </div>
+
+    <div class="rotate-tip" id="rotate-tip">
+      <span class="ico">📱↻</span>スマホを<b style="color:#F8FAFC">横向き</b>にすると、1週間全体が見えます
     </div>
 
     <div class="fit-wrap" id="fit-wrap">
@@ -284,6 +347,17 @@
     <div class="lastfix" id="lastfix" style="display:none"></div>
     <div class="resting" id="resting" style="display:none"></div>
     <div class="legend" id="legend"></div>
+  </div>
+
+  <!-- 記号の見方 -->
+  <div class="leg-back" id="leg-back" onclick="if(event.target===this) closeLegend()">
+    <div class="leg-box">
+      <div class="leg-head">
+        <h2>❔ 記号の見方</h2>
+        <button onclick="closeLegend()">閉じる</button>
+      </div>
+      <div class="leg-body" id="leg-body"></div>
+    </div>
   </div>
 
   <div class="hist-back" id="hist-back" onclick="if(event.target===this) closeHistory()">
@@ -601,25 +675,8 @@
       if (bvOn) bvw.innerHTML = buildBoardDay(req, dates, closed, names, resting, todayStr, get, worksOn, symOf, cells);
       updateBoardModeBtn();
 
-      const order = ['K', 'R2', 'R2d', 'R1', 'W', 'T'];
-      let leg = order.filter(p => usedPos[p]).map(p => `<span><i class="${usedPos[p]}">${p}</i></span>`).join('');
-      if (usedAvail) {
-        leg += '<span style="margin-left:14px"><i style="background:#123024;color:#4ADE80">○</i>' +
-               '<i style="background:#2E2410;color:#FBBF24">△</i>この日は出られると回答（交代を頼めます）' +
-               '<i style="background:#241C36;color:#C4B5FD;margin-left:10px">未</i>未定（入れるか未定）</span>';
-      }
-      if (used0) {
-        leg += '<span style="margin-left:14px"><i style="background:rgba(255,255,255,0.20);color:#E2E8F0">C</i>' +
-               '左の小さい印＝<b>0部</b>（9:00〜9:30 朝の準備）' +
-               ' C=クリーン / 1F=一階の準備 / Rj=レストラン準備 / Tj=テイクアウト準備 / m=盛り付け' +
-               '（「C・m」は 9時からC → 10時からm）</span>';
-      }
-      if (used2) {
-        leg += '<span style="margin-left:14px"><b style="font-size:20px">R2</b>' +
-               '<b style="font-size:14px;opacity:0.9">→W</b>　小さい方が <b>2部</b>（16時〜L）のポジション</span>';
-      }
-      leg += '<span style="margin-left:auto">時間の「L」＝ラストまで</span>';
-      document.getElementById('legend').innerHTML = leg;
+      buildLegend(usedPos, usedAvail, used0, used2);
+      updateRotateTip();
 
       fit();
     }
@@ -707,10 +764,76 @@
     }
 
     window.addEventListener('resize', () => {
+      updateRotateTip();
       if (bvManual) return;
       const want = (window.innerWidth <= BV_NARROW) ? 'day' : 'week';
       if (want !== bvMode) { bvMode = want; render(); }
     });
+    window.addEventListener('orientationchange', () => setTimeout(() => { updateRotateTip(); fit(); }, 300));
+
+
+    /* ===== 記号の見方（普段は出さない。「❔ 記号」で開く） ===== */
+    const POS_FULL = {
+      K: '調理場', R2: 'レストラン', R2d: 'レストラン（ドリンク）',
+      R1: 'レストラン1', W: '洗い場', T: 'テイクアウト'
+    };
+
+    function buildLegend(usedPos, usedAvail, used0, used2) {
+      const order = ['K', 'R2', 'R2d', 'R1', 'W', 'T'];
+      let h = '';
+
+      const posItems = order.filter(p => usedPos[p])
+        .map(p => `<span class="leg-item"><i class="${usedPos[p]}">${p}</i>${POS_FULL[p] || ''}</span>`).join('');
+      if (posItems) {
+        h += `<div class="leg-sec"><h3>ポジション（1部 9:00〜16:00）</h3><div class="leg-items">${posItems}</div></div>`;
+      }
+
+      if (used2) {
+        h += '<div class="leg-sec"><h3>2部（16時〜L）</h3>' +
+             '<div class="leg-note"><b style="font-size:22px">R2</b><b style="font-size:15px;opacity:0.9">→W</b>' +
+             '　のように、<b>小さい方が2部</b>のポジションです。<br>' +
+             '「（」が付いている人（例: R2→（T）は <b>16:30で先に上がり</b>ます。</div></div>';
+      }
+
+      if (used0) {
+        h += '<div class="leg-sec"><h3>0部（9:00〜9:30 朝の準備）</h3>' +
+             '<div class="leg-note">ポジションの<b>左の小さい印</b>が0部です。</div>' +
+             '<div class="leg-items" style="margin-top:8px">' +
+             [['C','クリーン（廊下の掃除）'],['1F','一階の準備'],
+              ['Rj','レストラン準備'],['Tj','テイクアウト準備'],['m','盛り付け']]
+               .map(([k, v]) => `<span class="leg-item"><i style="background:rgba(255,255,255,0.20);color:#E2E8F0">${k}</i>${v}</span>`).join('') +
+             '</div>' +
+             '<div class="leg-note" style="margin-top:8px">「C・m」は 9時からC、そのあと 10時からm という意味です。</div></div>';
+      }
+
+      if (usedAvail) {
+        h += '<div class="leg-sec"><h3>シフトに入っていない日</h3><div class="leg-items">' +
+             '<span class="leg-item"><i style="background:#123024;color:#4ADE80">○</i>出られると回答（交代を頼めます）</span>' +
+             '<span class="leg-item"><i style="background:#2E2410;color:#FBBF24">△</i>条件付きで出られる</span>' +
+             '<span class="leg-item"><i style="background:#241C36;color:#C4B5FD">未</i>入れるか未定</span>' +
+             '</div></div>';
+      }
+
+      h += '<div class="leg-sec"><h3>時間・その他</h3><div class="leg-note">' +
+           '<b>9-L</b> … 9時からラストまで<br>' +
+           '<b>930-16</b> … 9時半から16時まで<br>' +
+           '<b>まかない</b> … その日のスタッフと家族の出勤人数を足した数<br>' +
+           '<b>休み</b> … その日休む家族（店=店長 / 若奥=若奥さん / 奥=奥さん / 会=会長）' +
+           '</div></div>';
+
+      document.getElementById('leg-body').innerHTML = h;
+    }
+
+    function openLegend() { document.getElementById('leg-back').classList.add('open'); }
+    function closeLegend() { document.getElementById('leg-back').classList.remove('open'); }
+
+    // 縦向きのスマホで週表示のときだけ「横向きに」と出す
+    function updateRotateTip() {
+      const tip = document.getElementById('rotate-tip');
+      if (!tip) return;
+      const portraitPhone = window.innerWidth <= BV_NARROW && window.innerHeight > window.innerWidth;
+      tip.style.display = portraitPhone ? 'flex' : 'none';
+    }
 
     // 表を画面いっぱいまで拡大／縮小する（縦横どちらも余白を残さない）
     function fit() {
@@ -719,12 +842,25 @@
       const inner = document.getElementById('fit-inner');
       if (!inner.firstElementChild) return;
       const table = inner.querySelector('table');
+      const shortScreen = window.innerHeight <= 500;   // スマホ横向き
       if (table) table.style.width = '';
       inner.style.transform = 'scale(1)';
       inner.style.left = '0px';
+      inner.style.marginBottom = '0px';
+      inner.style.marginLeft = '0px';
+      inner.style.position = shortScreen ? 'relative' : 'absolute';
+      wrap.classList.toggle('scrolly', shortScreen);
       let w = inner.scrollWidth, h = inner.scrollHeight;
       if (!w || !h) return;
       const availW = wrap.clientWidth, availH = wrap.clientHeight;
+      if (shortScreen) {
+        // 縦に合わせて縮めると読めないので、横幅だけに合わせて縦はスクロール
+        const s2 = Math.min(availW / w, 1);
+        inner.style.transform = `scale(${s2})`;
+        inner.style.marginBottom = Math.round(h * s2 - h) + 'px';
+        inner.style.marginLeft = Math.max(0, (availW - w * s2) / 2) + 'px';
+        return;
+      }
       let s = Math.min(availW / w, availH / h);
       // 高さで頭打ちなら、横方向の余りを列幅に配って文字をさらに大きく見せる
       if (table && availW / w > availH / h) {
