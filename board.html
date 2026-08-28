@@ -453,10 +453,12 @@
       const prevId = reqIds[cursor];
       const all = App.getRequests().slice().sort((a, b) => a.ws < b.ws ? -1 : 1);
       const confirmed = all.filter(r => App.getConfirmed(r.id));
-      const list = confirmed.length ? confirmed : all;
-      reqIds = list.map(r => r.id);
+      let list = confirmed.length ? confirmed : all;
 
       const urlId = new URLSearchParams(location.search).get('id');
+      // URLで週を指定されたときは、未確定でもその週を見られるようにする
+      if (urlId && !list.some(r => r.id === urlId) && all.some(r => r.id === urlId)) list = all;
+      reqIds = list.map(r => r.id);
       let idx = -1;
       if (urlId && reqIds.includes(urlId)) idx = reqIds.indexOf(urlId);
       else if (prevId && reqIds.includes(prevId)) idx = reqIds.indexOf(prevId);
@@ -596,7 +598,15 @@
       const availSrc = (conf && conf.avail) ? conf.avail
         : App.getReplies(reqId).map(r => ({ n: r.name, d: r.d }));
       (availSrc || []).forEach(a => { if (a && a.n) availMap[a.n] = a.d || ''; });
-      const symOf = (n, d) => (availMap[n] || '')[d] || '';
+      // 回答データがないときは、シフト表に直接入力された ○△✕未 を使う
+      //（紙のシフト表から転記した週は回答がないため）
+      const symOf = (n, d) => {
+        const s = (availMap[n] || '')[d];
+        if (s) return s;
+        const c = get(n, d, 'sym');
+        return c === '○' ? 'o' : c === '△' ? 't' : c === '未' ? 'm'
+             : (c === '✕' || c === '×') ? 'x' : '';
+      };
 
       const all = (req.staff || []).slice();
       const working = all.filter(n => { for (let d = 0; d < 7; d++) if (!closed.has(d) && worksOn(n, d)) return true; return false; });
