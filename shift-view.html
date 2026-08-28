@@ -241,6 +241,7 @@
     <strong>人未満の日だけ</strong>つけます。
     <br>基本の始業は <b>K・T=9時</b> / <b>R2・R2d=9時半</b> / <b>W=10時</b>ですが、
     <b>C・1F・Rj・Tj がついた人は9時出勤</b>になります（mは時間不問なので変わりません）。
+    <b>K・T の人には0部はつけません</b>（もともと始業9時なので、つくのは R2・R2d・R1・W の人）。
     つける順番は <b>★優先 ＞ 主婦 ＞ 無印 ＞ 学生</b>。
     <span style="opacity:0.85">（つけられる人がいないときは無理につけず、備考に「⚠ 0部未配置」と出します）</span>
   </div>
@@ -1052,6 +1053,8 @@
       //  ・C / 1F / Rj / Tj は 9:00〜9:30 の仕事。**ついた人は始業を9時に前倒し**する
       //    （R2は基本930、Wは基本10時だが、0部がつけば9時出勤になる）
       //  ・m（盛り付け）は時間に関わらない。基本は1部Wの人から1名。始業は変えない
+      //  ・**1部が K または T の人には0部をつけない**（もともと始業9時で自分の準備があるため）
+      //    → 0部がつくのは R2 / R2d / R1 / W の人
       //  ・Rj / Tj は「9時から出られる人数」が基準人数に満たない日だけ発生する
       //  ・【優先】★優先 > 主婦 > 無印 > 学生 の順につける（同じ区分なら週の回数が少ない人）
       //  ・つけられないときは無理につけず、備考に注意書きを残す
@@ -1061,6 +1064,9 @@
       const zeroResults = [];    // { name, day, pos0 }
       const zeroShort = {};      // day → つけられなかった0部の配列
       const zeroShortLines = [];
+      // K・T はもともと始業9時なので0部はつけない
+      const NO_ZERO = ['K', 'T'];
+      const zeroOk = (r) => NO_ZERO.indexOf(r.pos) < 0;
 
       for (let day = 0; day < 7; day++) {
         if (closed.has(day)) continue;
@@ -1079,7 +1085,7 @@
 
         wanted.forEach(p => {
           const anytime = App.POSITIONS0_ANYTIME.indexOf(p) >= 0;
-          const pool = (anytime ? todays : morning).filter(r => !used.has(r.name) && can0(r, p));
+          const pool = (anytime ? todays : morning).filter(r => zeroOk(r) && !used.has(r.name) && can0(r, p));
           if (!pool.length) { (zeroShort[day] = zeroShort[day] || []).push(p); return; }
           pool.sort((a, b) => {
             if (p === 'm') {   // 盛り付けは基本W1名
@@ -1158,6 +1164,7 @@
         msg += `\n\n【0部をつけられなかった日】\n${zeroShortLines.join('\n')}`;
         msg += `\n→ 空欄のままにし、備考に「${Z_TAG}」と出しています`;
         msg += `\n　（スタッフ管理の「0部 9-930」にチェックを入れるとつくようになります）`;
+        msg += `\n　※ 1部が K または T の人には0部をつけません（もともと始業9時のため）`;
       }
       if (shortages2.length) msg += `\n\n【2部の人数不足】\n${shortages2.join('\n')}`;
       if (shortages.length) msg += `\n\n【人数不足】\n${shortages.join('\n')}`;
@@ -1389,7 +1396,9 @@ ${head}${rest}
       txt += `## 0部（9:00〜9:30 朝の準備）\n`;
       txt += `- 1部の仕事の**前**にやる仕事。割り当ては pos0 として別に出力する（シフト表ではポジションの左の枠に入る）\n`;
       txt += `- C（クリーン＝廊下の掃除）・1F（一階の準備）は **1日 1人ずつ**\n`;
-      txt += `- **C / 1F / Rj / Tj は 9:00〜9:30 の仕事**。ついた人はポジションに関係なく **start を "9" にする**\n`;
+      txt += `- **1部が K または T の人には0部をつけない**（もともと始業9時で自分の準備がある）\n`;
+      txt += `  → 0部がつくのは **R2 / R2d / R1 / W** の人だけ\n`;
+      txt += `- **C / 1F / Rj / Tj は 9:00〜9:30 の仕事**。ついた人は **start を "9" にする**\n`;
       txt += `  （R2は基本930、Wは基本10時だが、0部がつけば9時出勤になる。△の人は9時から出られる場合だけ）\n`;
       txt += `- m（盛り付け）は時間に関わらないが0部欄に書く。**基本は1部Wの人から1名**。始業は変えない\n`;
       txt += `- Rj（レストラン準備ヘルプ）・Tj（テイクアウト準備）は **9時から出られる人が${App.getMorningBase()}人未満の日だけ**発生する（1人ずつ）\n`;
