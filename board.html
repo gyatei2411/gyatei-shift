@@ -212,6 +212,50 @@
     }
     .hist-ver li::before { content: '・'; position: absolute; left: 0; color: #475569; }
 
+    /* ===== スマホ用：1日ずつの一覧（見るだけ） ===== */
+    .bv-wrap { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 4px 10px 24px; }
+    .bv-days { display: flex; gap: 5px; padding: 4px 0 10px; position: sticky; top: 0; background: #0F172A; z-index: 3; }
+    .bv-days button {
+      flex: 1 1 0; min-width: 0; padding: 8px 2px; border-radius: 10px;
+      border: 1.5px solid #334155; background: #131C2E; color: #94A3B8;
+      font-family: inherit; font-size: 12px; font-weight: 700; line-height: 1.3; cursor: pointer;
+      white-space: nowrap;
+    }
+    .bv-days button .d { display: block; font-size: 15px; font-weight: 800; color: #E2E8F0; }
+    .bv-days button.on { background: #4338CA; border-color: #818CF8; color: #fff; }
+    .bv-days button.on .d { color: #fff; }
+    .bv-days button.closed { background: #0B1220; color: #475569; }
+    .bv-days button.closed .d { color: #475569; }
+    .bv-days button.today { box-shadow: 0 0 0 2px #818CF8; }
+
+    .bv-count { color: #64748B; font-size: 13px; font-weight: 700; margin: 2px 2px 8px; }
+    .bv-list { display: flex; flex-direction: column; gap: 5px; }
+    .bv-row {
+      display: flex; align-items: center; gap: 8px;
+      border-radius: 10px; padding: 9px 12px; min-height: 50px;
+      background: #131C2E;
+    }
+    .bv-row .bv-name { flex: 0 0 84px; font-size: 17px; font-weight: 800; color: #F1F5F9; }
+    .bv-row .bv-pos { flex: 1; font-size: 22px; font-weight: 900; white-space: nowrap; }
+    .bv-row .bv-pos .p0 {
+      font-size: 13px; font-weight: 800; vertical-align: 2px; margin-right: 5px;
+      background: rgba(255,255,255,0.20); border: 1px solid rgba(255,255,255,0.30);
+      border-radius: 5px; padding: 0 5px;
+    }
+    .bv-row .bv-pos .p2 { font-size: 15px; font-weight: 800; opacity: 0.9; }
+    .bv-row .bv-time { flex: 0 0 auto; font-size: 17px; font-weight: 800; }
+    .bv-row.av { background: #101A2E; }
+    .bv-row.av .bv-name { color: #94A3B8; font-weight: 700; font-size: 15px; }
+    .bv-row.av .bv-mark { font-size: 17px; font-weight: 900; }
+    .bv-sec { color: #64748B; font-size: 12px; font-weight: 800; margin: 14px 2px 6px; }
+    .bv-info { margin-top: 12px; display: flex; flex-direction: column; gap: 5px; }
+    .bv-irow { display: flex; gap: 10px; align-items: center; background: #131C2E; border-radius: 10px; padding: 9px 12px; }
+    .bv-irow .l { flex: 0 0 74px; font-size: 12px; font-weight: 800; color: #94A3B8; }
+    .bv-irow .v { flex: 1; font-size: 16px; font-weight: 700; color: #E2E8F0; }
+    .bv-irow.fam .l, .bv-irow.fam .v { color: #FCD34D; }
+    .bv-irow.mkn .l, .bv-irow.mkn .v { color: #6EE7B7; }
+    .bv-irow.mkn .v { font-size: 22px; font-weight: 900; }
+
     .msg {
       color: #94A3B8; text-align: center; padding: 60px 20px; font-size: 20px; line-height: 1.9;
     }
@@ -228,12 +272,14 @@
       <button id="btn-prev" onclick="moveWeek(-1)">◀ 前の週</button>
       <button id="btn-next" onclick="moveWeek(1)">次の週 ▶</button>
       <button id="btn-hist" onclick="openHistory()" style="display:none">📜 変更履歴</button>
-      <button onclick="location.reload()">🔄 更新</button>
+      <button id="btn-bvmode" onclick="toggleBoardMode()">📱 1日ずつ</button>
+      <button onclick="App.forceUpdate ? App.forceUpdate() : location.reload()">🔄 更新</button>
     </div>
 
     <div class="fit-wrap" id="fit-wrap">
       <div class="fit-inner" id="fit-inner"></div>
     </div>
+    <div class="bv-wrap" id="bv-wrap" style="display:none"></div>
 
     <div class="lastfix" id="lastfix" style="display:none"></div>
     <div class="resting" id="resting" style="display:none"></div>
@@ -260,6 +306,8 @@
     let cursor = 0;       // reqIds 内の現在位置
 
     function init() {
+      // 読み込み直後は幅が確定していないことがあるので、ここでもう一度見る
+      if (!bvManual) bvMode = (window.innerWidth <= BV_NARROW) ? 'day' : 'week';
       App.initFirebase();
       if (App.isOnline()) {
         App.subscribeSettings(() => {});
@@ -545,6 +593,14 @@
 
       document.getElementById('fit-inner').innerHTML = html;
 
+      // スマホ（狭い画面）は 1日ずつの一覧で見せる
+      const bvw = document.getElementById('bv-wrap');
+      const bvOn = (bvMode === 'day');
+      document.getElementById('fit-wrap').style.display = bvOn ? 'none' : '';
+      bvw.style.display = bvOn ? '' : 'none';
+      if (bvOn) bvw.innerHTML = buildBoardDay(req, dates, closed, names, resting, todayStr, get, worksOn, symOf, cells);
+      updateBoardModeBtn();
+
       const order = ['K', 'R2', 'R2d', 'R1', 'W', 'T'];
       let leg = order.filter(p => usedPos[p]).map(p => `<span><i class="${usedPos[p]}">${p}</i></span>`).join('');
       if (usedAvail) {
@@ -568,8 +624,97 @@
       fit();
     }
 
+
+    /* ===== スマホ用：1日ずつの一覧（見るだけ・編集不可） ===== */
+    const BV_NARROW = 700;
+    let bvMode = (window.innerWidth <= BV_NARROW) ? 'day' : 'week';
+    let bvManual = false;
+    let bvDay = null;
+
+    function toggleBoardMode() {
+      bvMode = (bvMode === 'day') ? 'week' : 'day';
+      bvManual = true;
+      render();
+    }
+
+    function updateBoardModeBtn() {
+      const b = document.getElementById('btn-bvmode');
+      if (b) b.textContent = (bvMode === 'day') ? '\uD83D\uDCC5 1週間' : '\uD83D\uDCF1 1日ずつ';
+    }
+
+    function setBvDay(d) { bvDay = d; render(); }
+
+    function buildBoardDay(req, dates, closed, names, resting, todayStr, get, worksOn, symOf, cells) {
+      const open = [0,1,2,3,4,5,6].filter(i => !closed.has(i));
+      const todayIdx = dates.indexOf(todayStr);
+      if (bvDay === null) bvDay = (todayIdx >= 0 && !closed.has(todayIdx)) ? todayIdx : (open.length ? open[0] : 0);
+      if (closed.has(bvDay)) bvDay = open.length ? open[0] : 0;
+      const d = bvDay;
+
+      let h = '<div class="bv-days">';
+      dates.forEach((ds, i) => {
+        const cls = [i === d ? 'on' : '', closed.has(i) ? 'closed' : '', ds === todayStr ? 'today' : ''].join(' ');
+        h += `<button class="${cls}" onclick="setBvDay(${i})">` +
+             `<span class="d">${App.fmtMD(ds)}</span>${App.DOW_LABELS[i]}${closed.has(i) ? '休' : ''}</button>`;
+      });
+      h += '</div>';
+
+      if (closed.has(d)) return h + '<div class="msg">定休日です</div>';
+
+      const working = names.filter(n => worksOn(n, d));
+      const avail = names.concat(resting).filter(n => !worksOn(n, d))
+        .filter(n => ['o','t','m'].indexOf(symOf(n, d)) >= 0);
+
+      const rowFor = (n) => {
+        const pos = get(n, d, 'main'), sub = get(n, d, 'sub');
+        const seg = String(pos).split('→');
+        const head = seg[0].replace(/[（(）)]/g, '').trim();
+        const cls = POS_CLASS[head] || 'p-etc';
+        const time = (get(n, d, 'start') + get(n, d, 'end')).trim();
+        return `<div class="bv-row ${cls}">` +
+          `<span class="bv-name">${esc(n)}</span>` +
+          `<span class="bv-pos">` +
+            (sub ? `<span class="p0">${esc(sub)}</span>` : '') + esc(seg[0]) +
+            (seg.length > 1 ? `<span class="p2">→${esc(seg.slice(1).join('→'))}</span>` : '') +
+          `</span>` +
+          `<span class="bv-time">${esc(time)}</span></div>`;
+      };
+
+      h += `<div class="bv-count">出勤 ${working.length}名</div>`;
+      h += '<div class="bv-list">' + (working.length ? working.map(rowFor).join('')
+           : '<div class="bv-row" style="color:#64748B;justify-content:center">まだ割り当てられていません</div>') + '</div>';
+
+      if (avail.length) {
+        h += '<div class="bv-sec">この日は出られると回答（交代を頼めます）</div>';
+        h += '<div class="bv-list">' + avail.map(n => {
+          const sm = symOf(n, d);
+          const mk = sm === 'o' ? '○' : sm === 't' ? '△' : '未';
+          const col = sm === 'o' ? '#4ADE80' : sm === 't' ? '#FBBF24' : '#C4B5FD';
+          return `<div class="bv-row av"><span class="bv-name">${esc(n)}</span>` +
+                 `<span class="bv-pos"></span>` +
+                 `<span class="bv-mark" style="color:${col}">${mk}</span></div>`;
+        }).join('') + '</div>';
+      }
+
+      const cell = (k) => cells[App._safeCellKey(k)] || '';
+      const off = App.parseFamilyOff(cell(`fam_off_${d}`));
+      h += '<div class="bv-info">';
+      if (cell(`fam_off_${d}`)) h += `<div class="bv-irow fam"><span class="l">休み</span><span class="v">${esc(cell(`fam_off_${d}`))}</span></div>`;
+      h += `<div class="bv-irow mkn"><span class="l">まかない</span><span class="v">${working.length + App.FAMILY.length - off.length}</span></div>`;
+      if (cell(`memo_${d}`)) h += `<div class="bv-irow"><span class="l">メモ</span><span class="v">${esc(cell(`memo_${d}`))}</span></div>`;
+      h += '</div>';
+      return h;
+    }
+
+    window.addEventListener('resize', () => {
+      if (bvManual) return;
+      const want = (window.innerWidth <= BV_NARROW) ? 'day' : 'week';
+      if (want !== bvMode) { bvMode = want; render(); }
+    });
+
     // 表を画面いっぱいまで拡大／縮小する（縦横どちらも余白を残さない）
     function fit() {
+      if (bvMode === 'day') return;
       const wrap = document.getElementById('fit-wrap');
       const inner = document.getElementById('fit-inner');
       if (!inner.firstElementChild) return;

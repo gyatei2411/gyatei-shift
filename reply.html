@@ -47,6 +47,35 @@
       border-color: var(--danger) !important;
       box-shadow: 0 0 0 3px rgba(220,38,38,0.12);
     }
+    /* 前回の提出を読み込んだときの帯 */
+    .mine-bar {
+      background: #ECFDF5; border: 1.5px solid #6EE7B7; color: #065F46;
+      border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; font-weight: 700;
+      margin-bottom: 14px; line-height: 1.6;
+    }
+    .mine-bar .sub { display: block; font-weight: 500; font-size: 0.8rem; color: #047857; margin-top: 2px; }
+
+    /* みんなの提出状況 */
+    .all-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table.all-tbl { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+    table.all-tbl th, table.all-tbl td {
+      border: 1px solid var(--border); padding: 5px 4px; text-align: center; white-space: nowrap;
+    }
+    table.all-tbl th { background: #F1F5F9; font-weight: 700; font-size: 0.78rem; }
+    table.all-tbl th.sat { color: #2563EB; }
+    table.all-tbl th.sun { color: #DC2626; }
+    table.all-tbl td.nm { text-align: left; font-weight: 700; background: #F8FAFC; position: sticky; left: 0; z-index: 1; }
+    table.all-tbl tr.me td { background: #EEF2FF; }
+    table.all-tbl tr.me td.nm { background: #E0E7FF; }
+    table.all-tbl td.sy { font-weight: 800; font-size: 1rem; width: 30px; }
+    table.all-tbl td.sy[data-s="o"] { background: #D1FAE5; color: #059669; }
+    table.all-tbl td.sy[data-s="t"] { background: #FEF3C7; color: #D97706; }
+    table.all-tbl td.sy[data-s="x"] { background: #FEE2E2; color: #DC2626; }
+    table.all-tbl td.sy[data-s="m"] { background: #EDE9FE; color: #7C3AED; }
+    table.all-tbl td.sy[data-s="-"] { background: #E2E8F0; color: #94A3B8; }
+    table.all-tbl td.nt { text-align: left; font-size: 0.78rem; color: #475569; white-space: normal; min-width: 150px; }
+    .all-none { font-size: 0.85rem; color: var(--muted); margin-top: 10px; line-height: 1.7; }
+    .all-none b { color: #B45309; }
   </style>
 </head>
 <body>
@@ -61,6 +90,8 @@
       <div class="card">
         <div id="meta-area" style="margin-bottom:18px"></div>
         <div id="connection-info" style="font-size:0.78rem;color:var(--muted);margin-bottom:12px"></div>
+
+        <div class="mine-bar" id="mine-bar" style="display:none"></div>
 
         <div class="form-group">
           <label class="form-label" for="name-input">あなたのお名前</label>
@@ -90,7 +121,22 @@
           </div>
         </div>
 
-        <button class="btn btn-primary btn-block" onclick="submitReply()">送信する</button>
+        <button class="btn btn-primary btn-block" id="submit-btn" onclick="submitReply()">送信する</button>
+      </div>
+
+      <!-- みんなの提出状況 -->
+      <div class="card" id="all-card" style="display:none">
+        <h2 style="font-size:1rem">👥 みんなの提出状況</h2>
+        <p class="card-sub" id="all-sub"></p>
+        <div class="all-wrap"><div id="all-table"></div></div>
+        <div class="all-none" id="all-none"></div>
+      </div>
+
+      <!-- 確定したシフト -->
+      <div class="card">
+        <h2 style="font-size:1rem">📅 できあがったシフト</h2>
+        <p class="card-sub">シフトが確定するとここから見られます（見るだけです）</p>
+        <a class="btn btn-outline btn-block" id="board-link" href="board.html" target="_blank">📺 確定したシフトを見る</a>
       </div>
     </div>
 
@@ -102,8 +148,9 @@
           <h2>送信完了！</h2>
           <p id="success-msg"></p>
         </div>
-        <div class="btn-row" style="justify-content:center">
-          <button class="btn btn-outline" onclick="backToForm()">回答を直す</button>
+        <div class="btn-row" style="justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-outline" onclick="backToForm()">回答を直す・みんなを見る</button>
+          <a class="btn btn-outline" id="board-link2" href="board.html" target="_blank">📺 確定シフトを見る</a>
         </div>
       </div>
 
@@ -136,6 +183,8 @@
     let answers = {};        // { 0..6: 'o'/'t'/'x' }
     let dayNotes = {};       // { 0..6: '9:30-16' } △の曜日ごとの出勤可能時間
     let closedSet = new Set();
+    let allReplies = [];     // 全員の回答
+    let dirty = false;       // 自分で入力をいじったら true（自動で上書きしない）
 
     function init() {
       App.initFirebase();
@@ -145,6 +194,24 @@
         closedSet = new Set(request.closed || []);
         renderForm();
         document.getElementById('form-section').style.display = '';
+
+        // 確定シフトへのリンク
+        const bl = 'board.html?id=' + encodeURIComponent(request.id);
+        ['board-link', 'board-link2'].forEach(i => {
+          const el = document.getElementById(i); if (el) el.href = bl;
+        });
+
+        // 全員の提出状況を取りにいく（自分の前回の提出もここから）
+        allReplies = App.getReplies(request.id);
+        renderAll();
+        if (App.isOnline()) {
+          App.subscribeReplies(request.id, () => {
+            allReplies = App.getReplies(request.id);
+            renderAll();
+            const cur = document.getElementById('name-input').value.trim();
+            if (cur && !dirty) loadMine(cur);
+          });
+        }
       } else {
         document.getElementById('error-section').style.display = '';
       }
@@ -206,9 +273,111 @@
       document.getElementById('name-input').value = name;
       document.querySelectorAll('.name-pill').forEach(p => p.classList.remove('selected'));
       el.classList.add('selected');
+      dirty = false;
+      loadMine(name);
+      renderAll();
+    }
+
+    // 前回の提出をフォームに戻す
+    function loadMine(name) {
+      const bar = document.getElementById('mine-bar');
+      const btn = document.getElementById('submit-btn');
+      const r = allReplies.find(x => x.name === name);
+      if (!r) {
+        bar.style.display = 'none';
+        btn.textContent = '送信する';
+        return;
+      }
+      answers = {}; dayNotes = {};
+      for (let i = 0; i < 7; i++) {
+        const c = (r.d || '')[i];
+        if (c && c !== '-') answers[i] = c;
+      }
+      const dn = r.dnotes || {};
+      Object.keys(dn).forEach(k => { dayNotes[Number(k)] = dn[k]; });
+      document.getElementById('gnote').value = r.gnote || '';
+      applyAnswersToUI();
+      const when = r.receivedAt ? fmtStamp(r.receivedAt) : '';
+      bar.innerHTML = `✅ <b>${name}</b> さんの前回の提出を読み込みました${when ? `（${when}）` : ''}。` +
+        `<span class="sub">直したいところを変えて、下の「修正して再送信」を押してください。</span>`;
+      bar.style.display = '';
+      btn.textContent = '修正して再送信する';
+    }
+
+    // answers / dayNotes を画面に反映
+    function applyAnswersToUI() {
+      for (let i = 0; i < 7; i++) {
+        document.querySelectorAll(`[data-day="${i}"].sym-btn`).forEach(b => {
+          b.classList.toggle('selected', b.dataset.sym === answers[i]);
+        });
+        const dn = document.getElementById('dn-' + i);
+        if (dn) dn.value = dayNotes[i] || '';
+      }
+      updateGnoteRequirement();
+    }
+
+    function fmtStamp(iso) {
+      const dt = new Date(iso);
+      if (isNaN(dt)) return '';
+      const p2 = n => String(n).padStart(2, '0');
+      return `${dt.getMonth() + 1}/${dt.getDate()} ${p2(dt.getHours())}:${p2(dt.getMinutes())}`;
+    }
+
+    // みんなの提出状況
+    function renderAll() {
+      const card = document.getElementById('all-card');
+      if (!request) return;
+      const dates = App.weekDates(request.ws);
+      const me = document.getElementById('name-input').value.trim();
+      const staff = (request.staff || []).slice();
+      allReplies.forEach(r => { if (staff.indexOf(r.name) < 0) staff.push(r.name); });
+      const done = staff.filter(n => allReplies.some(r => r.name === n));
+      const yet = staff.filter(n => done.indexOf(n) < 0);
+
+      if (!done.length) {
+        card.style.display = '';
+        document.getElementById('all-sub').textContent = 'まだ誰も提出していません。';
+        document.getElementById('all-table').innerHTML = '';
+        document.getElementById('all-none').innerHTML = '';
+        return;
+      }
+      card.style.display = '';
+      document.getElementById('all-sub').textContent =
+        `${App.weekLabel(request.ws)}　提出 ${done.length}/${staff.length}名`;
+
+      let h = '<table class="all-tbl"><thead><tr><th>名前</th>';
+      dates.forEach((ds, i) => {
+        const c = i === 5 ? 'sat' : i === 6 ? 'sun' : '';
+        h += `<th class="${c}">${App.DOW_LABELS[i]}<br><span style="font-weight:500;font-size:0.7rem">${App.fmtMD(ds)}</span></th>`;
+      });
+      h += '<th>備考</th></tr></thead><tbody>';
+      done.forEach(n => {
+        const r = allReplies.find(x => x.name === n);
+        h += `<tr class="${n === me ? 'me' : ''}"><td class="nm">${esc(n)}${n === me ? ' （あなた）' : ''}</td>`;
+        for (let i = 0; i < 7; i++) {
+          const c = (r.d || '')[i] || '-';
+          const mk = c === 'o' ? '○' : c === 't' ? '△' : c === 'x' ? '✕' : c === 'm' ? '未' : '–';
+          h += `<td class="sy" data-s="${c}">${mk}</td>`;
+        }
+        const dn = r.dnotes || {};
+        const parts = Object.keys(dn).map(Number).sort((a, b) => a - b)
+          .filter(i => dn[i]).map(i => `${App.DOW_LABELS[i]}:${dn[i]}`);
+        if (r.gnote) parts.push(r.gnote);
+        h += `<td class="nt">${esc(parts.join(' / '))}</td></tr>`;
+      });
+      h += '</tbody></table>';
+      document.getElementById('all-table').innerHTML = h;
+      document.getElementById('all-none').innerHTML = yet.length
+        ? `未提出（${yet.length}名）：<b>${esc(yet.join('、'))}</b>`
+        : '全員提出済みです。';
+    }
+
+    function esc(t) {
+      return String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
     function setDay(idx, sym, btn) {
+      dirty = true;
       answers[idx] = sym;
       const row = btn.closest('.day-row');
       row.querySelectorAll('.sym-btn').forEach(b => b.classList.toggle('selected', b === btn));
@@ -216,12 +385,14 @@
     }
 
     function setDayNote(idx, val) {
+      dirty = true;
       dayNotes[idx] = val;
       const el = document.getElementById('dn-' + idx);
       if (el && val.trim()) el.classList.remove('dn-required');
     }
 
     function bulkSet(sym) {
+      dirty = true;
       for (let i = 0; i < 7; i++) {
         if (closedSet.has(i)) continue;
         if (sym === null) {
@@ -322,6 +493,11 @@
       submitBtn.textContent = '送信中...';
 
       App.submitReply(reply).then(res => {
+        dirty = false;
+        reply.receivedAt = reply.receivedAt || new Date().toISOString();
+        const i = allReplies.findIndex(x => x.name === reply.name);
+        if (i >= 0) allReplies[i] = reply; else allReplies.push(reply);
+        renderAll();
         showResult(reply, res.online);
       }).catch(err => {
         console.error('Send failed:', err);
@@ -362,7 +538,17 @@
       document.getElementById('result-section').style.display = 'none';
       document.getElementById('manual-fallback').style.display = 'none';
       document.getElementById('form-section').style.display = '';
+      renderAll();
+      window.scrollTo(0, 0);
     }
+
+    // 名前を手で打ったときも前回の提出を探す
+    document.getElementById('name-input').addEventListener('change', (e) => {
+      const v = e.target.value.trim();
+      document.querySelectorAll('.name-pill').forEach(p => p.classList.toggle('selected', p.textContent === v));
+      if (!dirty) loadMine(v);
+      renderAll();
+    });
 
     init();
   </script>

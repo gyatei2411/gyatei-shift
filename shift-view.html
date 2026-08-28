@@ -122,6 +122,7 @@
     .shift-table td.editable { cursor: text; }
     .shift-table td.editable:hover { outline: 2px solid #A5B4FC; outline-offset: -2px; }
     .shift-table td.editable:focus { outline: 2px solid var(--primary); outline-offset: -2px; background: #EEF2FF; }
+    .dv-info .dv-ival.editable:focus { outline: none; border-style: solid; border-color: var(--primary); background: #EEF2FF; }
 
     .shift-table .row-pos { height: 18px; background: #F8FAFC; }
     .shift-table .row-pos td.lbl { background: #E0E7FF; color: var(--primary); font-weight: 700; text-align: center; font-size: 10px; }
@@ -187,6 +188,155 @@
       .shift-table .sym-select { -webkit-appearance: none; appearance: none; background: transparent; }
       * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
+
+    /* ===== セル編集パネル（タップで開く） ===== */
+    #cell-editor {
+      display: none; position: fixed; inset: 0; z-index: 400;
+      background: rgba(15,23,42,0.55); align-items: flex-end; justify-content: center;
+    }
+    #cell-editor.open { display: flex; }
+    .ce-sheet {
+      background: #fff; width: 100%; max-width: 520px;
+      border-radius: 16px 16px 0 0; padding: 16px 16px 20px;
+      max-height: 92vh; overflow-y: auto;
+      box-shadow: 0 -6px 30px rgba(0,0,0,0.3);
+    }
+    @media (min-width: 640px) {
+      #cell-editor { align-items: center; }
+      .ce-sheet { border-radius: 16px; }
+    }
+    .ce-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+    .ce-head .ce-name { font-size: 1.25rem; font-weight: 800; }
+    .ce-head .ce-day { font-size: 0.95rem; font-weight: 700; color: var(--muted); }
+    .ce-head .ce-close { margin-left: auto; background: #F1F5F9; border: none; border-radius: 8px;
+      padding: 6px 12px; font-size: 0.9rem; font-weight: 700; cursor: pointer; }
+    .ce-hint { font-size: 0.78rem; color: var(--muted); margin: -6px 0 12px; line-height: 1.5; }
+    .ce-field { margin-bottom: 12px; }
+    .ce-field > label { display: block; font-size: 0.8rem; font-weight: 800; color: #334155; margin-bottom: 4px; }
+    .ce-field > label .sub { font-weight: 600; color: var(--muted); font-size: 0.74rem; }
+    .ce-field input, .ce-field select {
+      width: 100%; font-size: 1.05rem; font-weight: 700; padding: 10px 12px;
+      border: 1.5px solid var(--border); border-radius: 10px; background: #fff;
+      font-family: inherit;
+    }
+    .ce-field input:focus, .ce-field select:focus { outline: none; border-color: var(--primary); }
+    .ce-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .ce-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .ce-chips button {
+      background: #F1F5F9; border: 1.5px solid var(--border); border-radius: 8px;
+      padding: 6px 12px; font-size: 0.9rem; font-weight: 700; cursor: pointer; font-family: inherit;
+    }
+    .ce-chips button.on { background: #EEF2FF; border-color: var(--primary); color: var(--primary); }
+    .ce-check { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; font-weight: 700; color: #334155; }
+    .ce-check input { width: 20px; height: 20px; }
+    .ce-actions { display: flex; gap: 8px; margin-top: 16px; }
+    .ce-actions button {
+      flex: 1; padding: 13px; border-radius: 10px; border: none;
+      font-size: 1rem; font-weight: 800; cursor: pointer; font-family: inherit;
+    }
+    .ce-actions .ce-clear { background: #FEE2E2; color: #B91C1C; flex: 0 0 40%; }
+    .ce-actions .ce-ok { background: var(--primary); color: #fff; }
+
+    /* タップで開くセル */
+    .shift-table td.tapcell { cursor: pointer; }
+    .shift-table td.tapcell:hover { background: #EEF2FF; }
+
+    /* ===== 日別表示（スマホ用） ===== */
+    .day-view { max-width: 640px; margin: 0 auto; }
+    .dv-days { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; }
+    .dv-days button {
+      flex: 1 1 0; min-width: 0; padding: 8px 2px; border-radius: 10px;
+      border: 1.5px solid var(--border); background: #fff; cursor: pointer;
+      font-family: inherit; font-size: 0.72rem; font-weight: 700; color: #334155; line-height: 1.3;
+      white-space: nowrap;
+    }
+    .dv-days button .d { display: block; font-size: 0.92rem; font-weight: 800; }
+    .dv-days button.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .dv-days button.closed { background: #E2E8F0; color: #94A3B8; }
+    .dv-days button.sat .w { color: #2563EB; }
+    .dv-days button.sun .w { color: #DC2626; }
+    .dv-days button.on .w { color: #fff; }
+
+    .dv-count { font-size: 0.82rem; color: var(--muted); font-weight: 700; margin: 2px 0 8px; }
+    .dv-list { background: #fff; border-radius: 12px; box-shadow: 0 1px 6px rgba(0,0,0,0.08); overflow: hidden; }
+    .dv-row {
+      display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+      border-bottom: 1px solid #E2E8F0; cursor: pointer; min-height: 48px;
+    }
+    .dv-row:last-child { border-bottom: none; }
+    .dv-row:active { background: #EEF2FF; }
+    .dv-row .dv-name { flex: 0 0 78px; font-size: 0.95rem; font-weight: 800; }
+    .dv-row .dv-pos { flex: 1; font-size: 1.15rem; font-weight: 900; letter-spacing: 0.01em; white-space: nowrap; }
+    .dv-row .dv-pos .p0 {
+      font-size: 0.8rem; font-weight: 800; color: #0F766E;
+      background: #F0FDFA; border: 1px solid #99F6E4; border-radius: 5px; padding: 0 5px; margin-right: 5px;
+    }
+    .dv-row .dv-pos .p2 { font-size: 0.85rem; font-weight: 800; opacity: 0.8; }
+    .dv-row .dv-time { flex: 0 0 auto; font-size: 0.92rem; font-weight: 800; color: #4338CA; }
+    .dv-row .dv-sym { flex: 0 0 30px; text-align: center; font-size: 1.05rem; font-weight: 900; border-radius: 6px; }
+    .dv-row .dv-sym[data-sym="o"] { background: #D1FAE5; color: #059669; }
+    .dv-row .dv-sym[data-sym="t"] { background: #FEF3C7; color: #D97706; }
+    .dv-row .dv-sym[data-sym="x"] { background: #FEE2E2; color: #DC2626; }
+    .dv-row .dv-sym[data-sym="m"] { background: #EDE9FE; color: #7C3AED; }
+    .dv-row.dv-off { background: #F8FAFC; }
+    .dv-row.dv-off .dv-name { color: #64748B; font-weight: 700; }
+    .dv-sec { font-size: 0.78rem; font-weight: 800; color: var(--muted); margin: 14px 0 6px; }
+    .dv-info { background: #fff; border-radius: 12px; box-shadow: 0 1px 6px rgba(0,0,0,0.08); padding: 4px 12px; margin-top: 12px; }
+    .dv-info .dv-irow { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #E2E8F0; }
+    .dv-info .dv-irow:last-child { border-bottom: none; }
+    .dv-info .dv-ilbl { flex: 0 0 78px; font-size: 0.8rem; font-weight: 800; color: #475569; }
+    .dv-info .dv-ival {
+      flex: 1; font-size: 0.98rem; font-weight: 700; min-height: 24px;
+      border: 1.5px dashed #CBD5E1; border-radius: 8px; padding: 4px 8px;
+    }
+    .dv-info .dv-ival:empty::before { content: 'タップして入力'; color: #94A3B8; font-weight: 500; }
+    .dv-info .dv-ival.ro { border: none; padding-left: 0; color: #166534; font-weight: 900; font-size: 1.1rem; }
+
+    /* 説明欄の開閉（スマホではたたんでおく） */
+    .sv-hint-toggle { display: none; }
+
+    /* ツールバーの「その他」 */
+    .sv-toolbar .sv-more-btn { display: none; }
+    .sv-toolbar .sv-more { display: contents; }
+
+    /* ===== スマホ ===== */
+    @media (max-width: 760px) {
+      .sv-toolbar .sv-more-btn { display: block; }
+      .sv-toolbar .sv-more { display: none; }
+      .sv-toolbar .sv-more.open {
+        display: grid; grid-column: 1 / -1;
+        grid-template-columns: repeat(2, 1fr); gap: 6px;
+      }
+      .sv-toolbar .sv-legend { font-size: 0.72rem; gap: 6px; }
+      .sv-hint-toggle {
+        display: block; width: calc(100% - 20px); margin: 10px auto 0;
+        background: #EEF2FF; border: 1.5px solid #C7D2FE; color: #4338CA;
+        border-radius: 10px; padding: 10px; font-size: 0.85rem; font-weight: 700;
+        cursor: pointer; font-family: inherit;
+      }
+      #sv-hints { display: none; }
+      #sv-hints.open { display: block; }
+      .sv-toolbar { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px; }
+      .sv-toolbar h1 { font-size: 1rem; }
+      .sv-toolbar .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+      .sv-toolbar .actions > * { text-align: center; padding: 10px 6px; font-size: 0.82rem; }
+      .sv-toolbar .sv-legend { grid-column: 1 / -1; justify-content: center; flex-wrap: wrap; }
+      .sv-container { padding: 0 10px 40px; margin-top: 10px; }
+      .sv-edit-hint { font-size: 0.78rem; padding: 10px 12px; }
+      /* 表モードのときは名前列を左に固定して横スクロール */
+      .sv-container.tablemode { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .sv-container.tablemode .shift-table { font-size: 12px; }
+      .sv-container.tablemode .shift-table td.name-cell:first-child,
+      .sv-container.tablemode .shift-table .row-header td.lbl,
+      .sv-container.tablemode .shift-table .row-pos td.lbl,
+      .sv-container.tablemode .shift-table .row-note td.lbl,
+      .sv-container.tablemode .shift-table .row-fam td.lbl,
+      .sv-container.tablemode .shift-table .row-mkn td.lbl {
+        position: sticky; left: 0; z-index: 2;
+      }
+      .sv-container.tablemode .shift-table .row-staff-top,
+      .sv-container.tablemode .shift-table .row-staff-bot { height: 30px; }
+    }
   </style>
 </head>
 <body>
@@ -203,20 +353,26 @@
         <span><i class="m">未</i>未定</span>
       </div>
       <span id="confirm-badge" style="display:none;font-size:0.8rem;font-weight:800;background:rgba(255,255,255,0.28);padding:7px 11px;border-radius:8px"></span>
+      <button id="btn-viewmode" onclick="toggleViewMode()" title="スマホでは「1日ずつ」が見やすいです">📱 1日ずつ</button>
       <button id="btn-confirm" onclick="confirmShift()" style="background:#059669">✅ シフトを確定</button>
-      <button id="btn-history" onclick="openHistory()" style="display:none">📜 履歴</button>
-      <a id="link-board" href="board.html" target="_blank">📺 タブレット表示</a>
       <button onclick="autoAssign()" style="background:#F59E0B">⚡ 自動割り当て</button>
-      <button onclick="copyForClaude()">🤖 Claude用コピー</button>
-      <button onclick="openImportDialog()">📥 結果取り込み</button>
-      <button class="primary" onclick="printFit()">🖨 印刷</button>
-      <button onclick="App.forceUpdate()" title="アプリを最新にして再読み込み">🔄 最新に更新</button>
-      <a href="admin.html">← 管理画面に戻る</a>
+      <a href="admin.html">← 管理画面</a>
+      <button class="sv-more-btn" onclick="toggleMore()">⋯ その他</button>
+      <span class="sv-more" id="sv-more">
+        <button id="btn-history" onclick="openHistory()" style="display:none">📜 履歴</button>
+        <a id="link-board" href="board.html" target="_blank">📺 タブレット表示</a>
+        <button onclick="copyForClaude()">🤖 Claude用コピー</button>
+        <button onclick="openImportDialog()">📥 結果取り込み</button>
+        <button class="primary" onclick="printFit()">🖨 印刷</button>
+        <button onclick="App.forceUpdate()" title="アプリを最新にして再読み込み">🔄 最新に更新</button>
+      </span>
     </div>
   </div>
 
+  <button class="sv-hint-toggle" onclick="toggleHints()">❔ 使い方・割り当て指示を見る</button>
+  <div id="sv-hints">
   <div class="sv-edit-hint">
-    ✏️ <strong>セルをクリックすると直接入力できます</strong>。
+    ✏️ <strong>スタッフのセルをタップすると、<span style="color:#4338CA">0部・1部・2部を別々に選べる編集画面</span>が開きます</strong>（ボタンで選んでも、直接打ってもOK）。
     <strong>⚡自動割り当て</strong>＝ルールに沿って自動でポジションと時間を入力 /
     <strong>🤖Claude用コピー</strong>＝複雑な調整はClaudeに渡して検討 → <strong>📥結果取り込み</strong>で反映。
   </div>
@@ -246,6 +402,8 @@
     つける順番は <b>★優先 ＞ 主婦 ＞ 無印 ＞ 学生</b>。
     <span style="opacity:0.85">（つけられる人がいないときは無理につけず、備考に「⚠ 0部未配置」と出します）</span>
   </div>
+
+  </div><!-- /#sv-hints -->
 
   <!-- 取り込みダイアログ -->
   <div id="import-dialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:300;align-items:center;justify-content:center;padding:20px">
@@ -279,6 +437,85 @@
     <div id="content"></div>
   </div>
 
+
+  <!-- セル編集パネル -->
+  <div id="cell-editor" onclick="if(event.target===this) closeCellEditor()">
+    <div class="ce-sheet">
+      <div class="ce-head">
+        <span class="ce-name" id="ce-name"></span>
+        <span class="ce-day" id="ce-day"></span>
+        <button class="ce-close" onclick="closeCellEditor()">閉じる</button>
+      </div>
+      <div class="ce-hint" id="ce-hint"></div>
+
+      <div class="ce-field">
+        <label>0部　<span class="sub">9:00〜9:30 朝の準備（空欄でもOK）</span></label>
+        <input id="ce-p0" list="dl-p0" placeholder="例: C や C・m。直接入力もできます" autocomplete="off">
+        <div class="ce-chips" id="ce-p0-chips"></div>
+      </div>
+
+      <div class="ce-field">
+        <label>1部　<span class="sub">9:00〜16:00</span></label>
+        <input id="ce-p1" list="dl-p1" placeholder="例: K / R2 / W。直接入力もできます" autocomplete="off">
+        <div class="ce-chips" id="ce-p1-chips"></div>
+      </div>
+
+      <div class="ce-field">
+        <label>2部　<span class="sub">16:00〜L。同じポジションを続けるなら空欄でOK</span></label>
+        <input id="ce-p2" list="dl-p2" placeholder="例: W / T。直接入力もできます" autocomplete="off">
+        <div class="ce-chips" id="ce-p2-chips"></div>
+        <label class="ce-check" style="margin-top:8px">
+          <input type="checkbox" id="ce-early">16:30で先に上がる（表記に「（」をつける）
+        </label>
+      </div>
+
+      <div class="ce-field ce-2col">
+        <div>
+          <label>始業</label>
+          <input id="ce-start" list="dl-start" placeholder="9 / 930 / 10" autocomplete="off" inputmode="numeric">
+        </div>
+        <div>
+          <label>終業</label>
+          <input id="ce-end" list="dl-end" placeholder="-16 / -1630 / -L" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="ce-field ce-2col">
+        <div>
+          <label>出勤可否</label>
+          <select id="ce-sym">
+            <option value="">・</option>
+            <option value="○">○ 終日可</option>
+            <option value="△">△ 条件付き</option>
+            <option value="✕">✕ 不可</option>
+            <option value="未">未 未定</option>
+          </select>
+        </div>
+        <div>
+          <label>希望時刻　<span class="sub">本人の申告</span></label>
+          <input id="ce-time" placeholder="例: 930-16" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="ce-actions">
+        <button class="ce-clear" onclick="clearCellEditor()">この日を空に</button>
+        <button class="ce-ok" onclick="applyCellEditor()">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <datalist id="dl-p0"></datalist>
+  <datalist id="dl-p1"></datalist>
+  <datalist id="dl-p2"></datalist>
+  <datalist id="dl-start">
+    <option value="9"><option value="930"><option value="10"><option value="1030">
+    <option value="11"><option value="1130"><option value="12">
+  </datalist>
+  <datalist id="dl-end">
+    <option value="-16"><option value="-1630"><option value="-L">
+    <option value="-15"><option value="-1530"><option value="-17">
+  </datalist>
+
   <div class="save-indicator" id="save-indicator">✓ 保存しました</div>
 
   <script>
@@ -292,6 +529,8 @@
 
     function init() {
       App.initFirebase();
+      // 読み込み直後は幅が確定していないことがあるので、ここでもう一度見る
+      if (!viewModeManual) viewMode = (window.innerWidth <= NARROW) ? 'day' : 'table';
       currentReqId = getReqId();
       if (!currentReqId) {
         showError('依頼IDが指定されていません。管理画面から開いてください。');
@@ -315,7 +554,7 @@
 
     function isEditing() {
       const ae = document.activeElement;
-      if (!ae || !ae.closest || !ae.closest('.shift-table')) return false;
+      if (!ae || !ae.closest || !ae.closest('#content')) return false;
       return ae.isContentEditable || ae.tagName === 'SELECT';
     }
 
@@ -330,6 +569,12 @@
       const off = App.parseFamilyOff(manual[App._safeCellKey(`fam_off_${day}`)]);
       const fam = App.FAMILY.length - off.length;
       return { staff, fam, total: staff + fam };
+    }
+
+    // スタッフのセル：タップ（クリック）すると編集パネルが開く
+    function tapCell(mkey, cls, manual) {
+      const val = manual[App._safeCellKey(mkey)] || '';
+      return `<td class="tapcell ${cls}" data-mkey="${mkey}">${escapeHtml(val)}</td>`;
     }
 
     // 手入力セル: contenteditable + data-mkey
@@ -404,17 +649,17 @@
         html += `<tr class="row-staff-top"><td class="name-cell" rowspan="2">${escapeHtml(name)}</td>`;
         for (let i = 0; i < 7; i++) {
           if (closed.has(i)) { html += '<td class="closed-cell"></td><td class="closed-cell"></td><td class="closed-cell"></td>'; continue; }
-          html += edCell(`s_${name}_${i}_start`, '', manual);
-          html += edCell(`s_${name}_${i}_end`, '', manual);
-          html += edCell(`s_${name}_${i}_time`, 'cell-time', manual);
+          html += tapCell(`s_${name}_${i}_start`, '', manual);
+          html += tapCell(`s_${name}_${i}_end`, '', manual);
+          html += tapCell(`s_${name}_${i}_time`, 'cell-time', manual);
         }
         html += `<td class="name-cell" rowspan="2">${escapeHtml(name)}</td></tr>`;
         // 下段: [サブポジ(手入力)][メインポジ(手入力)][○△✕(自動+手動上書き可)]
         html += '<tr class="row-staff-bot">';
         for (let i = 0; i < 7; i++) {
           if (closed.has(i)) { html += '<td class="closed-cell"></td><td class="closed-cell"></td><td class="closed-cell">休</td>'; continue; }
-          html += edCell(`s_${name}_${i}_sub`, 'cell-sub', manual);
-          html += edCell(`s_${name}_${i}_main`, '', manual);
+          html += tapCell(`s_${name}_${i}_sub`, 'cell-sub', manual);
+          html += tapCell(`s_${name}_${i}_main`, '', manual);
           const manualSym = manual[App._safeCellKey(`s_${name}_${i}_sym`)];
           const autoSym = reply ? (reply.d[i] || '') : '';
           const symChar = manualSym !== undefined && manualSym !== ''
@@ -500,7 +745,16 @@
       }
       statsHtml += '</div>';
 
-      document.getElementById('content').innerHTML = statsHtml + html;
+      const cont = document.getElementById('content');
+      const wrap = cont.closest('.sv-container');
+      if (viewMode === 'day') {
+        cont.innerHTML = buildDayView(req, dates, closed, orderedNames, replyMap, manual);
+        if (wrap) wrap.classList.remove('tablemode');
+      } else {
+        cont.innerHTML = statsHtml + html;
+        if (wrap) wrap.classList.add('tablemode');
+      }
+      updateViewModeBtn();
       // 割り当て指示欄の復元（編集中でなければ）
       const noteEl = document.getElementById('assign-note');
       if (noteEl && document.activeElement !== noteEl) {
@@ -527,21 +781,269 @@
       showSaved();
     }
 
+
+    /* ===== 表示モード（表 / 1日ずつ） ===== */
+    const NARROW = 760;
+    let viewMode = (window.innerWidth <= NARROW) ? 'day' : 'table';
+    let viewModeManual = false;   // 自分で切り替えたら、以降は幅で自動切替しない
+    let dvDay = null;             // 日別表示で見ている曜日
+
+    // 画面幅が変わったら（端末を回した、PCでウィンドウを広げたなど）自動で合わせる
+    window.addEventListener('resize', () => {
+      if (viewModeManual) return;
+      const want = (window.innerWidth <= NARROW) ? 'day' : 'table';
+      if (want !== viewMode) { viewMode = want; render(); }
+    });
+
+    function toggleHints() {
+      const el = document.getElementById('sv-hints');
+      el.classList.toggle('open');
+      document.querySelector('.sv-hint-toggle').textContent =
+        el.classList.contains('open') ? '❔ 使い方・割り当て指示を閉じる' : '❔ 使い方・割り当て指示を見る';
+    }
+
+    function toggleMore() {
+      document.getElementById('sv-more').classList.toggle('open');
+    }
+
+    function toggleViewMode() {
+      viewMode = (viewMode === 'day') ? 'table' : 'day';
+      viewModeManual = true;
+      render();
+    }
+
+    function updateViewModeBtn() {
+      const b = document.getElementById('btn-viewmode');
+      if (!b) return;
+      b.textContent = (viewMode === 'day') ? '\uD83D\uDCC4 表で見る' : '\uD83D\uDCF1 1日ずつ';
+    }
+
+    function setDvDay(d) { dvDay = d; render(); }
+
+    // 1日分を縦に並べる（スマホで直すとき用）
+    function buildDayView(req, dates, closed, names, replyMap, manual) {
+      const open = [0,1,2,3,4,5,6].filter(i => !closed.has(i));
+      if (dvDay === null || closed.has(dvDay)) dvDay = open.length ? open[0] : 0;
+      const d = dvDay;
+      const g = (n, f) => manual[App._safeCellKey(`s_${n}_${d}_${f}`)] || '';
+      const cell = (k) => manual[App._safeCellKey(k)] || '';
+
+      let h = '<div class="day-view"><div class="dv-days">';
+      dates.forEach((ds, i) => {
+        const cls = [i === d ? 'on' : '', closed.has(i) ? 'closed' : '', i === 5 ? 'sat' : '', i === 6 ? 'sun' : ''].join(' ');
+        h += `<button class="${cls}" onclick="setDvDay(${i})">` +
+             `<span class="d">${App.fmtMD(ds)}</span><span class="w">${App.DOW_LABELS[i]}${closed.has(i) ? '・休' : ''}</span></button>`;
+      });
+      h += '</div>';
+
+      if (closed.has(d)) {
+        h += '<div class="dv-list"><div class="dv-row" style="justify-content:center;color:#94A3B8">定休日です</div></div></div>';
+        return h;
+      }
+
+      const working = names.filter(n => g(n, 'main') || g(n, 'start') || g(n, 'end'));
+      const resting = names.filter(n => working.indexOf(n) < 0);
+
+      const rowFor = (n, off) => {
+        const p0 = g(n, 'sub'), main = g(n, 'main');
+        const seg = String(main).split('→');
+        const t = (g(n, 'start') + g(n, 'end')).trim();
+        const rep = replyMap[n];
+        const ms = manual[App._safeCellKey(`s_${n}_${d}_sym`)];
+        const auto = rep ? (rep.d[d] || '') : '';
+        const sc = (ms !== undefined && ms !== '') ? ms
+          : (auto === 'o' ? '○' : auto === 't' ? '△' : auto === 'x' ? '✕' : auto === 'm' ? '未' : '');
+        const ds = sc === '○' ? 'o' : sc === '△' ? 't' : sc === '未' ? 'm' : (sc === '✕' || sc === '×') ? 'x' : '';
+        return `<div class="dv-row${off ? ' dv-off' : ''}" data-name="${escapeHtml(n)}" data-day="${d}">` +
+          `<span class="dv-name">${escapeHtml(n)}</span>` +
+          `<span class="dv-pos">` +
+            (p0 ? `<b class="p0">${escapeHtml(p0)}</b>` : '') +
+            escapeHtml(seg[0] || '') +
+            (seg.length > 1 ? `<span class="p2">→${escapeHtml(seg.slice(1).join('→'))}</span>` : '') +
+          `</span>` +
+          `<span class="dv-time">${escapeHtml(t)}</span>` +
+          `<span class="dv-sym" data-sym="${ds}">${sc || '・'}</span></div>`;
+      };
+
+      h += `<div class="dv-count">出勤 ${working.length}名</div>`;
+      h += '<div class="dv-list">' + (working.length ? working.map(n => rowFor(n, false)).join('')
+           : '<div class="dv-row" style="color:#94A3B8;justify-content:center">まだ誰も入っていません</div>') + '</div>';
+
+      if (resting.length) {
+        h += `<div class="dv-sec">出勤なし（タップすれば追加できます）${resting.length}名</div>`;
+        h += '<div class="dv-list">' + resting.map(n => rowFor(n, true)).join('') + '</div>';
+      }
+
+      const mk = makanaiOf(d, names, manual);
+      h += '<div class="dv-info">' +
+        `<div class="dv-irow"><span class="dv-ilbl">休み（家族）</span>` +
+        `<span class="dv-ival editable" contenteditable="plaintext-only" data-mkey="fam_off_${d}">${escapeHtml(cell(`fam_off_${d}`))}</span></div>` +
+        `<div class="dv-irow"><span class="dv-ilbl">まかない</span>` +
+        `<span class="dv-ival ro" data-mkn="${d}">${mk.total}</span></div>` +
+        `<div class="dv-irow"><span class="dv-ilbl">メモ</span>` +
+        `<span class="dv-ival editable" contenteditable="plaintext-only" data-mkey="memo_${d}">${escapeHtml(cell(`memo_${d}`))}</span></div>` +
+        `<div class="dv-irow"><span class="dv-ilbl">備考</span>` +
+        `<span class="dv-ival editable" contenteditable="plaintext-only" data-mkey="note_${d}">${escapeHtml(cell(`note_${d}`))}</span></div>` +
+        '</div>';
+
+      h += '</div>';
+      return h;
+    }
+
+    /* ===== セル編集パネル ===== */
+    const CE_P0 = ['C', '1F', 'Rj', 'Tj', 'm', 'C・m', '1F・m', 'Rj・m', 'Tj・m'];
+    const CE_P1 = ['K', 'R2', 'R2d', 'R1', 'W', 'T'];
+    const CE_P2 = ['W', 'T', 'K'];
+    let ceTarget = null;   // { name, day }
+
+    // 「R2→（T」のような表記を 1部 / 2部 / 早上がり に分解する
+    function parseMain(txt) {
+      const t = String(txt || '').trim();
+      if (!t) return { p1: '', p2: '', early: false };
+      const seg = t.split('→');
+      if (seg.length > 1) {
+        let b = seg.slice(1).join('→');
+        const early = /[（(]/.test(b);
+        b = b.replace(/[（(）)]/g, '').trim();
+        return { p1: seg[0].trim(), p2: b, early };
+      }
+      const early = /[（(]/.test(t);
+      const p = t.replace(/[（(）)]/g, '').trim();
+      return early ? { p1: p, p2: p, early: true } : { p1: p, p2: '', early: false };
+    }
+
+    function composeMain(p1, p2, early) {
+      p1 = String(p1 || '').trim();
+      p2 = String(p2 || '').trim();
+      if (!p1 && !p2) return '';
+      if (!p2) return p1;
+      if (!p1) return (early ? '（' : '') + p2;
+      if (p1 === p2) return early ? `（${p2}` : p1;
+      return early ? `${p1}→（${p2}` : `${p1}→${p2}`;
+    }
+
+    function chipsHtml(id, list, input) {
+      return list.map(v => `<button type="button" onclick="ceSet('${input}','${v}')">${v}</button>`).join('') +
+             `<button type="button" onclick="ceSet('${input}','')">空に</button>`;
+    }
+
+    function ceSet(inputId, v) {
+      const el = document.getElementById(inputId);
+      el.value = v;
+      ceMarkChips();
+    }
+
+    function ceMarkChips() {
+      [['ce-p0','ce-p0-chips'],['ce-p1','ce-p1-chips'],['ce-p2','ce-p2-chips']].forEach(([i, c]) => {
+        const v = document.getElementById(i).value.trim();
+        [...document.getElementById(c).querySelectorAll('button')].forEach(b => {
+          b.classList.toggle('on', b.textContent === v || (b.textContent === '空に' && !v));
+        });
+      });
+    }
+
+    function openCellEditor(name, day) {
+      const req = App.getRequest(currentReqId);
+      if (!req) return;
+      ceTarget = { name, day };
+      const manual = App.getManual(currentReqId);
+      const g = (f) => manual[App._safeCellKey(`s_${name}_${day}_${f}`)] || '';
+      const m = parseMain(g('main'));
+      const dates = App.weekDates(req.ws);
+
+      document.getElementById('ce-name').textContent = name;
+      document.getElementById('ce-day').textContent = `${App.fmtMD(dates[day])}（${App.DOW_LABELS[day]}）`;
+
+      const rep = App.getReplies(currentReqId).find(r => r.name === name);
+      const nt = rep ? noteText(rep) : '';
+      const meta = (App.getStaffMeta()[name] || {});
+      const can = [];
+      if ((meta.positions0 || []).length) can.push(`0部: ${meta.positions0.join(',')}`);
+      if ((meta.positions || []).length) can.push(`1部: ${meta.positions.join(',')}`);
+      if ((meta.positions2 || []).length) can.push(`2部: ${meta.positions2.join(',')}`);
+      document.getElementById('ce-hint').innerHTML =
+        (can.length ? `できるポジション … ${escapeHtml(can.join(' / '))}` : '') +
+        (nt ? `<br>本人の備考 … ${escapeHtml(nt)}` : '');
+
+      document.getElementById('ce-p0').value = g('sub');
+      document.getElementById('ce-p1').value = m.p1;
+      document.getElementById('ce-p2').value = m.p2;
+      document.getElementById('ce-early').checked = m.early;
+      document.getElementById('ce-start').value = g('start');
+      document.getElementById('ce-end').value = g('end');
+      document.getElementById('ce-time').value = g('time');
+
+      const ms = manual[App._safeCellKey(`s_${name}_${day}_sym`)];
+      const auto = rep ? (rep.d[day] || '') : '';
+      document.getElementById('ce-sym').value = (ms !== undefined && ms !== '') ? ms
+        : (auto === 'o' ? '○' : auto === 't' ? '△' : auto === 'x' ? '✕' : auto === 'm' ? '未' : '');
+
+      document.getElementById('ce-p0-chips').innerHTML = chipsHtml(0, CE_P0, 'ce-p0');
+      document.getElementById('ce-p1-chips').innerHTML = chipsHtml(0, CE_P1, 'ce-p1');
+      document.getElementById('ce-p2-chips').innerHTML = chipsHtml(0, CE_P2, 'ce-p2');
+      ceMarkChips();
+
+      document.getElementById('cell-editor').classList.add('open');
+    }
+
+    function closeCellEditor() {
+      document.getElementById('cell-editor').classList.remove('open');
+      ceTarget = null;
+    }
+
+    function clearCellEditor() {
+      ['ce-p0','ce-p1','ce-p2','ce-start','ce-end'].forEach(i => document.getElementById(i).value = '');
+      document.getElementById('ce-early').checked = false;
+      ceMarkChips();
+      applyCellEditor();
+    }
+
+    function applyCellEditor() {
+      if (!ceTarget) return;
+      const { name, day } = ceTarget;
+      const v = (i) => document.getElementById(i).value.trim();
+      const main = composeMain(v('ce-p1'), v('ce-p2'), document.getElementById('ce-early').checked);
+      const set = (f, val) => App.setManualCell(currentReqId, `s_${name}_${day}_${f}`, val);
+      set('sub', v('ce-p0'));
+      set('main', main);
+      set('start', v('ce-start'));
+      set('end', v('ce-end'));
+      set('time', v('ce-time'));
+      set('sym', v('ce-sym'));
+      closeCellEditor();
+      showSaved();
+      render();
+    }
+
     /* ===== 手入力ハンドラ ===== */
     function attachEditHandlers() {
-      const table = document.querySelector('.shift-table');
-      if (!table) return;
-      table.addEventListener('focusout', (e) => {
-        const td = e.target.closest && e.target.closest('td.editable');
-        if (!td) return;
-        saveCell(td);
+      const cont = document.getElementById('content');
+      if (!cont || cont.dataset.wired) return;
+      cont.dataset.wired = '1';
+
+      // 自由記述のセル（予想/UP/物販、休み・メモ・備考など）
+      cont.addEventListener('focusout', (e) => {
+        const el = e.target.closest && e.target.closest('[contenteditable][data-mkey]');
+        if (!el) return;
+        saveCell(el);
         if (pendingRender) setTimeout(() => { if (!isEditing()) render(); }, 100);
       });
-      table.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && e.target.closest && e.target.closest('td.editable')) {
+      cont.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.closest && e.target.closest('[contenteditable][data-mkey]')) {
           e.preventDefault();
           e.target.blur();
         }
+      });
+
+      // スタッフのセルをタップ → 0部/1部/2部の編集パネル
+      cont.addEventListener('click', (e) => {
+        if (e.target.closest('select') || e.target.closest('[contenteditable]')) return;
+        const row = e.target.closest('.dv-row[data-name]');
+        if (row) { openCellEditor(row.dataset.name, +row.dataset.day); return; }
+        const td = e.target.closest('td.tapcell[data-mkey]');
+        if (!td) return;
+        const m = td.dataset.mkey.match(/^s_(.+)_(\d)_(?:main|sub|start|end|time)$/);
+        if (m) openCellEditor(m[1], +m[2]);
       });
     }
 
@@ -549,6 +1051,7 @@
       const mkey = td.dataset.mkey;
       if (!mkey) return;
       const val = td.textContent.trim();
+      if ((App.getManual(currentReqId)[App._safeCellKey(mkey)] || '') === val) return;
       App.setManualCell(currentReqId, mkey, val);
       if (mkey.indexOf('fam_off_') === 0) refreshMakanai();
       if (mkey.endsWith('_sym')) {
@@ -577,7 +1080,7 @@
       const replies = App.getReplies(currentReqId);
       const names = req.staff.slice();
       replies.forEach(r => { if (!names.includes(r.name)) names.push(r.name); });
-      document.querySelectorAll('.shift-table td[data-mkn]').forEach(td => {
+      document.querySelectorAll('[data-mkn]').forEach(td => {
         const mk = makanaiOf(+td.dataset.mkn, names, manual);
         td.textContent = mk.total;
         td.title = `スタッフ${mk.staff}名 ＋ 家族${mk.fam}名`;
@@ -1506,6 +2009,7 @@ ${head}${rest}
 
     /* ===== 印刷: A4横1枚にフィット ===== */
     function printFit() {
+      if (viewMode !== 'table') { viewMode = 'table'; render(); }   // 印刷は必ず表で
       computePrintZoom();
       window.print();
     }
