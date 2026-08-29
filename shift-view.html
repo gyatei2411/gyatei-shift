@@ -676,7 +676,7 @@
       }
 
       // 休み（家族）/ まかない / メモ
-      const famTitle = App.FAMILY.map(k => `${k}=${App.FAMILY_FULL[k]}`).join(' ・ ');
+      const famTitle = App.FAMILY.map(k => `${k}=${App.FAMILY_FULL[k]}`).join(' ・ ') + '（若奥は「若」だけでもOK）';
       html += `<tr class="row-fam"><td class="lbl" title="その日休む家族を入力（${famTitle}）。例: 会奥　″誰か分からないときは「1人」「2人」と人数でもOK">休み</td>`;
       for (let i = 0; i < 7; i++) {
         if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
