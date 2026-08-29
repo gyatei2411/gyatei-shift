@@ -566,8 +566,7 @@
     function makanaiOf(day, names, manual) {
       const g = (n, f) => manual[App._safeCellKey(`s_${n}_${day}_${f}`)] || '';
       const staff = names.filter(n => g(n, 'main') || g(n, 'start') || g(n, 'end')).length;
-      const off = App.parseFamilyOff(manual[App._safeCellKey(`fam_off_${day}`)]);
-      const fam = App.FAMILY.length - off.length;
+      const fam = App.FAMILY.length - App.familyOffCount(manual[App._safeCellKey(`fam_off_${day}`)]);
       return { staff, fam, total: staff + fam };
     }
 
@@ -678,7 +677,7 @@
 
       // 休み（家族）/ まかない / メモ
       const famTitle = App.FAMILY.map(k => `${k}=${App.FAMILY_FULL[k]}`).join(' ・ ');
-      html += `<tr class="row-fam"><td class="lbl" title="その日休む家族を入力（${famTitle}）。例: 会奥">休み</td>`;
+      html += `<tr class="row-fam"><td class="lbl" title="その日休む家族を入力（${famTitle}）。例: 会奥　″誰か分からないときは「1人」「2人」と人数でもOK">休み</td>`;
       for (let i = 0; i < 7; i++) {
         if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
         html += edCell(`fam_off_${i}`, 'famcell', manual, 'colspan="3"');

@@ -163,6 +163,19 @@ const App = {
   FAMILY: ['\u5e97', '\u82e5\u5965', '\u5965', '\u4f1a'],
   FAMILY_FULL: { '\u5e97': '\u5e97\u9577', '\u82e5\u5965': '\u82e5\u5965\u3055\u3093', '\u5965': '\u5965\u3055\u3093', '\u4f1a': '\u4f1a\u9577' },
 
+  // 休む家族の**人数**を返す。誰か分からないときは「1人」「2人」と数字で書ける
+  //   例: '会奥' → 2 / '1人' → 1 / '2' → 2 / '店 1人' → 2 / '' → 0
+  familyOffCount(txt) {
+    const t = String(txt || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+    const names = App.parseFamilyOff(t);
+    let rest = t;
+    names.forEach(k => { rest = rest.split(k).join(''); });
+    let num = 0;
+    const m = rest.match(/\d+/g);
+    if (m) m.forEach(x => { num += parseInt(x, 10) || 0; });
+    return Math.max(0, Math.min(App.FAMILY.length, names.length + num));
+  },
+
   // 「会奥」のような文字列から、その日休む家族を拾う
   //   ※ 「若奥」を先に取る（「奥」と間違えないため）
   parseFamilyOff(txt) {

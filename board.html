@@ -699,8 +699,7 @@
       const anyMemo = [0,1,2,3,4,5,6].some(d => !closed.has(d) && cell(`memo_${d}`));
       if (anyFam) html += infoRow('fam', '休み', d => esc(cell(`fam_off_${d}`)));
       html += infoRow('mkn', 'まかない', d => {
-        const off = App.parseFamilyOff(cell(`fam_off_${d}`));
-        return String(worksCount(d) + App.FAMILY.length - off.length);
+        return String(worksCount(d) + App.FAMILY.length - App.familyOffCount(cell(`fam_off_${d}`)));
       });
       if (anyMemo) html += infoRow('', 'メモ', d => esc(cell(`memo_${d}`)));
 
@@ -820,10 +819,10 @@
       }
 
       const cell = (k) => cells[App._safeCellKey(k)] || '';
-      const off = App.parseFamilyOff(cell(`fam_off_${d}`));
+      const offN = App.familyOffCount(cell(`fam_off_${d}`));
       h += '<div class="bv-info">';
       if (cell(`fam_off_${d}`)) h += `<div class="bv-irow fam"><span class="l">休み</span><span class="v">${esc(cell(`fam_off_${d}`))}</span></div>`;
-      h += `<div class="bv-irow mkn"><span class="l">まかない</span><span class="v">${working.length + App.FAMILY.length - off.length}</span></div>`;
+      h += `<div class="bv-irow mkn"><span class="l">まかない</span><span class="v">${working.length + App.FAMILY.length - offN}</span></div>`;
       if (cell(`memo_${d}`)) h += `<div class="bv-irow"><span class="l">メモ</span><span class="v">${esc(cell(`memo_${d}`))}</span></div>`;
       h += '</div>';
       return h;
@@ -879,7 +878,8 @@
            '<b>9-L</b> … 9時からラストまで<br>' +
            '<b>930-16</b> … 9時半から16時まで<br>' +
            '<b>まかない</b> … その日のスタッフと家族の出勤人数を足した数<br>' +
-           '<b>休み</b> … その日休む家族（店=店長 / 若奥=若奥さん / 奥=奥さん / 会=会長）' +
+           '<b>休み</b> … その日休む家族（店=店長 / 若奥=若奥さん / 奥=奥さん / 会=会長）<br>' +
+           '　　　　誰か分からない日は「1人」「2人」と人数だけ書いてあります' +
            '</div></div>';
 
       document.getElementById('leg-body').innerHTML = h;
