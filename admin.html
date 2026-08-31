@@ -519,6 +519,7 @@
               </button>`).join('')}
           </span>
           <div class="actions">
+            <button class="btn btn-outline btn-sm" onclick="renameStaffPrompt('${esc}')" title="名前を変える">✏️</button>
             <button class="btn btn-outline btn-sm" onclick="moveStaff(${i}, -1)">↑</button>
             <button class="btn btn-outline btn-sm" onclick="moveStaff(${i}, 1)">↓</button>
             <button class="btn btn-danger-outline btn-sm" onclick="removeStaff(${i})">削除</button>
@@ -577,6 +578,33 @@
           </div>
         </div>
       `;}).join('');
+    }
+
+    // 名前を変える（同姓の人が入ったときなど）
+    function renameStaffPrompt(name) {
+      const v = prompt(`「${name}」の新しい名前を入力してください。`, name);
+      if (v === null) return;
+      const nv = String(v).trim();
+      if (!nv || nv === name) return;
+      if (!confirm(
+        `「${name}」を「${nv}」に変えます。\n\n` +
+        `過去の週も含めて、シフト表・確定シフト・スタッフの回答すべてがこの名前になります。\n` +
+        `（変更履歴の本文だけは当時の記録なのでそのまま残ります）\n\nよろしいですか？`)) return;
+
+      const r = App.renameStaff(name, nv);
+      if (!r.ok) { App.toast(r.msg || '変更できませんでした', 'error'); return; }
+      renderStaffMaster();
+      renderCreate();
+      renderAggregate();
+      renderPastRequests();
+      App.toast(`「${name}」→「${nv}」に変更しました`, 'success');
+      alert(
+        `「${name}」→「${nv}」に変更しました。\n\n` +
+        `名簿: ${r.staff ? '変更' : 'なし'}\n` +
+        `スタッフ別設定: ${r.meta ? '引き継ぎ' : 'なし'}\n` +
+        `シフト表のセル: ${r.cells}件\n` +
+        `確定シフト: ${r.confirmed}週\n` +
+        `スタッフの回答: ${r.replies}週`);
     }
 
     function togglePosition(name, pos, checked) {

@@ -385,6 +385,93 @@ const App = {
     }
   },
 
+  // スタッフ別設定を消す（名前変更のときの旧キー削除用）
+  removeStaffMeta(name) {
+    const all = App.getStaffMeta();
+    delete all[name];
+    App._write(App.KEYS.staffmeta, all);
+    if (App.fbReady) {
+      const safeName = App._safeCellKey(encodeURIComponent(name));
+      App.fbDB.ref(`staffmeta/${safeName}`).remove().catch(() => {});
+    }
+  },
+
+  /* ===== スタッフの名前を変える ===== */
+  //  名前はキーとしてあちこちで使われているので、全部まとめて置き換える。
+  //  （名簿 / スタッフ別設定 / 依頼の対象者 / シフト表のセル / 確定シフト / 回答）
+  //  ※ 変更履歴の本文はそのときの記録なので書き換えない
+  renameStaff(oldName, newName) {
+    const res = { ok: false, msg: '', staff: 0, meta: 0, cells: 0, confirmed: 0, replies: 0 };
+    oldName = String(oldName || '').trim();
+    newName = String(newName || '').trim();
+    if (!oldName || !newName) { res.msg = '名前が空です'; return res; }
+    if (oldName === newName) { res.msg = '名前が変わっていません'; return res; }
+
+    const list = App.getStaff();
+    if (list.indexOf(newName) >= 0) { res.msg = `「${newName}」はすでに名簿にあります`; return res; }
+
+    // 1) 名簿
+    const i = list.indexOf(oldName);
+    if (i >= 0) { list[i] = newName; App.setStaff(list); res.staff = 1; }
+
+    // 2) スタッフ別設定
+    const meta = App.getStaffMeta()[oldName];
+    if (meta) { App.setStaffMeta(newName, meta); App.removeStaffMeta(oldName); res.meta = 1; }
+
+    const oldPre = App._safeCellKey('s_' + oldName + '_');
+    const newPre = App._safeCellKey('s_' + newName + '_');
+
+    App.getRequests().forEach(req => {
+      // 3) 依頼の対象者
+      const si = (req.staff || []).indexOf(oldName);
+      if (si >= 0) { req.staff[si] = newName; App.saveRequest(req); }
+
+      // 4) シフト表の手入力セル
+      const man = App.getManual(req.id);
+      Object.keys(man).forEach(k => {
+        if (k.indexOf(oldPre) !== 0) return;
+        App.setManualCell(req.id, newPre + k.slice(oldPre.length), man[k]);
+        App.setManualCell(req.id, k, '');
+        res.cells++;
+      });
+
+      // 5) 確定シフト
+      const conf = App.getConfirmed(req.id);
+      if (conf) {
+        let ch = false;
+        const cells = {};
+        Object.keys(conf.cells || {}).forEach(k => {
+          if (k.indexOf(oldPre) === 0) { cells[newPre + k.slice(oldPre.length)] = conf.cells[k]; ch = true; }
+          else cells[k] = conf.cells[k];
+        });
+        (conf.avail || []).forEach(a => { if (a && a.n === oldName) { a.n = newName; ch = true; } });
+        if (ch) { conf.cells = cells; App.saveConfirmed(req.id, conf); res.confirmed++; }
+      }
+
+      // 6) 回答
+      const reps = App._read(App.KEYS.replies, []);
+      let rch = false;
+      reps.forEach(r => { if (r.id === req.id && r.name === oldName) { r.name = newName; rch = true; } });
+      if (rch) {
+        App._write(App.KEYS.replies, reps);
+        res.replies++;
+        if (App.fbReady) {
+          const encOld = encodeURIComponent(oldName), encNew = encodeURIComponent(newName);
+          App.fbDB.ref(`replies/${req.id}/${encOld}`).once('value').then(sn => {
+            const v = sn.val();
+            if (!v) return null;
+            v.name = newName;
+            return App.fbDB.ref(`replies/${req.id}/${encNew}`).set(v)
+              .then(() => App.fbDB.ref(`replies/${req.id}/${encOld}`).remove());
+          }).catch(e => console.warn('FB reply rename failed', e && e.message));
+        }
+      }
+    });
+
+    res.ok = true;
+    return res;
+  },
+
   // Firebase から staffmeta を購読（ルール設定済みの場合のみ動作）
   subscribeStaffMeta(onUpdate) {
     if (!App.fbReady) return null;
