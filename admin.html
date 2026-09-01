@@ -225,12 +225,55 @@
               <div class="btn-row">
                 <button class="btn btn-primary btn-sm" onclick="showUrlAgain('${r.id}')" title="作成時と同じURLをもう一度表示します。送り忘れや再送に">🔗 URLを表示</button>
                 <button class="btn btn-outline btn-sm" onclick="setActive('${r.id}'); switchTab('aggregate')">集計を見る</button>
-                <button class="btn btn-danger-outline btn-sm" onclick="if(confirm('この依頼と回答をすべて削除しますか？')) { App.deleteRequest('${r.id}'); renderPastRequests(); App.toast('削除しました','success'); }">削除</button>
+                <button class="btn btn-danger-outline btn-sm" onclick="deleteRequestPrompt('${r.id}')">🗑 削除</button>
               </div>
             </div>
           </div>
         `;
       }).join('');
+    }
+
+    // 依頼の削除は戻せないので、2段階で確認する
+    function deleteRequestPrompt(id) {
+      const r = App.getRequest(id);
+      if (!r) return;
+      const label = App.weekLabel(r.ws);
+      const replies = App.getReplies(id).length;
+      const conf = App.getConfirmed(id);
+      const cells = Object.keys(App.getManual(id)).filter(k => /^s_.+_\d_(main|start|end|sub)$/.test(k)).length;
+      const past = App.isPastWeek(r.ws) ? '（終わった週）' : '（これからの週）';
+
+      const lines = [
+        `【${label}】${past} を削除します。`,
+        '',
+        `・スタッフの回答　　${replies}名分`,
+        `・シフト表の入力　${cells}マス`,
+        `・確定シフト　　　${conf ? 'v' + conf.version + '（変更履歴 ' + ((conf.history || []).length) + '件）' : 'なし'}`,
+        '',
+        'これらは全部消えます。元には戻せません。',
+        '他の端末（スマホ・タブレット）からも消えます。',
+        '',
+        '削除しますか？'
+      ];
+      if (!confirm(lines.join('\n'))) return;
+
+      // 確定済み・回答ありならもう一度聞く
+      if (conf || replies) {
+        if (!confirm(
+          `本当によろしいですか？\n\n` +
+          `【${label}】は` +
+          (conf ? '確定済みのシフト' : '') +
+          (conf && replies ? 'で、' : '') +
+          (replies ? `${replies}名の回答` : '') +
+          `が入っています。\n\n` +
+          `心配なら、先にヘッダーの「💾 書出」でバックアップを取ってください。`)) return;
+      }
+
+      App.deleteRequest(id);
+      renderPastRequests();
+      renderCreate();
+      renderAggregate();
+      App.toast(`【${label}】を削除しました`, 'success');
     }
 
     /* ===== ② 集計 ===== */

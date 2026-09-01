@@ -109,6 +109,19 @@ const App = {
 
   /* ===== Firebase / localStorage ハイブリッド ===== */
 
+  // 今日の日付（端末の時計で）。UTCだと日本では朝9時まで前日になる
+  todayLocal() {
+    const d = new Date();
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  },
+
+  // その週がもう終わっているか（日曜日を過ぎたか）
+  isPastWeek(ws, today) {
+    const days = App.weekDates(ws);
+    return days[6] < (today || App.todayLocal());
+  },
+
   // アプリのバージョン（更新したらここを書き換える）
   VERSION: '2026.08.28',
   lastSyncAt: null,   // Firebase から最後に受け取った時刻
@@ -676,6 +689,17 @@ const App = {
           delete confirmedAll[id];
         }
       });
+      // 他の端末で削除された依頼をこちらでも消す
+      //   Firebase に中身があるときだけやる（空の読み取りで全滅しないため）
+      const fbIds = Object.keys(data);
+      if (fbIds.length) {
+        Object.keys(byId).forEach(id => {
+          if (fbIds.indexOf(id) >= 0) return;
+          delete byId[id];
+          delete manualAll[id];
+          delete confirmedAll[id];
+        });
+      }
       const reqs = Object.keys(byId).map(k => byId[k]);
       App._write(App.KEYS.requests, reqs);
       App._write(App.KEYS.manual, manualAll);

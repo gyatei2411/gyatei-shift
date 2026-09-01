@@ -451,13 +451,19 @@
     // 表示できる週を集める（確定済みを優先。無ければ全依頼）
     function pickWeeks() {
       const prevId = reqIds[cursor];
-      const all = App.getRequests().slice().sort((a, b) => a.ws < b.ws ? -1 : 1);
+      const every = App.getRequests().slice().sort((a, b) => a.ws < b.ws ? -1 : 1);
+      // 終わった週（日曜日を過ぎた週）はタブレットには出さない
+      const today = App.todayLocal();
+      let all = every.filter(r => !App.isPastWeek(r.ws, today));
+      if (!all.length) all = every.slice(-1);   // 全部過去なら一番新しい週だけ残す
       const confirmed = all.filter(r => App.getConfirmed(r.id));
       let list = confirmed.length ? confirmed : all;
 
       const urlId = new URLSearchParams(location.search).get('id');
       // URLで週を指定されたときは、未確定でもその週を見られるようにする
-      if (urlId && !list.some(r => r.id === urlId) && all.some(r => r.id === urlId)) list = all;
+      if (urlId && !list.some(r => r.id === urlId) && every.some(r => r.id === urlId)) {
+        list = every.filter(r => !App.isPastWeek(r.ws, today) || r.id === urlId);
+      }
       reqIds = list.map(r => r.id);
       let idx = -1;
       if (urlId && reqIds.includes(urlId)) idx = reqIds.indexOf(urlId);
