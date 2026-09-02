@@ -74,6 +74,7 @@
     .shift-table thead .row-dow { height: 18px; background: #F8FAFC; font-weight: 700; font-size: 10px; }
     .shift-table .dow-sat { color: #2563EB; }
     .shift-table .dow-sun { color: #DC2626; }
+    .shift-table .dow-hol { color: #DC2626; }
     .shift-table th.closed-head { background: #E2E8F0 !important; color: #94A3B8 !important; }
 
     .shift-table .row-header { height: 18px; }
@@ -255,6 +256,8 @@
     .dv-days button.closed { background: #E2E8F0; color: #94A3B8; }
     .dv-days button.sat .w { color: #2563EB; }
     .dv-days button.sun .w { color: #DC2626; }
+    .dv-days button.hol .w { color: #DC2626; }
+    .dv-days button.on.hol .w { color: #fff; }
     .dv-days button.on .w { color: #fff; }
 
     .dv-count { font-size: 0.82rem; color: var(--muted); font-weight: 700; margin: 2px 0 8px; }
@@ -626,7 +629,12 @@
       dates.forEach((d, i) => {
         let cls = i === 5 ? 'dow-sat' : i === 6 ? 'dow-sun' : '';
         if (closed.has(i)) cls += ' closed-head';
-        const label = closed.has(i) ? `${App.DOW_LABELS[i]}曜日（定休日）` : `${App.DOW_LABELS[i]}曜日`;
+        const hol = App.holidayName(d);
+        if (hol) cls += ' dow-hol';
+        const tags = [];
+        if (hol) tags.push('祝');
+        if (closed.has(i)) tags.push('定休日');
+        const label = `${App.DOW_LABELS[i]}曜日` + (tags.length ? `（${tags.join('・')}）` : '');
         html += `<th colspan="3" class="${cls}">${label}</th>`;
       });
       html += '<th></th></tr></thead><tbody>';
@@ -829,9 +837,10 @@
 
       let h = '<div class="day-view"><div class="dv-days">';
       dates.forEach((ds, i) => {
-        const cls = [i === d ? 'on' : '', closed.has(i) ? 'closed' : '', i === 5 ? 'sat' : '', i === 6 ? 'sun' : ''].join(' ');
-        h += `<button class="${cls}" onclick="setDvDay(${i})">` +
-             `<span class="d">${App.fmtMD(ds)}</span><span class="w">${App.DOW_LABELS[i]}${closed.has(i) ? '・休' : ''}</span></button>`;
+        const hd = App.holidayName(ds);
+        const cls = [i === d ? 'on' : '', closed.has(i) ? 'closed' : '', i === 5 ? 'sat' : '', i === 6 ? 'sun' : '', hd ? 'hol' : ''].join(' ');
+        h += `<button class="${cls}" title="${hd}" onclick="setDvDay(${i})">` +
+             `<span class="d">${App.fmtMD(ds)}</span><span class="w">${App.DOW_LABELS[i]}${hd ? '・祝' : ''}${closed.has(i) ? '・休' : ''}</span></button>`;
       });
       h += '</div>';
 

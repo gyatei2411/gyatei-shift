@@ -107,6 +107,77 @@ const App = {
     return { type: 'none' };
   },
 
+  /* ===== 祝日 =====
+     ネットに見に行かずに計算で出す（2020年以降の制度。春分・秋分は2099年まで有効）
+     振替休日と国民の休日（例: 9/22のシルバーウィーク）も出す */
+  _holCache: {},
+
+  _pad2(n) { return String(n).padStart(2, '0'); },
+
+  // その年の祝日を { 'YYYY-MM-DD': '名前' } で返す
+  holidaysOf(year) {
+    if (App._holCache[year]) return App._holCache[year];
+    const key = (m, d) => `${year}-${App._pad2(m)}-${App._pad2(d)}`;
+    // その月の n 番目の月曜日
+    const nthMon = (m, n) => {
+      const first = new Date(year, m - 1, 1).getDay();   // 0=日
+      return 1 + ((8 - first) % 7) + (n - 1) * 7;
+    };
+    const eq = (base) => Math.floor(base + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
+
+    const h = {};
+    h[key(1, 1)]            = '\u5143\u65e5';
+    h[key(1, nthMon(1, 2))] = '\u6210\u4eba\u306e\u65e5';
+    h[key(2, 11)]           = '\u5efa\u56fd\u8a18\u5ff5\u306e\u65e5';
+    h[key(2, 23)]           = '\u5929\u7687\u8a95\u751f\u65e5';
+    h[key(3, eq(20.8431))]  = '\u6625\u5206\u306e\u65e5';
+    h[key(4, 29)]           = '\u662d\u548c\u306e\u65e5';
+    h[key(5, 3)]            = '\u61b2\u6cd5\u8a18\u5ff5\u65e5';
+    h[key(5, 4)]            = '\u307f\u3069\u308a\u306e\u65e5';
+    h[key(5, 5)]            = '\u3053\u3069\u3082\u306e\u65e5';
+    h[key(7, nthMon(7, 3))] = '\u6d77\u306e\u65e5';
+    h[key(8, 11)]           = '\u5c71\u306e\u65e5';
+    h[key(9, nthMon(9, 3))] = '\u656c\u8001\u306e\u65e5';
+    h[key(9, eq(23.2488))]  = '\u79cb\u5206\u306e\u65e5';
+    h[key(10, nthMon(10, 2))] = '\u30b9\u30dd\u30fc\u30c4\u306e\u65e5';
+    h[key(11, 3)]           = '\u6587\u5316\u306e\u65e5';
+    h[key(11, 23)]          = '\u52e4\u52b4\u611f\u8b1d\u306e\u65e5';
+
+    const fmt = (d) => `${d.getFullYear()}-${App._pad2(d.getMonth() + 1)}-${App._pad2(d.getDate())}`;
+
+    // 振替休日：日曜と重なったら、次の祝日でない日
+    Object.keys(h).sort().forEach(k => {
+      const d = new Date(k + 'T00:00:00');
+      if (d.getDay() !== 0) return;
+      const n = new Date(d);
+      do { n.setDate(n.getDate() + 1); } while (h[fmt(n)]);
+      h[fmt(n)] = '\u632f\u66ff\u4f11\u65e5';
+    });
+
+    // 国民の休日：祝日にはさまれた平日（例: 2026/9/22）
+    const d = new Date(year, 0, 1);
+    while (d.getFullYear() === year) {
+      const k = fmt(d);
+      if (!h[k] && d.getDay() !== 0) {
+        const prev = new Date(d); prev.setDate(prev.getDate() - 1);
+        const next = new Date(d); next.setDate(next.getDate() + 1);
+        if (h[fmt(prev)] && h[fmt(next)]) h[k] = '\u56fd\u6c11\u306e\u4f11\u65e5';
+      }
+      d.setDate(d.getDate() + 1);
+    }
+
+    App._holCache[year] = h;
+    return h;
+  },
+
+  // 'YYYY-MM-DD' が祝日なら名前を返す。違えば ''
+  holidayName(ds) {
+    const t = String(ds || '');
+    const y = parseInt(t.slice(0, 4), 10);
+    if (!y) return '';
+    return App.holidaysOf(y)[t] || '';
+  },
+
   /* ===== Firebase / localStorage ハイブリッド ===== */
 
   // 今日の日付（端末の時計で）。UTCだと日本では朝9時まで前日になる

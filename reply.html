@@ -76,6 +76,13 @@
     table.all-tbl td.nt { text-align: left; font-size: 0.78rem; color: #475569; white-space: normal; min-width: 150px; }
     .all-none { font-size: 0.85rem; color: var(--muted); margin-top: 10px; line-height: 1.7; }
     .all-none b { color: #B45309; }
+    /* 祝日 */
+    .hol-badge {
+      display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+      background: #FEE2E2; color: #B91C1C; font-size: 0.74rem; font-weight: 800;
+      vertical-align: 2px;
+    }
+    .day-row.is-hol .day-label { color: #B91C1C; }
   </style>
 </head>
 <body>
@@ -235,12 +242,14 @@
       const grid = document.getElementById('day-grid');
       grid.innerHTML = dates.map((d, i) => {
         const day = App.DOW_LABELS[i];
-        const cls = i === 5 ? 'is-sat' : i === 6 ? 'is-sun' : '';
+        const hol = App.holidayName(d);
+        const cls = (i === 5 ? 'is-sat' : i === 6 ? 'is-sun' : '') + (hol ? ' is-hol' : '');
         if (closedSet.has(i)) {
           return `
             <div class="day-row day-closed ${cls}">
               <div class="day-row-head">
                 <span class="day-label">${App.fmtMD(d)} (${day})</span>
+                ${hol ? `<span class="hol-badge">祝・${hol}</span>` : ''}
               </div>
               <div class="closed-label">－ 定休日 －</div>
             </div>
@@ -250,6 +259,7 @@
           <div class="day-row ${cls}">
             <div class="day-row-head">
               <span class="day-label">${App.fmtMD(d)} (${day})</span>
+              ${hol ? `<span class="hol-badge">祝・${hol}</span>` : ''}
             </div>
             <div class="symbol-row">
               ${['o','t','x','m'].map(s => `
@@ -347,8 +357,9 @@
 
       let h = '<table class="all-tbl"><thead><tr><th>名前</th>';
       dates.forEach((ds, i) => {
-        const c = i === 5 ? 'sat' : i === 6 ? 'sun' : '';
-        h += `<th class="${c}">${App.DOW_LABELS[i]}<br><span style="font-weight:500;font-size:0.7rem">${App.fmtMD(ds)}</span></th>`;
+        const hd = App.holidayName(ds);
+        const c = hd ? 'sun' : (i === 5 ? 'sat' : i === 6 ? 'sun' : '');
+        h += `<th class="${c}" title="${hd}">${App.DOW_LABELS[i]}${hd ? '祝' : ''}<br><span style="font-weight:500;font-size:0.7rem">${App.fmtMD(ds)}</span></th>`;
       });
       h += '<th>備考</th></tr></thead><tbody>';
       done.forEach(n => {

@@ -62,6 +62,8 @@
     th.day .d-dow { font-size: 15px; font-weight: 700; opacity: 0.8; }
     th.day.sat .d-dow { color: #60A5FA; }
     th.day.sun .d-dow { color: #F87171; }
+    th.day.hol .d-dow { color: #FCA5A5; }
+    th.day.hol .d-date { color: #FECACA; }
     th.day.today { background: #4338CA; color: #fff; box-shadow: 0 0 0 3px #818CF8; }
     th.day.closed { background: #172033; color: #475569; }
 
@@ -229,6 +231,9 @@
     .bv-days button.closed { background: #0B1220; color: #475569; }
     .bv-days button.closed .d { color: #475569; }
     .bv-days button.today { box-shadow: 0 0 0 2px #818CF8; }
+    .bv-days button.hol { color: #FCA5A5; }
+    .bv-days button.hol .d { color: #FECACA; }
+    .bv-days button.on.hol, .bv-days button.on.hol .d { color: #fff; }
 
     .bv-count { color: #64748B; font-size: 13px; font-weight: 700; margin: 2px 2px 8px; }
     .bv-list { display: flex; flex-direction: column; gap: 5px; }
@@ -633,11 +638,12 @@
         let cls = 'day';
         if (i === 5) cls += ' sat';
         if (i === 6) cls += ' sun';
+        if (App.holidayName(ds)) cls += ' hol';
         if (closed.has(i)) cls += ' closed';
         if (ds === todayStr) cls += ' today';
         html += `<th class="${cls}">
           <div class="d-date">${App.fmtMD(ds)}</div>
-          <div class="d-dow">${App.DOW_LABELS[i]}${closed.has(i) ? '・定休' : ''}</div>
+          <div class="d-dow">${App.DOW_LABELS[i]}${App.holidayName(ds) ? '・祝' : ''}${closed.has(i) ? '・定休' : ''}</div>
         </th>`;
       });
       html += '</tr></thead><tbody>';
@@ -781,9 +787,10 @@
 
       let h = '<div class="bv-days">';
       dates.forEach((ds, i) => {
-        const cls = [i === d ? 'on' : '', closed.has(i) ? 'closed' : '', ds === todayStr ? 'today' : ''].join(' ');
-        h += `<button class="${cls}" onclick="setBvDay(${i})">` +
-             `<span class="d">${App.fmtMD(ds)}</span>${App.DOW_LABELS[i]}${closed.has(i) ? '休' : ''}</button>`;
+        const hd = App.holidayName(ds);
+        const cls = [i === d ? 'on' : '', closed.has(i) ? 'closed' : '', ds === todayStr ? 'today' : '', hd ? 'hol' : ''].join(' ');
+        h += `<button class="${cls}" title="${hd}" onclick="setBvDay(${i})">` +
+             `<span class="d">${App.fmtMD(ds)}</span>${App.DOW_LABELS[i]}${hd ? '祝' : ''}${closed.has(i) ? '休' : ''}</button>`;
       });
       h += '</div>';
 
