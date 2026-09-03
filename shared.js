@@ -194,7 +194,7 @@ const App = {
   },
 
   // アプリのバージョン（更新したらここを書き換える）
-  VERSION: '2026.08.28',
+  VERSION: '2026.09.03',
   lastSyncAt: null,   // Firebase から最後に受け取った時刻
 
   KEYS: {
@@ -241,6 +241,35 @@ const App = {
   POSITIONS: ['K', 'R2', 'R2d', 'R1', 'W', 'T'],
   // 2部(16-L)のポジション
   POSITIONS2: ['W', 'T'],
+
+  /* ===== 当日欠勤（欠） =====
+     急に休みになった人。シフトはそのまま残して「欠」と表示し、出勤人数からは外す
+     確定シフトのスナップショットには入れない（当日の出来事なので、シフトの修正ではない） */
+  absKey(name, d) { return `s_${name}_${d}_abs`; },
+  isAbsent(cells, name, d) {
+    return (cells || {})[App._safeCellKey(App.absKey(name, d))] === '1';
+  },
+  setAbsent(reqId, name, d, on) {
+    App.setManualCell(reqId, App.absKey(name, d), on ? '1' : '');
+  },
+
+  /* ===== UPの日 =====
+     忙しかった日の売上に応じて時給を上げる日。500円 / 1000円の2種類 */
+  UP_LEVELS: ['500', '1000'],
+  upKey(d) { return `up_${d}`; },
+  upOf(cells, d) {
+    const v = String((cells || {})[App._safeCellKey(App.upKey(d))] || '');
+    return App.UP_LEVELS.indexOf(v) >= 0 ? v : '';
+  },
+  setUp(reqId, d, v) {
+    const t = String(v == null ? '' : v);
+    App.setManualCell(reqId, App.upKey(d), App.UP_LEVELS.indexOf(t) >= 0 ? t : '');
+  },
+  // 押すたびに なし → 500 → 1000 → なし
+  nextUp(v) {
+    const i = App.UP_LEVELS.indexOf(String(v || ''));
+    return i < 0 ? App.UP_LEVELS[0] : (App.UP_LEVELS[i + 1] || '');
+  },
 
   // 家族（役職）。まかないの人数に含める
   //   店=店長 / 若奥=若奥さん / 奥=奥さん / 会=会長
@@ -784,6 +813,85 @@ const App = {
     });
     App.fbListeners[lkey] = () => ref.off('value', cb);
     return App.fbListeners[lkey];
+  },
+
+  /* ===== 勤怠の集計（20日締め） ===== */
+
+  // y年m月の締め期間。20日締めなら (m-1)月21日 〜 m月20日
+  closingRange(y, m, cut) {
+    const c = Math.max(1, Math.min(28, parseInt(cut, 10) || 20));
+    return {
+      from: App.toDateStr(new Date(y, m - 2, c + 1)),
+      to:   App.toDateStr(new Date(y, m - 1, c))
+    };
+  },
+
+  // from〜to の出勤回数と UP日の回数を人ごとに数える
+  //   出勤 = ポジションか時刻が入っている日。欠勤（欠）の日は数えない
+  countAttendance(from, to) {
+    const rows = {};
+    const touch = (n) => rows[n] || (rows[n] = {
+      name: n, days: 0, up500: 0, up1000: 0, absent: 0, bonus: 0, detail: []
+    });
+    App.getRequests().forEach(req => {
+      const dates = App.weekDates(req.ws);
+      if (dates[6] < from || dates[0] > to) return;
+      const conf = App.getConfirmed(req.id);
+      const live = App.getManual(req.id);
+      const base = conf ? (conf.cells || {}) : live;   // 確定済みなら確定版を数える
+      const closed = new Set(req.closed || []);
+      const g = (n, d, f) => base[App._safeCellKey(`s_${n}_${d}_${f}`)] || '';
+      const names = (req.staff || []).slice();
+      // 名簿から外れた人でも、シフトが入っていれば数える
+      Object.keys(base).forEach(k => {
+        const m = k.match(/^s_(.+)_\d_(?:main|start|end)$/);
+        if (m && names.indexOf(m[1]) < 0) names.push(m[1]);
+      });
+      for (let d = 0; d < 7; d++) {
+        const ds = dates[d];
+        if (closed.has(d) || ds < from || ds > to) continue;
+        const up = App.upOf(live, d);
+        names.forEach(n => {
+          if (!(g(n, d, 'main') || g(n, d, 'start') || g(n, d, 'end'))) return;
+          const r = touch(n);
+          if (App.isAbsent(live, n, d)) { r.absent++; return; }
+          r.days++;
+          if (up === '500') r.up500++;
+          else if (up === '1000') r.up1000++;
+          r.detail.push({ date: ds, up: up, pos: g(n, d, 'main') });
+        });
+      }
+    });
+    const order = App.getStaff();
+    const list = Object.keys(rows).map(n => rows[n]);
+    list.forEach(r => {
+      r.bonus = r.up500 * 500 + r.up1000 * 1000;
+      r.detail.sort((a, b) => a.date < b.date ? -1 : 1);
+    });
+    list.sort((a, b) => {
+      const ia = order.indexOf(a.name), ib = order.indexOf(b.name);
+      return (ia < 0 ? 9999 : ia) - (ib < 0 ? 9999 : ib) || (a.name < b.name ? -1 : 1);
+    });
+    return list;
+  },
+
+  // その期間のUP日一覧（日付順）
+  upDaysIn(from, to) {
+    const out = [];
+    App.getRequests().forEach(req => {
+      const dates = App.weekDates(req.ws);
+      if (dates[6] < from || dates[0] > to) return;
+      const live = App.getManual(req.id);
+      const closed = new Set(req.closed || []);
+      for (let d = 0; d < 7; d++) {
+        const ds = dates[d];
+        if (closed.has(d) || ds < from || ds > to) continue;
+        const up = App.upOf(live, d);
+        if (up) out.push({ date: ds, up: up });
+      }
+    });
+    out.sort((a, b) => a.date < b.date ? -1 : 1);
+    return out;
   },
 
   lineShareUrl(text) {

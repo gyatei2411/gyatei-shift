@@ -28,6 +28,7 @@
     <div class="tabs">
       <button class="tab active" data-tab="create" onclick="switchTab('create')">① 依頼作成</button>
       <button class="tab" data-tab="aggregate" onclick="switchTab('aggregate')">② 集計＆Excel出力</button>
+      <button class="tab" data-tab="kintai" onclick="switchTab('kintai')">③ 勤怠集計</button>
       <button class="tab" data-tab="staff" onclick="switchTab('staff')">スタッフ管理</button>
     </div>
 
@@ -98,6 +99,40 @@
       </div>
     </div>
 
+    <!-- ============ ③ 勤怠集計 ============ -->
+    <div class="tab-pane" id="tab-kintai" style="display:none">
+      <div class="card">
+        <h2>勤怠集計（20日締め）</h2>
+        <p class="card-sub">締める月を選ぶと、その期間の<strong>出勤回数</strong>と<strong>UP日の回数</strong>を人ごとに数えます。<br>
+        例：<strong>9月締め = 8/21 〜 9/20</strong>。定休日と、<strong>欠勤（欠）にした日は数えません</strong>。<br>
+        確定済みの週は確定版を、未確定の週は今の入力を数えます。</p>
+
+        <div class="form-group" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+          <div>
+            <label class="form-label">締める月</label>
+            <div class="week-row">
+              <button onclick="changeKintaiMonth(-1)">‹ 前の月</button>
+              <span class="week-display" id="kintai-month"></span>
+              <button onclick="changeKintaiMonth(1)">次の月 ›</button>
+            </div>
+          </div>
+          <div>
+            <label class="form-label">締め日</label>
+            <select id="kintai-cut" onchange="renderKintai()" style="min-width:90px">
+              <option value="20" selected>20日</option>
+              <option value="15">15日</option>
+              <option value="25">25日</option>
+              <option value="28">28日</option>
+            </select>
+          </div>
+          <div style="flex:1"></div>
+          <button class="btn btn-outline btn-sm" onclick="copyKintai()">📋 表をコピー</button>
+        </div>
+
+        <div id="kintai-area"></div>
+      </div>
+    </div>
+
     <!-- ============ スタッフ管理タブ ============ -->
     <div class="tab-pane" id="tab-staff" style="display:none">
       <div class="card">
@@ -128,6 +163,7 @@
       document.querySelectorAll('.tab-pane').forEach(p => p.style.display = (p.id === 'tab-' + name) ? '' : 'none');
       if (name === 'aggregate') renderAggregate();
       if (name === 'staff') renderStaffMaster();
+      if (name === 'kintai') renderKintai();
       if (name === 'create') renderCreate();
     }
 
@@ -274,6 +310,127 @@
       renderCreate();
       renderAggregate();
       App.toast(`【${label}】を削除しました`, 'success');
+    }
+
+    /* ===== ③ 勤怠集計（20日締め） ===== */
+
+    // 今の締め月。今日が締め日を過ぎていなければ今月、過ぎていたら翌月
+    let kintaiY = 0, kintaiM = 0;
+
+    function initKintaiMonth() {
+      const d = new Date();
+      kintaiY = d.getFullYear();
+      kintaiM = d.getMonth() + 1;
+      if (d.getDate() > 20) { kintaiM++; if (kintaiM > 12) { kintaiM = 1; kintaiY++; } }
+    }
+
+    function changeKintaiMonth(n) {
+      kintaiM += n;
+      while (kintaiM > 12) { kintaiM -= 12; kintaiY++; }
+      while (kintaiM < 1)  { kintaiM += 12; kintaiY--; }
+      renderKintai();
+    }
+
+    let kintaiText = '';
+
+    function renderKintai() {
+      if (!kintaiY) initKintaiMonth();
+      const cut = parseInt(document.getElementById('kintai-cut').value, 10) || 20;
+      const r = App.closingRange(kintaiY, kintaiM, cut);
+      const md = ds => `${+ds.slice(5, 7)}/${+ds.slice(8, 10)}`;
+      document.getElementById('kintai-month').textContent =
+        `${kintaiY}年 ${kintaiM}月締め（${md(r.from)} 〜 ${md(r.to)}）`;
+
+      const rows = App.countAttendance(r.from, r.to);
+      const ups = App.upDaysIn(r.from, r.to);
+      const area = document.getElementById('kintai-area');
+
+      // この期間にシフトがある週を確かめる（入力漏れの注意）
+      const weeks = App.getRequests().filter(q => {
+        const dd = App.weekDates(q.ws);
+        return !(dd[6] < r.from || dd[0] > r.to);
+      });
+      const missing = [];
+      {
+        const have = {};
+        weeks.forEach(q => App.weekDates(q.ws).forEach(ds => { have[ds] = 1; }));
+        const cur = new Date(r.from + 'T00:00:00');
+        const end = new Date(r.to + 'T00:00:00');
+        while (cur <= end) { const ds = App.toDateStr(cur); if (!have[ds]) missing.push(ds); cur.setDate(cur.getDate() + 1); }
+      }
+
+      let h = '';
+      if (missing.length) {
+        h += `<div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;font-size:0.84rem;color:#92400E;margin-bottom:12px">` +
+             `⚠ この期間のうち <strong>${missing.length}日分</strong>はシフトのデータがありません（${md(missing[0])} など）。<br>` +
+             `その日は数えられていません。必要なら依頼を作ってシフトを入力してください。</div>`;
+      }
+
+      h += `<div style="background:var(--muted-bg);border-radius:8px;padding:10px 14px;font-size:0.86rem;margin-bottom:12px">` +
+           `<strong>UPの日</strong>：` +
+           (ups.length
+             ? ups.map(u => `<span style="display:inline-block;margin:2px 6px 2px 0;padding:2px 9px;border-radius:999px;font-weight:800;` +
+                 `background:${u.up === '1000' ? '#FDBA74' : '#FEF3C7'};color:${u.up === '1000' ? '#7C2D12' : '#92400E'}">` +
+                 `${md(u.date)} +${u.up}</span>`).join('')
+             : '<span style="color:var(--muted)">まだ設定されていません（シフト表のUP行、またはタブレットの日付をタップ）</span>') +
+           `</div>`;
+
+      if (!rows.length) {
+        h += '<div class="empty-state">この期間の出勤データがありません。</div>';
+        area.innerHTML = h;
+        kintaiText = '';
+        return;
+      }
+
+      h += `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.9rem">` +
+           `<thead><tr style="background:#F1F5F9">` +
+           `<th style="text-align:left;padding:8px 10px;border-bottom:2px solid #CBD5E1">名前</th>` +
+           `<th style="padding:8px 10px;border-bottom:2px solid #CBD5E1">出勤</th>` +
+           `<th style="padding:8px 10px;border-bottom:2px solid #CBD5E1">+500の日</th>` +
+           `<th style="padding:8px 10px;border-bottom:2px solid #CBD5E1">+1000の日</th>` +
+           `<th style="padding:8px 10px;border-bottom:2px solid #CBD5E1">UP合計</th>` +
+           `<th style="padding:8px 10px;border-bottom:2px solid #CBD5E1">欠勤</th>` +
+           `<th style="text-align:left;padding:8px 10px;border-bottom:2px solid #CBD5E1">出勤した日</th>` +
+           `</tr></thead><tbody>`;
+
+      const lines = ['名前\t出勤\t+500の日\t+1000の日\tUP合計(円)\t欠勤'];
+      const tot = { days: 0, up500: 0, up1000: 0, bonus: 0, absent: 0 };
+
+      rows.forEach(x => {
+        tot.days += x.days; tot.up500 += x.up500; tot.up1000 += x.up1000;
+        tot.bonus += x.bonus; tot.absent += x.absent;
+        const c = 'padding:7px 10px;border-bottom:1px solid #E2E8F0;text-align:center';
+        h += `<tr>` +
+          `<td style="padding:7px 10px;border-bottom:1px solid #E2E8F0;font-weight:800">${escapeHtml(x.name)}</td>` +
+          `<td style="${c};font-weight:800">${x.days}</td>` +
+          `<td style="${c}${x.up500 ? ';background:#FEF3C7;color:#92400E;font-weight:800' : ''}">${x.up500 || '・'}</td>` +
+          `<td style="${c}${x.up1000 ? ';background:#FDBA74;color:#7C2D12;font-weight:800' : ''}">${x.up1000 || '・'}</td>` +
+          `<td style="${c};font-weight:800">${x.bonus ? x.bonus.toLocaleString() + '円' : '・'}</td>` +
+          `<td style="${c}${x.absent ? ';color:#DC2626;font-weight:800' : ''}">${x.absent || '・'}</td>` +
+          `<td style="padding:7px 10px;border-bottom:1px solid #E2E8F0;font-size:0.78rem;color:var(--muted)">` +
+            x.detail.map(o => `<span style="white-space:nowrap;margin-right:6px${o.up ? ';font-weight:800;color:#92400E' : ''}">` +
+              `${md(o.date)}${o.up ? '+' + o.up : ''}</span>`).join('') + `</td>` +
+          `</tr>`;
+        lines.push([x.name, x.days, x.up500, x.up1000, x.bonus, x.absent].join('\t'));
+      });
+
+      const cf = 'padding:8px 10px;border-top:2px solid #CBD5E1;text-align:center;font-weight:800';
+      h += `<tr style="background:#F8FAFC">` +
+        `<td style="padding:8px 10px;border-top:2px solid #CBD5E1;font-weight:800">合計 ${rows.length}名</td>` +
+        `<td style="${cf}">${tot.days}</td><td style="${cf}">${tot.up500}</td><td style="${cf}">${tot.up1000}</td>` +
+        `<td style="${cf}">${tot.bonus.toLocaleString()}円</td><td style="${cf}">${tot.absent}</td><td style="border-top:2px solid #CBD5E1"></td>` +
+        `</tr>`;
+      h += '</tbody></table></div>';
+
+      area.innerHTML = h;
+      lines.push(['合計', tot.days, tot.up500, tot.up1000, tot.bonus, tot.absent].join('\t'));
+      kintaiText = `【${kintaiY}年${kintaiM}月締め ${md(r.from)}〜${md(r.to)}】\n` + lines.join('\n');
+    }
+
+    function copyKintai() {
+      if (!kintaiText) { App.toast('コピーするデータがありません', 'error'); return; }
+      App.copyToClipboard(kintaiText);
+      App.toast('表をコピーしました（Excelにそのまま貼れます）', 'success');
     }
 
     /* ===== ② 集計 ===== */

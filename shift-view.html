@@ -239,6 +239,39 @@
     .ce-actions .ce-ok { background: var(--primary); color: #fff; }
 
     /* タップで開くセル */
+    /* 当日欠勤（欠） */
+    .shift-table td.abs { background: #FEE2E2; color: #B91C1C; text-decoration: line-through; }
+    .shift-table td.abs-main { background: #FEE2E2; color: #B91C1C; font-weight: 900; }
+    .shift-table td.abs-main .was {
+      display: block; font-size: 8px; font-weight: 600; opacity: 0.8; text-decoration: line-through;
+    }
+    /* UPの日 */
+    .shift-table td.upcell { cursor: pointer; font-weight: 800; color: #94A3B8; }
+    .shift-table td.upcell.u500  { background: #FEF3C7; color: #92400E; }
+    .shift-table td.upcell.u1000 { background: #FDBA74; color: #7C2D12; }
+    .shift-table td.upcell:hover { outline: 2px solid var(--primary); outline-offset: -2px; }
+    .shift-table thead .upbadge {
+      display: inline-block; margin-left: 3px; padding: 0 4px; border-radius: 4px;
+      font-size: 9px; font-weight: 800; background: #F59E0B; color: #fff; vertical-align: 1px;
+    }
+    .shift-table thead th.up1000 .upbadge { background: #EA580C; }
+    /* 日別表示での欠勤とUP */
+    .dv-row.dv-abs { background: #FEF2F2; }
+    .dv-row.dv-abs .dv-pos, .dv-row.dv-abs .dv-time { text-decoration: line-through; opacity: 0.6; }
+    .dv-ketsu {
+      flex: 0 0 auto; background: #DC2626; color: #fff; border-radius: 6px;
+      padding: 1px 7px; margin-right: 6px; font-size: 0.85rem; font-weight: 900;
+    }
+    .dv-days button.u500 .d, .dv-days button.u1000 .d { color: #B45309; }
+    .dv-info .dv-ival.dv-up { cursor: pointer; font-weight: 900; color: #94A3B8; }
+    .dv-info .dv-ival.dv-up.u500  { background: #FEF3C7; color: #92400E; border-color: #FCD34D; }
+    .dv-info .dv-ival.dv-up.u1000 { background: #FDBA74; color: #7C2D12; border-color: #FB923C; }
+    /* 欠勤ボタン（セル編集パネル） */
+    .ce-abs {
+      width: 100%; padding: 13px; border-radius: 10px; border: 2px solid #FCA5A5;
+      background: #fff; color: #B91C1C; font-weight: 800; font-size: 0.95rem; cursor: pointer;
+    }
+    .ce-abs.on { background: #DC2626; border-color: #DC2626; color: #fff; }
     .shift-table td.tapcell { cursor: pointer; }
     .shift-table td.tapcell:hover { background: #EEF2FF; }
 
@@ -452,6 +485,10 @@
       <div class="ce-hint" id="ce-hint"></div>
 
       <div class="ce-field">
+        <button type="button" class="ce-abs" id="ce-abs" onclick="ceToggleAbs()"></button>
+      </div>
+
+      <div class="ce-field">
         <label>0部　<span class="sub">9:00〜9:30 朝の準備（空欄でもOK）</span></label>
         <input id="ce-p0" list="dl-p0" placeholder="例: C や C・m。直接入力もできます" autocomplete="off">
         <div class="ce-chips" id="ce-p0-chips"></div>
@@ -568,7 +605,8 @@
     // まかないの必要数 = その日出勤するスタッフ ＋ 休みでない家族
     function makanaiOf(day, names, manual) {
       const g = (n, f) => manual[App._safeCellKey(`s_${n}_${day}_${f}`)] || '';
-      const staff = names.filter(n => g(n, 'main') || g(n, 'start') || g(n, 'end')).length;
+      const staff = names.filter(n => (g(n, 'main') || g(n, 'start') || g(n, 'end')) &&
+                                      !App.isAbsent(manual, n, day)).length;
       const fam = App.FAMILY.length - App.familyOffCount(manual[App._safeCellKey(`fam_off_${day}`)]);
       return { staff, fam, total: staff + fam };
     }
@@ -621,8 +659,11 @@
       let html = `<table class="shift-table">${colgroup}<thead>`;
       html += '<tr class="row-date"><th></th>';
       dates.forEach((d, i) => {
-        const cls = closed.has(i) ? 'closed-head' : '';
-        html += `<th colspan="3" class="${cls}">${App.fmtMD(d)}</th>`;
+        let cls = closed.has(i) ? 'closed-head' : '';
+        const up = App.upOf(manual, i);
+        if (up) cls += ' up' + up;
+        html += `<th colspan="3" class="${cls}">${App.fmtMD(d)}` +
+                (up ? `<span class="upbadge">+${up}</span>` : '') + `</th>`;
       });
       html += '<th></th></tr>';
       html += '<tr class="row-dow"><th></th>';
@@ -639,15 +680,31 @@
       });
       html += '<th></th></tr></thead><tbody>';
 
-      // 予想/UP/物販（手入力可）
-      [['yoso','予想'],['up','UP'],['bup','物販']].forEach(([key, lbl]) => {
-        html += `<tr class="row-header"><td class="lbl">${lbl}</td>`;
-        for (let i = 0; i < 7; i++) {
-          if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
-          html += edCell(`h_${key}_${i}`, '', manual, 'colspan="3"');
-        }
-        html += '<td></td></tr>';
-      });
+      // 予想（手入力可）
+      html += `<tr class="row-header"><td class="lbl">予想</td>`;
+      for (let i = 0; i < 7; i++) {
+        if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
+        html += edCell(`h_yoso_${i}`, '', manual, 'colspan="3"');
+      }
+      html += '<td></td></tr>';
+
+      // UP（ボタン：押すたびに なし → 500 → 1000）
+      html += `<tr class="row-header row-up"><td class="lbl" title="忙しかった日の時給UP。タップすると 500円 → 1000円 → なし">UP</td>`;
+      for (let i = 0; i < 7; i++) {
+        if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
+        const up = App.upOf(manual, i);
+        html += `<td colspan="3" class="upcell${up ? ' u' + up : ''}" data-upday="${i}"` +
+                ` title="タップで 500円UP → 1000円UP → なし">${up ? '+' + up : '・'}</td>`;
+      }
+      html += '<td></td></tr>';
+
+      // 物販（手入力可）
+      html += `<tr class="row-header"><td class="lbl">物販</td>`;
+      for (let i = 0; i < 7; i++) {
+        if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
+        html += edCell(`h_bup_${i}`, '', manual, 'colspan="3"');
+      }
+      html += '<td></td></tr>';
 
       // スタッフ2行ペア
       for (const name of orderedNames) {
@@ -656,8 +713,9 @@
         html += `<tr class="row-staff-top"><td class="name-cell" rowspan="2">${escapeHtml(name)}</td>`;
         for (let i = 0; i < 7; i++) {
           if (closed.has(i)) { html += '<td class="closed-cell"></td><td class="closed-cell"></td><td class="closed-cell"></td>'; continue; }
-          html += tapCell(`s_${name}_${i}_start`, '', manual);
-          html += tapCell(`s_${name}_${i}_end`, '', manual);
+          const abs = App.isAbsent(manual, name, i);
+          html += tapCell(`s_${name}_${i}_start`, abs ? 'abs' : '', manual);
+          html += tapCell(`s_${name}_${i}_end`, abs ? 'abs' : '', manual);
           html += tapCell(`s_${name}_${i}_time`, 'cell-time', manual);
         }
         html += `<td class="name-cell" rowspan="2">${escapeHtml(name)}</td></tr>`;
@@ -665,8 +723,16 @@
         html += '<tr class="row-staff-bot">';
         for (let i = 0; i < 7; i++) {
           if (closed.has(i)) { html += '<td class="closed-cell"></td><td class="closed-cell"></td><td class="closed-cell">休</td>'; continue; }
-          html += tapCell(`s_${name}_${i}_sub`, 'cell-sub', manual);
-          html += tapCell(`s_${name}_${i}_main`, '', manual);
+          const abs = App.isAbsent(manual, name, i);
+          html += tapCell(`s_${name}_${i}_sub`, 'cell-sub' + (abs ? ' abs' : ''), manual);
+          if (abs) {
+            // 急な休み。元々入っていたポジションも小さく残す
+            const was = manual[App._safeCellKey(`s_${name}_${i}_main`)] || '';
+            html += `<td class="tapcell abs-main" data-mkey="s_${name}_${i}_main">欠` +
+                    (was ? `<span class="was">${escapeHtml(was)}</span>` : '') + `</td>`;
+          } else {
+            html += tapCell(`s_${name}_${i}_main`, '', manual);
+          }
           const manualSym = manual[App._safeCellKey(`s_${name}_${i}_sym`)];
           const autoSym = reply ? (reply.d[i] || '') : '';
           const symChar = manualSym !== undefined && manualSym !== ''
@@ -838,9 +904,10 @@
       let h = '<div class="day-view"><div class="dv-days">';
       dates.forEach((ds, i) => {
         const hd = App.holidayName(ds);
-        const cls = [i === d ? 'on' : '', closed.has(i) ? 'closed' : '', i === 5 ? 'sat' : '', i === 6 ? 'sun' : '', hd ? 'hol' : ''].join(' ');
+        const up = App.upOf(manual, i);
+        const cls = [i === d ? 'on' : '', closed.has(i) ? 'closed' : '', i === 5 ? 'sat' : '', i === 6 ? 'sun' : '', hd ? 'hol' : '', up ? 'u' + up : ''].join(' ');
         h += `<button class="${cls}" title="${hd}" onclick="setDvDay(${i})">` +
-             `<span class="d">${App.fmtMD(ds)}</span><span class="w">${App.DOW_LABELS[i]}${hd ? '・祝' : ''}${closed.has(i) ? '・休' : ''}</span></button>`;
+             `<span class="d">${App.fmtMD(ds)}${up ? '+' + up : ''}</span><span class="w">${App.DOW_LABELS[i]}${hd ? '・祝' : ''}${closed.has(i) ? '・休' : ''}</span></button>`;
       });
       h += '</div>';
 
@@ -862,8 +929,10 @@
         const sc = (ms !== undefined && ms !== '') ? ms
           : (auto === 'o' ? '○' : auto === 't' ? '△' : auto === 'x' ? '✕' : auto === 'm' ? '未' : '');
         const ds = sc === '○' ? 'o' : sc === '△' ? 't' : sc === '未' ? 'm' : (sc === '✕' || sc === '×') ? 'x' : '';
-        return `<div class="dv-row${off ? ' dv-off' : ''}" data-name="${escapeHtml(n)}" data-day="${d}">` +
+        const abs = App.isAbsent(manual, n, d);
+        return `<div class="dv-row${off ? ' dv-off' : ''}${abs ? ' dv-abs' : ''}" data-name="${escapeHtml(n)}" data-day="${d}">` +
           `<span class="dv-name">${escapeHtml(n)}</span>` +
+          (abs ? '<span class="dv-ketsu">欠</span>' : '') +
           `<span class="dv-pos">` +
             (p0 ? `<b class="p0">${escapeHtml(p0)}</b>` : '') +
             escapeHtml(seg[0] || '') +
@@ -873,7 +942,9 @@
           `<span class="dv-sym" data-sym="${ds}">${sc || '・'}</span></div>`;
       };
 
-      h += `<div class="dv-count">出勤 ${working.length}名</div>`;
+      const absN = working.filter(n => App.isAbsent(manual, n, d)).length;
+      h += `<div class="dv-count">出勤 ${working.length - absN}名` +
+           (absN ? `　<span style="color:#DC2626">欠勤 ${absN}名</span>` : '') + `</div>`;
       h += '<div class="dv-list">' + (working.length ? working.map(n => rowFor(n, false)).join('')
            : '<div class="dv-row" style="color:#94A3B8;justify-content:center">まだ誰も入っていません</div>') + '</div>';
 
@@ -883,7 +954,11 @@
       }
 
       const mk = makanaiOf(d, names, manual);
+      const upv = App.upOf(manual, d);
       h += '<div class="dv-info">' +
+        `<div class="dv-irow"><span class="dv-ilbl">UP</span>` +
+        `<span class="dv-ival dv-up${upv ? ' u' + upv : ''}" data-upday="${d}">` +
+        `${upv ? '+' + upv + '円' : 'なし（タップで 500 → 1000）'}</span></div>` +
         `<div class="dv-irow"><span class="dv-ilbl">休み（家族）</span>` +
         `<span class="dv-ival editable" contenteditable="plaintext-only" data-mkey="fam_off_${d}">${escapeHtml(cell(`fam_off_${d}`))}</span></div>` +
         `<div class="dv-irow"><span class="dv-ilbl">まかない</span>` +
@@ -903,6 +978,17 @@
     const CE_P1 = ['K', 'R2', 'R2d', 'R1', 'W', 'T'];
     const CE_P2 = ['W', 'T', 'K'];
     let ceTarget = null;   // { name, day }
+    let ceAbs = false;     // 当日欠勤（欠）
+
+    function ceToggleAbs() { ceAbs = !ceAbs; ceRenderAbs(); }
+    function ceRenderAbs() {
+      const b = document.getElementById('ce-abs');
+      if (!b) return;
+      b.classList.toggle('on', ceAbs);
+      b.textContent = ceAbs
+        ? '⚠ 当日欠勤（欠）　← もう一度押すと戻します'
+        : '⚠ 当日欠勤にする（欠）';
+    }
 
     // 「R2→（T」のような表記を 1部 / 2部 / 早上がり に分解する
     function parseMain(txt) {
@@ -973,6 +1059,9 @@
         (can.length ? `できるポジション … ${escapeHtml(can.join(' / '))}` : '') +
         (nt ? `<br>本人の備考 … ${escapeHtml(nt)}` : '');
 
+      ceAbs = App.isAbsent(manual, name, day);
+      ceRenderAbs();
+
       document.getElementById('ce-p0').value = g('sub');
       document.getElementById('ce-p1').value = m.p1;
       document.getElementById('ce-p2').value = m.p2;
@@ -1002,6 +1091,8 @@
     function clearCellEditor() {
       ['ce-p0','ce-p1','ce-p2','ce-start','ce-end'].forEach(i => document.getElementById(i).value = '');
       document.getElementById('ce-early').checked = false;
+      ceAbs = false;
+      ceRenderAbs();
       ceMarkChips();
       applyCellEditor();
     }
@@ -1018,6 +1109,7 @@
       set('end', v('ce-end'));
       set('time', v('ce-time'));
       set('sym', v('ce-sym'));
+      set('abs', ceAbs ? '1' : '');
       closeCellEditor();
       showSaved();
       render();
@@ -1046,6 +1138,16 @@
       // スタッフのセルをタップ → 0部/1部/2部の編集パネル
       cont.addEventListener('click', (e) => {
         if (e.target.closest('select') || e.target.closest('[contenteditable]')) return;
+        // UPの日：押すたびに なし → 500 → 1000
+        const upEl = e.target.closest('[data-upday]');
+        if (upEl) {
+          const d = +upEl.dataset.upday;
+          const cur = App.upOf(App.getManual(currentReqId), d);
+          App.setUp(currentReqId, d, App.nextUp(cur));
+          showSaved();
+          render();
+          return;
+        }
         const row = e.target.closest('.dv-row[data-name]');
         if (row) { openCellEditor(row.dataset.name, +row.dataset.day); return; }
         const td = e.target.closest('td.tapcell[data-mkey]');
@@ -1702,10 +1804,17 @@
     /* ===== 確定シフト（記録＋修正履歴） ===== */
 
     // 割り当て指示メモは履歴の対象外
+    //   当日欠勤（_abs）と UPの日（up_）も除く。
+    //   この2つは「当日の出来事」であってシフトの修正ではないので、
+    //   確定をやり直さなくてもタブレットにそのまま反映させる
     function currentCells() {
       const manual = App.getManual(currentReqId);
       const cells = {};
-      Object.keys(manual).forEach(k => { if (k !== 'assign_note') cells[k] = manual[k]; });
+      Object.keys(manual).forEach(k => {
+        if (k === 'assign_note') return;
+        if (/_abs$/.test(k) || /^up_\d$/.test(k)) return;
+        cells[k] = manual[k];
+      });
       return cells;
     }
 

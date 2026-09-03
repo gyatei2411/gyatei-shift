@@ -38,6 +38,37 @@
       font-family: inherit;
     }
     .topbar button:disabled { opacity: 0.3; cursor: default; }
+    .topbar button.shop-on { background: #B91C1C; color: #FEE2E2; border-color: #EF4444; }
+
+    /* 店用モードの帯 */
+    .shopbar {
+      flex: 0 0 auto; background: #7F1D1D; color: #FEE2E2;
+      font-size: 13px; font-weight: 700; padding: 5px 14px; text-align: center;
+    }
+
+    /* 当日欠勤（欠） */
+    td.cell.abs { background: #450A0A !important; }
+    td.cell .time.was { text-decoration: line-through; opacity: 0.6; }
+    td.cell .ketsu { font-size: 26px; font-weight: 900; color: #FCA5A5; line-height: 1; }
+    .board.compact td.cell .ketsu { font-size: 20px; }
+    .bv-row.abs { background: #450A0A; }
+    .bv-row.abs .bv-pos, .bv-row.abs .bv-time { text-decoration: line-through; opacity: 0.55; }
+    .bv-row .bv-ketsu {
+      flex: 0 0 auto; background: #DC2626; color: #fff; border-radius: 6px;
+      padding: 1px 8px; margin-right: 6px; font-size: 15px; font-weight: 900;
+    }
+
+    /* UPの日 */
+    th.day.u500  { background: #78350F; }
+    th.day.u1000 { background: #9A3412; }
+    th.day .d-up {
+      display: block; font-size: 15px; font-weight: 900; color: #FDE68A; line-height: 1.2;
+    }
+    th.day.u1000 .d-up { color: #FED7AA; }
+    .bv-days button.u500  { background: #78350F; border-color: #B45309; color: #FDE68A; }
+    .bv-days button.u1000 { background: #9A3412; border-color: #C2410C; color: #FED7AA; }
+    .bv-days button.u500 .d, .bv-days button.u1000 .d { color: #FDE68A; }
+    .bv-irow.up .v { color: #FDE68A; font-weight: 900; }
     .badge-draft {
       background: #B45309; color: #FFF7ED; padding: 3px 10px; border-radius: 999px;
       font-size: 12px; font-weight: 800;
@@ -394,8 +425,10 @@
       <button id="btn-hist" onclick="openHistory()" style="display:none" title="変更履歴">📜<span class="lbl"> 変更履歴</span><span class="cnt"></span></button>
       <button onclick="openLegend()" title="記号の見方">❔<span class="lbl"> 記号</span></button>
       <button id="btn-bvmode" onclick="toggleBoardMode()" title="1日ずつ / 1週間"></button>
+      <button id="btn-shop" onclick="toggleShopMode()" title="店用モード（欠勤・UPをこの端末で設定する。暗証番号がいります）">🔧</button>
       <button onclick="App.forceUpdate ? App.forceUpdate() : location.reload()" title="最新に更新">🔄<span class="lbl"> 更新</span></button>
     </div>
+    <div class="shopbar" id="shopbar" style="display:none">店用モード　シフトをタップ＝欠勤　日付をタップ＝UP（500 → 1000 → なし）</div>
 
     <div class="fit-wrap" id="fit-wrap">
       <div class="fit-inner" id="fit-inner"></div>
@@ -437,6 +470,70 @@
     let fbError = false;  // Firebaseの読み取り権限エラー
     let cursor = 0;       // reqIds 内の現在位置
 
+    /* ===== 店用モード =====
+       普段は見るだけ。この端末（店のタブレット）でだけ ON にしておくと
+       欠勤とUPをその場で押せる。スタッフのスマホは OFF のままなので見るだけ */
+    const SHOP_KEY = 'sa_v4_board_shop';
+    let shopMode = localStorage.getItem(SHOP_KEY) === '1';
+
+    // 暗証番号。番号そのものは書かず、計算した値だけ持つ
+    //   ソースを見てもすぐには分からないというだけで、暗号ではない。
+    //   身内の誤操作を防ぐためのもの。番号を変えるときは pinHash('新しい番号') の値をここへ
+    const SHOP_PIN = 973042;
+    function pinHash(t) {
+      let v = 7;
+      for (let i = 0; i < t.length; i++) v = (v * 31 + t.charCodeAt(i)) % 1000003;
+      return v;
+    }
+
+    function toggleShopMode() {
+      // ON にするときだけ番号を聞く（OFF に戻すのはいつでもできる）
+      if (!shopMode) {
+        const v = prompt('店用モードにします。\n暗証番号（4桁）を入れてください。');
+        if (v === null) return;                        // キャンセル
+        if (pinHash(String(v).trim()) !== SHOP_PIN) {
+          alert('番号が違います。');
+          return;
+        }
+      }
+      shopMode = !shopMode;
+      localStorage.setItem(SHOP_KEY, shopMode ? '1' : '');
+      updateShopUI();
+      render();
+    }
+
+    function updateShopUI() {
+      const b = document.getElementById('btn-shop');
+      const bar = document.getElementById('shopbar');
+      if (b) b.classList.toggle('shop-on', shopMode);
+      if (bar) bar.style.display = shopMode ? '' : 'none';
+    }
+
+    // 店用モードのタップ
+    function wireShopTaps() {
+      document.body.addEventListener('click', (e) => {
+        if (!shopMode) return;
+        const reqId = reqIds[cursor];
+        if (!reqId) return;
+
+        const upEl = e.target.closest('[data-upday]');
+        if (upEl) {
+          const d = +upEl.dataset.upday;
+          App.setUp(reqId, d, App.nextUp(App.upOf(App.getManual(reqId), d)));
+          render();
+          return;
+        }
+        const c = e.target.closest('[data-absn]');
+        if (c) {
+          const n = c.dataset.absn, d = +c.dataset.absd;
+          const now = App.isAbsent(App.getManual(reqId), n, d);
+          if (!now && !confirm(`${n}さんをこの日の「欠勤」にしますか？`)) return;
+          App.setAbsent(reqId, n, d, !now);
+          render();
+        }
+      });
+    }
+
     function init() {
       App.initFirebase();
       if (App.isOnline()) {
@@ -446,6 +543,8 @@
           () => { fbError = true; render(); }
         );
       }
+      updateShopUI();
+      wireShopTaps();
       pickWeeks();
       render();
       window.addEventListener('resize', fit);
@@ -604,6 +703,11 @@
       const get = (name, d, f) => cells[App._safeCellKey(`s_${name}_${d}_${f}`)] || '';
       const worksOn = (n, d) => !!(get(n, d, 'main') || get(n, d, 'start') || get(n, d, 'end'));
 
+      // 当日欠勤とUPの日は、確定後でも変わるのでいつも最新の入力を見る
+      const live = App.getManual(reqId);
+      const isAbs = (n, d) => App.isAbsent(live, n, d);
+      const upOfDay = (d) => App.upOf(live, d);
+
       // 出勤可否（○△✕）: 確定時のスナップショット優先、無ければ手元の回答
       const availMap = {};
       const availSrc = (conf && conf.avail) ? conf.avail
@@ -641,9 +745,12 @@
         if (App.holidayName(ds)) cls += ' hol';
         if (closed.has(i)) cls += ' closed';
         if (ds === todayStr) cls += ' today';
-        html += `<th class="${cls}">
+        const up = upOfDay(i);
+        if (up) cls += ' u' + up;
+        html += `<th class="${cls}" data-upday="${i}">
           <div class="d-date">${App.fmtMD(ds)}</div>
           <div class="d-dow">${App.DOW_LABELS[i]}${App.holidayName(ds) ? '・祝' : ''}${closed.has(i) ? '・定休' : ''}</div>
+          ${up ? `<div class="d-up">+${up}円UP</div>` : ''}
         </th>`;
       });
       html += '</tr></thead><tbody>';
@@ -652,6 +759,8 @@
       let usedAvail = false;
       let used0 = false;
       let used2 = false;
+      let usedAbs = false;
+      const usedUp = [0,1,2,3,4,5,6].some(i => !closed.has(i) && upOfDay(i));
 
       const rowFor = (name) => {
         let r = `<tr><td class="name">${esc(name)}</td>`;
@@ -662,7 +771,9 @@
           if (sub) used0 = true;
           if (String(pos).indexOf('→') >= 0) used2 = true;
           const time = (get(name, d, 'start') + get(name, d, 'end')).trim();
+          const abs = isAbs(name, d);
           if (pos || time) {
+            if (abs) usedAbs = true;
             // 「R2→W」のような 1部→2部 表記は 1部のポジションで色を決める
             const seg = String(pos).split('→');
             const part1 = seg[0];                         // 1部（大きく）
@@ -670,7 +781,16 @@
             const head = part1.replace(/[（(）)]/g, '').trim();
             const cls = POS_CLASS[head] || 'p-etc';
             if (head && POS_CLASS[head]) usedPos[head] = cls;
-            r += `<td class="cell ${cls}"><div class="ci">` +
+            const tdHead = `<td class="cell ${cls}${abs ? ' abs' : ''}" data-absn="${esc(name)}" data-absd="${d}">`;
+            if (abs) {
+              // 急なお休み。「欠」を大きく、入っていたシフトは小さく残す
+              r += tdHead + '<div class="ci">' +
+                '<span class="ketsu">欠</span>' +
+                `<span class="time was">${esc(pos)}${time ? ' ' + esc(time) : ''}</span>` +
+                '</div></td>';
+              continue;
+            }
+            r += tdHead + `<div class="ci">` +
               (pos ? `<span class="pos">` +
                 (sub ? `<span class="sub">${esc(sub)}</span>` : '') +
                 esc(part1) +
@@ -697,7 +817,7 @@
 
       // 休み（家族）/ まかない / メモ
       const cell = (k) => cells[App._safeCellKey(k)] || '';
-      const worksCount = (d) => names.filter(n => worksOn(n, d)).length;
+      const worksCount = (d) => names.filter(n => worksOn(n, d) && !isAbs(n, d)).length;
       const infoRow = (cls, label, fn) => {
         let r = `<tr class="info ${cls}"><td class="name">${label}</td>`;
         for (let d = 0; d < 7; d++) {
@@ -709,6 +829,16 @@
       };
       const anyFam = [0,1,2,3,4,5,6].some(d => !closed.has(d) && cell(`fam_off_${d}`));
       const anyMemo = [0,1,2,3,4,5,6].some(d => !closed.has(d) && cell(`memo_${d}`));
+      if (usedUp) {
+        let r = '<tr class="info up"><td class="name">UP</td>';
+        for (let d = 0; d < 7; d++) {
+          if (closed.has(d)) { r += '<td class="cell closedday"></td>'; continue; }
+          const u = upOfDay(d);
+          r += `<td class="v${u ? '' : ' blank'}" data-upday="${d}"` +
+               (u ? ` style="color:#FDE68A;font-weight:900"` : '') + `>${u ? '+' + u + '円' : '・'}</td>`;
+        }
+        html += r + '</tr>';
+      }
       if (anyFam) html += infoRow('fam', '休み', d => esc(cell(`fam_off_${d}`)));
       html += infoRow('mkn', 'まかない', d => {
         return String(worksCount(d) + App.FAMILY.length - App.familyOffCount(cell(`fam_off_${d}`)));
@@ -747,10 +877,10 @@
       const bvOn = (bvMode === 'day');
       document.getElementById('fit-wrap').style.display = bvOn ? 'none' : '';
       bvw.style.display = bvOn ? '' : 'none';
-      if (bvOn) bvw.innerHTML = buildBoardDay(req, dates, closed, names, resting, todayStr, get, worksOn, symOf, cells);
+      if (bvOn) bvw.innerHTML = buildBoardDay(req, dates, closed, names, resting, todayStr, get, worksOn, symOf, cells, isAbs, upOfDay);
       updateBoardModeBtn();
 
-      buildLegend(usedPos, usedAvail, used0, used2);
+      buildLegend(usedPos, usedAvail, used0, used2, usedAbs, usedUp);
 
       fit();
     }
@@ -778,7 +908,7 @@
 
     function setBvDay(d) { bvDay = d; render(); }
 
-    function buildBoardDay(req, dates, closed, names, resting, todayStr, get, worksOn, symOf, cells) {
+    function buildBoardDay(req, dates, closed, names, resting, todayStr, get, worksOn, symOf, cells, isAbs, upOfDay) {
       const open = [0,1,2,3,4,5,6].filter(i => !closed.has(i));
       const todayIdx = dates.indexOf(todayStr);
       if (bvDay === null) bvDay = (todayIdx >= 0 && !closed.has(todayIdx)) ? todayIdx : (open.length ? open[0] : 0);
@@ -788,9 +918,10 @@
       let h = '<div class="bv-days">';
       dates.forEach((ds, i) => {
         const hd = App.holidayName(ds);
-        const cls = [i === d ? 'on' : '', closed.has(i) ? 'closed' : '', ds === todayStr ? 'today' : '', hd ? 'hol' : ''].join(' ');
+        const up = upOfDay(i);
+        const cls = [i === d ? 'on' : '', closed.has(i) ? 'closed' : '', ds === todayStr ? 'today' : '', hd ? 'hol' : '', up ? 'u' + up : ''].join(' ');
         h += `<button class="${cls}" title="${hd}" onclick="setBvDay(${i})">` +
-             `<span class="d">${App.fmtMD(ds)}</span>${App.DOW_LABELS[i]}${hd ? '祝' : ''}${closed.has(i) ? '休' : ''}</button>`;
+             `<span class="d">${App.fmtMD(ds)}${up ? ' +' + up : ''}</span>${App.DOW_LABELS[i]}${hd ? '祝' : ''}${closed.has(i) ? '休' : ''}</button>`;
       });
       h += '</div>';
 
@@ -806,8 +937,10 @@
         const head = seg[0].replace(/[（(）)]/g, '').trim();
         const cls = POS_CLASS[head] || 'p-etc';
         const time = (get(n, d, 'start') + get(n, d, 'end')).trim();
-        return `<div class="bv-row ${cls}">` +
+        const abs = isAbs(n, d);
+        return `<div class="bv-row ${cls}${abs ? ' abs' : ''}" data-absn="${esc(n)}" data-absd="${d}">` +
           `<span class="bv-name">${esc(n)}</span>` +
+          (abs ? '<span class="bv-ketsu">欠</span>' : '') +
           `<span class="bv-pos">` +
             (sub ? `<span class="p0">${esc(sub)}</span>` : '') + esc(seg[0]) +
             (seg.length > 1 ? `<span class="p2">→${esc(seg.slice(1).join('→'))}</span>` : '') +
@@ -815,7 +948,9 @@
           `<span class="bv-time">${esc(time)}</span></div>`;
       };
 
-      h += `<div class="bv-count">出勤 ${working.length}名</div>`;
+      const absN = working.filter(n => isAbs(n, d)).length;
+      h += `<div class="bv-count">出勤 ${working.length - absN}名` +
+           (absN ? `　<span style="color:#FCA5A5">欠勤 ${absN}名</span>` : '') + `</div>`;
       h += '<div class="bv-list">' + (working.length ? working.map(rowFor).join('')
            : '<div class="bv-row" style="color:#64748B;justify-content:center">まだ割り当てられていません</div>') + '</div>';
 
@@ -833,9 +968,12 @@
 
       const cell = (k) => cells[App._safeCellKey(k)] || '';
       const offN = App.familyOffCount(cell(`fam_off_${d}`));
+      const upv = upOfDay(d);
       h += '<div class="bv-info">';
+      h += `<div class="bv-irow up" data-upday="${d}"><span class="l">UP</span>` +
+           `<span class="v">${upv ? '+' + upv + '円' : 'なし'}</span></div>`;
       if (cell(`fam_off_${d}`)) h += `<div class="bv-irow fam"><span class="l">休み</span><span class="v">${esc(cell(`fam_off_${d}`))}</span></div>`;
-      h += `<div class="bv-irow mkn"><span class="l">まかない</span><span class="v">${working.length + App.FAMILY.length - offN}</span></div>`;
+      h += `<div class="bv-irow mkn"><span class="l">まかない</span><span class="v">${working.length - absN + App.FAMILY.length - offN}</span></div>`;
       if (cell(`memo_${d}`)) h += `<div class="bv-irow"><span class="l">メモ</span><span class="v">${esc(cell(`memo_${d}`))}</span></div>`;
       h += '</div>';
       return h;
@@ -851,7 +989,7 @@
       R1: 'レストラン1', W: '洗い場', T: 'テイクアウト'
     };
 
-    function buildLegend(usedPos, usedAvail, used0, used2) {
+    function buildLegend(usedPos, usedAvail, used0, used2, usedAbs, usedUp) {
       const order = ['K', 'R2', 'R2d', 'R1', 'W', 'T'];
       let h = '';
 
@@ -885,6 +1023,18 @@
              '<span class="leg-item"><i style="background:#2E2410;color:#FBBF24">△</i>条件付きで出られる</span>' +
              '<span class="leg-item"><i style="background:#241C36;color:#C4B5FD">未</i>入れるか未定</span>' +
              '</div></div>';
+      }
+
+      if (usedAbs) {
+        h += '<div class="leg-sec"><h3>欠（当日欠勤）</h3>' +
+             '<div class="leg-note"><b style="color:#FCA5A5">欠</b> … その日、急にお休みになった人です。<br>' +
+             '入っていたポジションは取り消し線で残してあります。出勤人数とまかないからは引いています。</div></div>';
+      }
+
+      if (usedUp) {
+        h += '<div class="leg-sec"><h3>UPの日</h3>' +
+             '<div class="leg-note">売上に応じて <b style="color:#FDE68A">+500円UP</b> ・ <b style="color:#FED7AA">+1000円UP</b> になる日です。<br>' +
+             '日付の欄がオレンジ色になっている日がそうです。</div></div>';
       }
 
       h += '<div class="leg-sec"><h3>時間・その他</h3><div class="leg-note">' +
