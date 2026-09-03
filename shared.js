@@ -271,6 +271,33 @@ const App = {
     return i < 0 ? App.UP_LEVELS[0] : (App.UP_LEVELS[i + 1] || '');
   },
 
+  // メモ欄の「まか○○」= スタッフ・家族以外でその日まかないを食べる人
+  //   「まかゆうま」→ 1名（ゆうま）
+  //   「まかゆうま まかみき」→ 2名
+  //   「まか2」「まか2人」→ 2名
+  //   「まかないゆうま」も同じ（「ない」はあってもなくてもよい）
+  extraMakanai(txt) {
+    const t = String(txt || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+    const out = { count: 0, names: [] };
+    const re = /まか(?:ない)?[\s　]*([^\s　、。,，・／\/+＋]*)/g;
+    let m;
+    while ((m = re.exec(t)) !== null) {
+      const rest = (m[1] || '').trim();
+      const num = rest.match(/^(\d+)人?$/);
+      if (num) {
+        const n = parseInt(num[1], 10) || 0;
+        out.count += n;
+        if (n) out.names.push(n + '名');
+      } else {
+        out.count += 1;
+        out.names.push(rest || 'まかない');
+      }
+      if (re.lastIndex === m.index) re.lastIndex++;
+    }
+    out.count = Math.max(0, Math.min(20, out.count));
+    return out;
+  },
+
   // 家族（役職）。まかないの人数に含める
   //   店=店長 / 若奥=若奥さん / 奥=奥さん / 会=会長
   FAMILY: ['\u5e97', '\u82e5\u5965', '\u5965', '\u4f1a'],

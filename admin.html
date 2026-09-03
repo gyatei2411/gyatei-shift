@@ -18,6 +18,8 @@
     <h1>📅 シフト管理（ぎゃあてい）</h1>
     <div class="header-actions">
       <span id="connection-badge" class="conn-badge">⚪ ローカル</span>
+      <button id="btn-goto-sv" onclick="gotoShiftView()" title="今の週のシフト表を開きます"
+              style="background:#fff;color:#4F46E5;font-weight:800">📋 シフト表</button>
       <button onclick="App.forceUpdate()" title="アプリを最新にして再読み込みします（スマホで古い画面が出るときに）">🔄 最新に更新</button>
       <button onclick="exportData()" title="バックアップ">💾 書出</button>
       <button onclick="importData()" title="復元">📥 復元</button>
@@ -260,6 +262,7 @@
               </div>
               <div class="btn-row">
                 <button class="btn btn-primary btn-sm" onclick="showUrlAgain('${r.id}')" title="作成時と同じURLをもう一度表示します。送り忘れや再送に">🔗 URLを表示</button>
+                <button class="btn btn-primary btn-sm" onclick="gotoShiftView('${r.id}')">📋 シフト表</button>
                 <button class="btn btn-outline btn-sm" onclick="setActive('${r.id}'); switchTab('aggregate')">集計を見る</button>
                 <button class="btn btn-danger-outline btn-sm" onclick="deleteRequestPrompt('${r.id}')">🗑 削除</button>
               </div>
@@ -685,6 +688,29 @@
       // 同じドメインの shift-view.html を新タブで開く
       const url = location.pathname.replace(/admin\.html$/, 'shift-view.html') + '?id=' + encodeURIComponent(reqId);
       window.open(url, '_blank');
+    }
+
+    // いま開くべき依頼を決める
+    //   選択中 → 今週 → これからの一番近い週 → 一番新しい週
+    function bestReqId() {
+      const reqs = App.getRequests();
+      if (!reqs.length) return null;
+      const active = App.getActiveRequest();
+      if (active && reqs.some(r => r.id === active)) return active;
+      const sorted = reqs.slice().sort((a, b) => a.ws < b.ws ? -1 : 1);
+      const cur = sorted.find(r => r.ws === App.weekStart());
+      if (cur) return cur.id;
+      const today = App.todayLocal();
+      const future = sorted.find(r => !App.isPastWeek(r.ws, today));
+      return (future || sorted[sorted.length - 1]).id;
+    }
+
+    // シフト表へこのタブのまま移る（シフト表の「← 管理画面」で戻れる）
+    function gotoShiftView(id) {
+      const reqId = id || bestReqId();
+      if (!reqId) { App.toast('まだ依頼がありません。①依頼作成 から作ってください', 'error'); return; }
+      App.setActiveRequest(reqId);
+      location.href = 'shift-view.html?id=' + encodeURIComponent(reqId);
     }
 
     function openBoard() {

@@ -816,7 +816,8 @@
       for (const name of names) html += rowFor(name);
 
       // 休み（家族）/ まかない / メモ
-      const cell = (k) => cells[App._safeCellKey(k)] || '';
+      // 休み（家族）とメモは当日の情報なので、確定版ではなく今の入力を見る
+      const cell = (k) => live[App._safeCellKey(k)] || '';
       const worksCount = (d) => names.filter(n => worksOn(n, d) && !isAbs(n, d)).length;
       const infoRow = (cls, label, fn) => {
         let r = `<tr class="info ${cls}"><td class="name">${label}</td>`;
@@ -841,7 +842,8 @@
       }
       if (anyFam) html += infoRow('fam', '休み', d => esc(cell(`fam_off_${d}`)));
       html += infoRow('mkn', 'まかない', d => {
-        return String(worksCount(d) + App.FAMILY.length - App.familyOffCount(cell(`fam_off_${d}`)));
+        return String(worksCount(d) + App.FAMILY.length - App.familyOffCount(cell(`fam_off_${d}`)) +
+                      App.extraMakanai(cell(`memo_${d}`)).count);
       });
       if (anyMemo) html += infoRow('', 'メモ', d => esc(cell(`memo_${d}`)));
 
@@ -877,7 +879,7 @@
       const bvOn = (bvMode === 'day');
       document.getElementById('fit-wrap').style.display = bvOn ? 'none' : '';
       bvw.style.display = bvOn ? '' : 'none';
-      if (bvOn) bvw.innerHTML = buildBoardDay(req, dates, closed, names, resting, todayStr, get, worksOn, symOf, cells, isAbs, upOfDay);
+      if (bvOn) bvw.innerHTML = buildBoardDay(req, dates, closed, names, resting, todayStr, get, worksOn, symOf, live, isAbs, upOfDay);
       updateBoardModeBtn();
 
       buildLegend(usedPos, usedAvail, used0, used2, usedAbs, usedUp);
@@ -908,7 +910,7 @@
 
     function setBvDay(d) { bvDay = d; render(); }
 
-    function buildBoardDay(req, dates, closed, names, resting, todayStr, get, worksOn, symOf, cells, isAbs, upOfDay) {
+    function buildBoardDay(req, dates, closed, names, resting, todayStr, get, worksOn, symOf, live, isAbs, upOfDay) {
       const open = [0,1,2,3,4,5,6].filter(i => !closed.has(i));
       const todayIdx = dates.indexOf(todayStr);
       if (bvDay === null) bvDay = (todayIdx >= 0 && !closed.has(todayIdx)) ? todayIdx : (open.length ? open[0] : 0);
@@ -966,14 +968,15 @@
         }).join('') + '</div>';
       }
 
-      const cell = (k) => cells[App._safeCellKey(k)] || '';
+      const cell = (k) => live[App._safeCellKey(k)] || '';
       const offN = App.familyOffCount(cell(`fam_off_${d}`));
+      const exN = App.extraMakanai(cell(`memo_${d}`)).count;
       const upv = upOfDay(d);
       h += '<div class="bv-info">';
       h += `<div class="bv-irow up" data-upday="${d}"><span class="l">UP</span>` +
            `<span class="v">${upv ? '+' + upv + '円' : 'なし'}</span></div>`;
       if (cell(`fam_off_${d}`)) h += `<div class="bv-irow fam"><span class="l">休み</span><span class="v">${esc(cell(`fam_off_${d}`))}</span></div>`;
-      h += `<div class="bv-irow mkn"><span class="l">まかない</span><span class="v">${working.length - absN + App.FAMILY.length - offN}</span></div>`;
+      h += `<div class="bv-irow mkn"><span class="l">まかない</span><span class="v">${working.length - absN + App.FAMILY.length - offN + exN}</span></div>`;
       if (cell(`memo_${d}`)) h += `<div class="bv-irow"><span class="l">メモ</span><span class="v">${esc(cell(`memo_${d}`))}</span></div>`;
       h += '</div>';
       return h;
@@ -1041,6 +1044,7 @@
            '<b>9-L</b> … 9時からラストまで<br>' +
            '<b>930-16</b> … 9時半から16時まで<br>' +
            '<b>まかない</b> … その日のスタッフと家族の出勤人数を足した数<br>' +
+           '　　　　メモに「まかゆうま」のように書いてあれば、その人も入っています<br>' +
            '<b>休み</b> … その日休む家族（店=店長 / 若奥（若）=若奥さん / 奥=奥さん / 会=会長）<br>' +
            '　　　　誰か分からない日は「1人」「2人」と人数だけ書いてあります' +
            '</div></div>';

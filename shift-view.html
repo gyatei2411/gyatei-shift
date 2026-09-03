@@ -20,7 +20,11 @@
       position: sticky; top: 0; z-index: 100;
     }
     .sv-toolbar h1 { font-size: 1.1rem; font-weight: 700; margin: 0; }
-    .sv-toolbar .meta { font-size: 0.82rem; opacity: 0.9; margin-top: 2px; }
+    .sv-toolbar .meta { font-size: 0.82rem; opacity: 0.9; margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+    .sv-toolbar .meta button.wk {
+      padding: 3px 9px; font-size: 0.85rem; font-weight: 800; line-height: 1.2; border-radius: 6px;
+    }
+    .sv-toolbar .meta button.wk:disabled { opacity: 0.3; cursor: default; background: rgba(255,255,255,0.2); }
     .sv-toolbar .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .sv-toolbar button, .sv-toolbar a {
       background: rgba(255,255,255,0.2); color: #fff; border: none;
@@ -272,6 +276,9 @@
       background: #fff; color: #B91C1C; font-weight: 800; font-size: 0.95rem; cursor: pointer;
     }
     .ce-abs.on { background: #DC2626; border-color: #DC2626; color: #fff; }
+    .shift-table td.mkn.has-extra { background: #ECFDF5; }
+    .shift-table td.mkn .ex { font-size: 8px; font-weight: 700; color: #059669; margin-left: 2px; vertical-align: 2px; }
+    .dv-info .dv-ival .ex { font-size: 0.74rem; font-weight: 700; color: #059669; margin-left: 6px; }
     .shift-table td.tapcell { cursor: pointer; }
     .shift-table td.tapcell:hover { background: #EEF2FF; }
 
@@ -379,7 +386,11 @@
   <div class="sv-toolbar">
     <div>
       <h1>📋 シフト表</h1>
-      <div class="meta" id="meta-line">読み込み中…</div>
+      <div class="meta">
+        <button class="wk" id="btn-week-prev" onclick="moveWeek(-1)">◀</button>
+        <span id="meta-line">読み込み中…</span>
+        <button class="wk" id="btn-week-next" onclick="moveWeek(1)">▶</button>
+      </div>
     </div>
     <div class="actions">
       <div class="sv-legend">
@@ -592,6 +603,35 @@
       render();
     }
 
+    /* ===== 前の週 / 次の週 ===== */
+
+    // 週順に並べたときの隣の依頼。週が飛んでいても次の依頼に行ける
+    function weekNeighbor(step) {
+      const list = App.getRequests().slice().sort((a, b) => a.ws < b.ws ? -1 : 1);
+      const i = list.findIndex(r => r.id === currentReqId);
+      if (i < 0) return null;
+      return list[i + step] || null;
+    }
+
+    function updateWeekNav() {
+      [[-1, 'btn-week-prev', '前'], [1, 'btn-week-next', '次']].forEach(([step, id, lbl]) => {
+        const b = document.getElementById(id);
+        if (!b) return;
+        const n = weekNeighbor(step);
+        b.disabled = !n;
+        b.title = n ? `${lbl}の週のシフト表（${App.weekLabel(n.ws)}）` : `これより${lbl}の依頼はありません`;
+      });
+    }
+
+    function moveWeek(step) {
+      const n = weekNeighbor(step);
+      if (!n) return;
+      // 入力欄にカーソルが残っていたら先に保存させる
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      App.setActiveRequest(n.id);
+      location.href = 'shift-view.html?id=' + encodeURIComponent(n.id);
+    }
+
     function isEditing() {
       const ae = document.activeElement;
       if (!ae || !ae.closest || !ae.closest('#content')) return false;
@@ -602,13 +642,20 @@
       document.getElementById('content').innerHTML = `<div class="sv-error"><h2>⚠ エラー</h2><p>${msg}</p></div>`;
     }
 
-    // まかないの必要数 = その日出勤するスタッフ ＋ 休みでない家族
+    // まかないの必要数
+    //   = その日出勤するスタッフ ＋ 休みでない家族 ＋ メモの「まか○○」
     function makanaiOf(day, names, manual) {
       const g = (n, f) => manual[App._safeCellKey(`s_${n}_${day}_${f}`)] || '';
       const staff = names.filter(n => (g(n, 'main') || g(n, 'start') || g(n, 'end')) &&
                                       !App.isAbsent(manual, n, day)).length;
       const fam = App.FAMILY.length - App.familyOffCount(manual[App._safeCellKey(`fam_off_${day}`)]);
-      return { staff, fam, total: staff + fam };
+      const ex = App.extraMakanai(manual[App._safeCellKey(`memo_${day}`)]);
+      return { staff, fam, extra: ex.count, exNames: ex.names, total: staff + fam + ex.count };
+    }
+
+    function makanaiTitle(mk) {
+      return `スタッフ${mk.staff}名 ＋ 家族${mk.fam}名` +
+             (mk.extra ? ` ＋ その他${mk.extra}名（${mk.exNames.join('・')}）` : '');
     }
 
     // スタッフのセル：タップ（クリック）すると編集パネルが開く
@@ -637,6 +684,7 @@
       const submittedNames = new Set(replies.map(r => r.name));
       const unsubmitted = req.staff.filter(n => !submittedNames.has(n));
 
+      updateWeekNav();
       document.getElementById('meta-line').textContent =
         `${App.weekLabel(req.ws)}　提出 ${replies.length}/${req.staff.length}名` +
         (App.isOnline() ? '（オンライン同期中）' : '');
@@ -762,11 +810,12 @@
       for (let i = 0; i < 7; i++) {
         if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
         const mk = makanaiOf(i, orderedNames, manual);
-        html += `<td colspan="3" class="mkn" data-mkn="${i}" title="スタッフ${mk.staff}名 ＋ 家族${mk.fam}名">${mk.total}</td>`;
+        html += `<td colspan="3" class="mkn${mk.extra ? ' has-extra' : ''}" data-mkn="${i}"` +
+                ` title="${makanaiTitle(mk)}">${mk.total}${mk.extra ? `<span class="ex">+${mk.extra}</span>` : ''}</td>`;
       }
       html += '<td></td></tr>';
 
-      html += `<tr class="row-note"><td class="lbl">メモ</td>`;
+      html += `<tr class="row-note"><td class="lbl" title="自由記入。「まかゆうま」のように「まか」で始めると、その人をまかないの人数に足します">メモ</td>`;
       for (let i = 0; i < 7; i++) {
         if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
         html += edCell(`memo_${i}`, 'gnote', manual, 'colspan="3"');
@@ -962,7 +1011,9 @@
         `<div class="dv-irow"><span class="dv-ilbl">休み（家族）</span>` +
         `<span class="dv-ival editable" contenteditable="plaintext-only" data-mkey="fam_off_${d}">${escapeHtml(cell(`fam_off_${d}`))}</span></div>` +
         `<div class="dv-irow"><span class="dv-ilbl">まかない</span>` +
-        `<span class="dv-ival ro" data-mkn="${d}">${mk.total}</span></div>` +
+        `<span class="dv-ival ro" data-mkn="${d}" title="${makanaiTitle(mk)}">${mk.total}` +
+        (mk.extra ? `<span class="ex">+${mk.extra}（${escapeHtml(mk.exNames.join('・'))}）</span>` : '') +
+        `</span></div>` +
         `<div class="dv-irow"><span class="dv-ilbl">メモ</span>` +
         `<span class="dv-ival editable" contenteditable="plaintext-only" data-mkey="memo_${d}">${escapeHtml(cell(`memo_${d}`))}</span></div>` +
         `<div class="dv-irow"><span class="dv-ilbl">備考</span>` +
@@ -1135,6 +1186,17 @@
         }
       });
 
+      // 打っている途中でも保存する。
+      //   スマホだと入力欄を抜けないままタブを閉じたりするので、
+      //   focusout だけだと書いた内容が消えることがある
+      let typeTimer = null;
+      cont.addEventListener('input', (e) => {
+        const el = e.target.closest && e.target.closest('[contenteditable][data-mkey]');
+        if (!el) return;
+        clearTimeout(typeTimer);
+        typeTimer = setTimeout(() => { if (el.isConnected) saveCell(el); }, 800);
+      });
+
       // スタッフのセルをタップ → 0部/1部/2部の編集パネル
       cont.addEventListener('click', (e) => {
         if (e.target.closest('select') || e.target.closest('[contenteditable]')) return;
@@ -1163,7 +1225,7 @@
       const val = td.textContent.trim();
       if ((App.getManual(currentReqId)[App._safeCellKey(mkey)] || '') === val) return;
       App.setManualCell(currentReqId, mkey, val);
-      if (mkey.indexOf('fam_off_') === 0) refreshMakanai();
+      if (mkey.indexOf('fam_off_') === 0 || mkey.indexOf('memo_') === 0) refreshMakanai();
       if (mkey.endsWith('_sym')) {
         const dataSym = val === '○' ? 'o' : val === '△' ? 't' : (val === '✕' || val === '×') ? 'x' : '';
         td.dataset.sym = dataSym;
@@ -1192,8 +1254,9 @@
       replies.forEach(r => { if (!names.includes(r.name)) names.push(r.name); });
       document.querySelectorAll('[data-mkn]').forEach(td => {
         const mk = makanaiOf(+td.dataset.mkn, names, manual);
-        td.textContent = mk.total;
-        td.title = `スタッフ${mk.staff}名 ＋ 家族${mk.fam}名`;
+        td.innerHTML = mk.total + (mk.extra ? `<span class="ex">+${mk.extra}</span>` : '');
+        td.classList.toggle('has-extra', !!mk.extra);
+        td.title = makanaiTitle(mk);
       });
     }
 
