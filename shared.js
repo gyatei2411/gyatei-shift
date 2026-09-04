@@ -1134,9 +1134,6 @@ const App = {
             <input id="ce-p0" placeholder="\u4f8b: C / C\u30fbm" autocomplete="off">
             <div class="ce-chips" id="ce-p0-chips"></div>
           </div>
-
-          <button type="button" class="ce-abs" id="ce-abs"></button>
-
           <div class="ce-field ce-2col">
             <div>
               <label>\u51fa\u52e4\u53ef\u5426</label>
@@ -1153,6 +1150,8 @@ const App = {
               <input id="ce-time" placeholder="\u4f8b: 930-16" autocomplete="off">
             </div>
           </div>
+
+          <button type="button" class="ce-abs" id="ce-abs"></button>
         </div>
       </div>`;
     document.body.appendChild(back);
