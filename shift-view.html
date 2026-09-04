@@ -181,6 +181,16 @@
 
     /* ===== 印刷: A4横1ページに自動フィット ===== */
     /* 印刷するときだけ出す見出し */
+    #dup-warn {
+      background: #FEF3C7; border: 1.5px solid #FCD34D; color: #92400E;
+      margin: 10px 14px 0; padding: 10px 14px; border-radius: 10px;
+      font-size: 0.85rem; font-weight: 700;
+    }
+    #dup-warn button {
+      margin-left: 10px; background: #B45309; color: #fff; border: none;
+      border-radius: 8px; padding: 6px 12px; font-weight: 800; cursor: pointer;
+      font-family: inherit; font-size: 0.82rem;
+    }
     #print-head { display: none; }
 
     @media print {
@@ -188,7 +198,7 @@
       html, body { background: #fff; }
       /* 紙にはシフト表だけ。他は全部消す */
       .sv-toolbar, .sv-stats, .sv-edit-hint, .save-indicator,
-      .sv-hint-toggle, #sv-hints, #cell-editor,
+      .sv-hint-toggle, #sv-hints, #ce-back,
       #import-dialog, #history-dialog, .day-view { display: none !important; }
       .sv-container { margin: 0 !important; padding: 0 !important; overflow: visible; }
       #print-head {
@@ -209,53 +219,6 @@
       * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
 
-    /* ===== セル編集パネル（タップで開く） ===== */
-    #cell-editor {
-      display: none; position: fixed; inset: 0; z-index: 400;
-      background: rgba(15,23,42,0.55); align-items: flex-end; justify-content: center;
-    }
-    #cell-editor.open { display: flex; }
-    .ce-sheet {
-      background: #fff; width: 100%; max-width: 520px;
-      border-radius: 16px 16px 0 0; padding: 16px 16px 20px;
-      max-height: 92vh; overflow-y: auto;
-      box-shadow: 0 -6px 30px rgba(0,0,0,0.3);
-    }
-    @media (min-width: 640px) {
-      #cell-editor { align-items: center; }
-      .ce-sheet { border-radius: 16px; }
-    }
-    .ce-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
-    .ce-head .ce-name { font-size: 1.25rem; font-weight: 800; }
-    .ce-head .ce-day { font-size: 0.95rem; font-weight: 700; color: var(--muted); }
-    .ce-head .ce-close { margin-left: auto; background: #F1F5F9; border: none; border-radius: 8px;
-      padding: 6px 12px; font-size: 0.9rem; font-weight: 700; cursor: pointer; }
-    .ce-hint { font-size: 0.78rem; color: var(--muted); margin: -6px 0 12px; line-height: 1.5; }
-    .ce-field { margin-bottom: 12px; }
-    .ce-field > label { display: block; font-size: 0.8rem; font-weight: 800; color: #334155; margin-bottom: 4px; }
-    .ce-field > label .sub { font-weight: 600; color: var(--muted); font-size: 0.74rem; }
-    .ce-field input, .ce-field select {
-      width: 100%; font-size: 1.05rem; font-weight: 700; padding: 10px 12px;
-      border: 1.5px solid var(--border); border-radius: 10px; background: #fff;
-      font-family: inherit;
-    }
-    .ce-field input:focus, .ce-field select:focus { outline: none; border-color: var(--primary); }
-    .ce-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .ce-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-    .ce-chips button {
-      background: #F1F5F9; border: 1.5px solid var(--border); border-radius: 8px;
-      padding: 6px 12px; font-size: 0.9rem; font-weight: 700; cursor: pointer; font-family: inherit;
-    }
-    .ce-chips button.on { background: #EEF2FF; border-color: var(--primary); color: var(--primary); }
-    .ce-check { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; font-weight: 700; color: #334155; }
-    .ce-check input { width: 20px; height: 20px; }
-    .ce-actions { display: flex; gap: 8px; margin-top: 16px; }
-    .ce-actions button {
-      flex: 1; padding: 13px; border-radius: 10px; border: none;
-      font-size: 1rem; font-weight: 800; cursor: pointer; font-family: inherit;
-    }
-    .ce-actions .ce-clear { background: #FEE2E2; color: #B91C1C; flex: 0 0 40%; }
-    .ce-actions .ce-ok { background: var(--primary); color: #fff; }
 
     /* タップで開くセル */
     /* 当日欠勤（欠） */
@@ -282,15 +245,19 @@
       padding: 1px 7px; margin-right: 6px; font-size: 0.85rem; font-weight: 900;
     }
     .dv-days button.u500 .d, .dv-days button.u1000 .d { color: #B45309; }
-    .dv-info .dv-ival.dv-up { cursor: pointer; font-weight: 900; color: #94A3B8; }
+    .shift-table .up-select {
+      width: 100%; border: none; background: transparent; font: inherit;
+      font-weight: 800; text-align: center; cursor: pointer; color: inherit;
+      -webkit-appearance: none; appearance: none; text-align-last: center;
+    }
+    .dv-info .dv-upsel { width: 100%; border: none; background: transparent; font: inherit;
+      font-weight: 900; padding: 8px 10px; cursor: pointer; color: inherit; }
+    .dv-info .dv-ival.dv-up { font-weight: 900; }
     .dv-info .dv-ival.dv-up.u500  { background: #FEF3C7; color: #92400E; border-color: #FCD34D; }
     .dv-info .dv-ival.dv-up.u1000 { background: #FDBA74; color: #7C2D12; border-color: #FB923C; }
-    /* 欠勤ボタン（セル編集パネル） */
-    .ce-abs {
-      width: 100%; padding: 13px; border-radius: 10px; border: 2px solid #FCA5A5;
-      background: #fff; color: #B91C1C; font-weight: 800; font-size: 0.95rem; cursor: pointer;
-    }
-    .ce-abs.on { background: #DC2626; border-color: #DC2626; color: #fff; }
+    .shift-table td.cnt-staff { background: #EEF2FF; color: #3730A3; font-weight: 800; }
+    /* 本人の申告から自動で出している希望時刻 */
+    .shift-table td.cell-time.auto { color: #7C3AED; font-style: italic; }
     .shift-table td.mkn.has-extra { background: #ECFDF5; }
     .shift-table td.mkn .ex { font-size: 8px; font-weight: 700; color: #059669; margin-left: 2px; vertical-align: 2px; }
     .dv-info .dv-ival .ex { font-size: 0.74rem; font-weight: 700; color: #059669; margin-left: 6px; }
@@ -495,93 +462,14 @@
     </div>
   </div>
 
+  <div id="dup-warn" style="display:none"></div>
+
   <div class="sv-container">
     <div id="print-head"></div>
     <div id="content"></div>
   </div>
 
 
-  <!-- セル編集パネル -->
-  <div id="cell-editor" onclick="if(event.target===this) closeCellEditor()">
-    <div class="ce-sheet">
-      <div class="ce-head">
-        <span class="ce-name" id="ce-name"></span>
-        <span class="ce-day" id="ce-day"></span>
-        <button class="ce-close" onclick="closeCellEditor()">閉じる</button>
-      </div>
-      <div class="ce-hint" id="ce-hint"></div>
-
-      <div class="ce-field">
-        <button type="button" class="ce-abs" id="ce-abs" onclick="ceToggleAbs()"></button>
-      </div>
-
-      <div class="ce-field">
-        <label>0部　<span class="sub">9:00〜9:30 朝の準備（空欄でもOK）</span></label>
-        <input id="ce-p0" list="dl-p0" placeholder="例: C や C・m。直接入力もできます" autocomplete="off">
-        <div class="ce-chips" id="ce-p0-chips"></div>
-      </div>
-
-      <div class="ce-field">
-        <label>1部　<span class="sub">9:00〜16:00</span></label>
-        <input id="ce-p1" list="dl-p1" placeholder="例: K / R2 / W。直接入力もできます" autocomplete="off">
-        <div class="ce-chips" id="ce-p1-chips"></div>
-      </div>
-
-      <div class="ce-field">
-        <label>2部　<span class="sub">16:00〜L。同じポジションを続けるなら空欄でOK</span></label>
-        <input id="ce-p2" list="dl-p2" placeholder="例: W / T。直接入力もできます" autocomplete="off">
-        <div class="ce-chips" id="ce-p2-chips"></div>
-        <label class="ce-check" style="margin-top:8px">
-          <input type="checkbox" id="ce-early">16:30で先に上がる（表記に「（」をつける）
-        </label>
-      </div>
-
-      <div class="ce-field ce-2col">
-        <div>
-          <label>始業</label>
-          <input id="ce-start" list="dl-start" placeholder="9 / 930 / 10" autocomplete="off" inputmode="numeric">
-        </div>
-        <div>
-          <label>終業</label>
-          <input id="ce-end" list="dl-end" placeholder="-16 / -1630 / -L" autocomplete="off">
-        </div>
-      </div>
-
-      <div class="ce-field ce-2col">
-        <div>
-          <label>出勤可否</label>
-          <select id="ce-sym">
-            <option value="">・</option>
-            <option value="○">○ 終日可</option>
-            <option value="△">△ 条件付き</option>
-            <option value="✕">✕ 不可</option>
-            <option value="未">未 未定</option>
-          </select>
-        </div>
-        <div>
-          <label>希望時刻　<span class="sub">本人の申告</span></label>
-          <input id="ce-time" placeholder="例: 930-16" autocomplete="off">
-        </div>
-      </div>
-
-      <div class="ce-actions">
-        <button class="ce-clear" onclick="clearCellEditor()">この日を空に</button>
-        <button class="ce-ok" onclick="applyCellEditor()">OK</button>
-      </div>
-    </div>
-  </div>
-
-  <datalist id="dl-p0"></datalist>
-  <datalist id="dl-p1"></datalist>
-  <datalist id="dl-p2"></datalist>
-  <datalist id="dl-start">
-    <option value="9"><option value="930"><option value="10"><option value="1030">
-    <option value="11"><option value="1130"><option value="12">
-  </datalist>
-  <datalist id="dl-end">
-    <option value="-16"><option value="-1630"><option value="-L">
-    <option value="-15"><option value="-1530"><option value="-17">
-  </datalist>
 
   <div class="save-indicator" id="save-indicator">✓ 保存しました</div>
 
@@ -625,8 +513,12 @@
 
     // 週順に並べたときの隣の依頼。週が飛んでいても次の依頼に行ける
     function weekNeighbor(step) {
-      const list = App.getRequests().slice().sort((a, b) => a.ws < b.ws ? -1 : 1);
-      const i = list.findIndex(r => r.id === currentReqId);
+      // 週ごとに1件（同じ週に2つあれば中身のある方）
+      const list = App.weekList();
+      const req = App.getRequest(currentReqId);
+      let i = list.findIndex(r => r.id === currentReqId);
+      // 今開いているのが重複側のときは、週で位置を探す
+      if (i < 0 && req) i = list.findIndex(r => r.ws === req.ws);
       if (i < 0) return null;
       return list[i + step] || null;
     }
@@ -639,6 +531,12 @@
         b.disabled = !n;
         b.title = n ? `${lbl}の週のシフト表（${App.weekLabel(n.ws)}）` : `これより${lbl}の依頼はありません`;
       });
+    }
+
+    function gotoReq(id) {
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      App.setActiveRequest(id);
+      location.href = 'shift-view.html?id=' + encodeURIComponent(id);
     }
 
     function moveWeek(step) {
@@ -690,6 +588,7 @@
 
     function render() {
       pendingRender = false;
+      Object.keys(_tcCache).forEach(k => delete _tcCache[k]);   // 希望時刻のキャッシュを破棄
       const req = App.getRequest(currentReqId);
       if (!req) {
         showError('依頼データが見つかりません。管理画面で再選択してください。');
@@ -703,6 +602,21 @@
       const unsubmitted = req.staff.filter(n => !submittedNames.has(n));
 
       updateWeekNav();
+      // 同じ週の依頼が2つあって、中身の少ない方を開いていたら知らせる
+      const dupWarn = document.getElementById('dup-warn');
+      if (dupWarn) {
+        const best = App.bestOfWeek(req.ws);
+        if (best && best.id !== currentReqId) {
+          const bc = Object.keys(App.getManual(best.id)).filter(k => /_main$/.test(k)).length;
+          const conf = App.getConfirmed(best.id);
+          dupWarn.innerHTML =
+            `⚠ この週の依頼は <b>2つあります</b>。今開いているのは中身の少ない方です。` +
+            `<button onclick="gotoReq('${best.id}')">→ 割当済みの方を開く（${bc}人日${conf ? '・確定 v' + conf.version : ''}）</button>`;
+          dupWarn.style.display = '';
+        } else {
+          dupWarn.style.display = 'none';
+        }
+      }
       const ph = document.getElementById('print-head');
       if (ph) {
         const pc = App.getConfirmed(currentReqId);
@@ -761,12 +675,15 @@
       html += '<td></td></tr>';
 
       // UP（ボタン：押すたびに なし → 500 → 1000）
-      html += `<tr class="row-header row-up"><td class="lbl" title="忙しかった日の時給UP。タップすると 500円 → 1000円 → なし">UP</td>`;
+      html += `<tr class="row-header row-up"><td class="lbl" title="忙しかった日の時給UP。選んで設定します">UP</td>`;
       for (let i = 0; i < 7; i++) {
         if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
         const up = App.upOf(manual, i);
-        html += `<td colspan="3" class="upcell${up ? ' u' + up : ''}" data-upday="${i}"` +
-                ` title="タップで 500円UP → 1000円UP → なし">${up ? '+' + up : '・'}</td>`;
+        html += `<td colspan="3" class="upcell${up ? ' u' + up : ''}">` +
+                `<select class="up-select" data-upsel="${i}" onchange="saveUp(this)">` +
+                ['', '500', '1000'].map(v =>
+                  `<option value="${v}" ${v === up ? 'selected' : ''}>${v ? '+' + v : '・'}</option>`).join('') +
+                `</select></td>`;
       }
       html += '<td></td></tr>';
 
@@ -788,7 +705,12 @@
           const abs = App.isAbsent(manual, name, i);
           html += tapCell(`s_${name}_${i}_start`, abs ? 'abs' : '', manual);
           html += tapCell(`s_${name}_${i}_end`, abs ? 'abs' : '', manual);
-          html += tapCell(`s_${name}_${i}_time`, 'cell-time', manual);
+          // 希望時刻：手入力がなければ本人の申告から自動で出す
+          {
+            const tk = App._safeCellKey(`s_${name}_${i}_time`);
+            const tv = manual[tk] || wishTime(name, i, replyMap);
+            html += `<td class="tapcell cell-time${manual[tk] ? '' : ' auto'}" data-mkey="s_${name}_${i}_time">${escapeHtml(tv)}</td>`;
+          }
         }
         html += `<td class="name-cell" rowspan="2">${escapeHtml(name)}</td></tr>`;
         // 下段: [サブポジ(手入力)][メインポジ(手入力)][○△✕(自動+手動上書き可)]
@@ -827,6 +749,15 @@
       for (let i = 0; i < 7; i++) {
         if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
         html += edCell(`fam_off_${i}`, 'famcell', manual, 'colspan="3"');
+      }
+      html += '<td></td></tr>';
+
+      // 人数（スタッフだけ。家族は含めない）
+      html += `<tr class="row-cnt"><td class="lbl" title="その日出勤するスタッフの人数。家族は含めません。欠勤の人は引いています">人数</td>`;
+      for (let i = 0; i < 7; i++) {
+        if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
+        const mk = makanaiOf(i, orderedNames, manual);
+        html += `<td colspan="3" class="cnt-staff" data-cnt="${i}">${mk.staff}</td>`;
       }
       html += '<td></td></tr>';
 
@@ -1030,10 +961,15 @@
       const upv = App.upOf(manual, d);
       h += '<div class="dv-info">' +
         `<div class="dv-irow"><span class="dv-ilbl">UP</span>` +
-        `<span class="dv-ival dv-up${upv ? ' u' + upv : ''}" data-upday="${d}">` +
-        `${upv ? '+' + upv + '円' : 'なし（タップで 500 → 1000）'}</span></div>` +
+        `<span class="dv-ival ro${upv ? ' dv-up u' + upv : ''}" style="padding:0">` +
+        `<select class="up-select dv-upsel" data-upsel="${d}" onchange="saveUp(this)">` +
+        ['', '500', '1000'].map(v =>
+          `<option value="${v}" ${v === upv ? 'selected' : ''}>${v ? '+' + v + '円' : 'なし'}</option>`).join('') +
+        `</select></span></div>` +
         `<div class="dv-irow"><span class="dv-ilbl">休み（家族）</span>` +
         `<span class="dv-ival editable" contenteditable="plaintext-only" data-mkey="fam_off_${d}">${escapeHtml(cell(`fam_off_${d}`))}</span></div>` +
+        `<div class="dv-irow"><span class="dv-ilbl">人数</span>` +
+        `<span class="dv-ival ro" data-cnt="${d}" title="スタッフだけ。家族は含みません">${mk.staff}</span></div>` +
         `<div class="dv-irow"><span class="dv-ilbl">まかない</span>` +
         `<span class="dv-ival ro" data-mkn="${d}" title="${makanaiTitle(mk)}">${mk.total}` +
         (mk.extra ? `<span class="ex">+${mk.extra}（${escapeHtml(mk.exNames.join('・'))}）</span>` : '') +
@@ -1048,146 +984,15 @@
       return h;
     }
 
-    /* ===== セル編集パネル ===== */
-    const CE_P0 = ['C', '1F', 'Rj', 'Tj', 'm', 'C・m', '1F・m', 'Rj・m', 'Tj・m'];
-    const CE_P1 = ['K', 'R2', 'R2d', 'R1', 'W', 'T'];
-    const CE_P2 = ['W', 'T', 'K'];
-    let ceTarget = null;   // { name, day }
-    let ceAbs = false;     // 当日欠勤（欠）
-
-    function ceToggleAbs() { ceAbs = !ceAbs; ceRenderAbs(); }
-    function ceRenderAbs() {
-      const b = document.getElementById('ce-abs');
-      if (!b) return;
-      b.classList.toggle('on', ceAbs);
-      b.textContent = ceAbs
-        ? '⚠ 当日欠勤（欠）　← もう一度押すと戻します'
-        : '⚠ 当日欠勤にする（欠）';
-    }
-
-    // 「R2→（T」のような表記を 1部 / 2部 / 早上がり に分解する
-    function parseMain(txt) {
-      const t = String(txt || '').trim();
-      if (!t) return { p1: '', p2: '', early: false };
-      const seg = t.split('→');
-      if (seg.length > 1) {
-        let b = seg.slice(1).join('→');
-        const early = /[（(]/.test(b);
-        b = b.replace(/[（(）)]/g, '').trim();
-        return { p1: seg[0].trim(), p2: b, early };
-      }
-      const early = /[（(]/.test(t);
-      const p = t.replace(/[（(）)]/g, '').trim();
-      return early ? { p1: p, p2: p, early: true } : { p1: p, p2: '', early: false };
-    }
-
-    function composeMain(p1, p2, early) {
-      p1 = String(p1 || '').trim();
-      p2 = String(p2 || '').trim();
-      if (!p1 && !p2) return '';
-      if (!p2) return p1;
-      if (!p1) return (early ? '（' : '') + p2;
-      if (p1 === p2) return early ? `（${p2}` : p1;
-      return early ? `${p1}→（${p2}` : `${p1}→${p2}`;
-    }
-
-    function chipsHtml(id, list, input) {
-      return list.map(v => `<button type="button" onclick="ceSet('${input}','${v}')">${v}</button>`).join('') +
-             `<button type="button" onclick="ceSet('${input}','')">空に</button>`;
-    }
-
-    function ceSet(inputId, v) {
-      const el = document.getElementById(inputId);
-      el.value = v;
-      ceMarkChips();
-    }
-
-    function ceMarkChips() {
-      [['ce-p0','ce-p0-chips'],['ce-p1','ce-p1-chips'],['ce-p2','ce-p2-chips']].forEach(([i, c]) => {
-        const v = document.getElementById(i).value.trim();
-        [...document.getElementById(c).querySelectorAll('button')].forEach(b => {
-          b.classList.toggle('on', b.textContent === v || (b.textContent === '空に' && !v));
-        });
-      });
-    }
-
+    /* ===== セル編集パネル =====
+       中身は shared.js 側にある（タブレットと共用） */
     function openCellEditor(name, day) {
       const req = App.getRequest(currentReqId);
       if (!req) return;
-      ceTarget = { name, day };
-      const manual = App.getManual(currentReqId);
-      const g = (f) => manual[App._safeCellKey(`s_${name}_${day}_${f}`)] || '';
-      const m = parseMain(g('main'));
-      const dates = App.weekDates(req.ws);
-
-      document.getElementById('ce-name').textContent = name;
-      document.getElementById('ce-day').textContent = `${App.fmtMD(dates[day])}（${App.DOW_LABELS[day]}）`;
-
-      const rep = App.getReplies(currentReqId).find(r => r.name === name);
-      const nt = rep ? noteText(rep) : '';
-      const meta = (App.getStaffMeta()[name] || {});
-      const can = [];
-      if ((meta.positions0 || []).length) can.push(`0部: ${meta.positions0.join(',')}`);
-      if ((meta.positions || []).length) can.push(`1部: ${meta.positions.join(',')}`);
-      if ((meta.positions2 || []).length) can.push(`2部: ${meta.positions2.join(',')}`);
-      document.getElementById('ce-hint').innerHTML =
-        (can.length ? `できるポジション … ${escapeHtml(can.join(' / '))}` : '') +
-        (nt ? `<br>本人の備考 … ${escapeHtml(nt)}` : '');
-
-      ceAbs = App.isAbsent(manual, name, day);
-      ceRenderAbs();
-
-      document.getElementById('ce-p0').value = g('sub');
-      document.getElementById('ce-p1').value = m.p1;
-      document.getElementById('ce-p2').value = m.p2;
-      document.getElementById('ce-early').checked = m.early;
-      document.getElementById('ce-start').value = g('start');
-      document.getElementById('ce-end').value = g('end');
-      document.getElementById('ce-time').value = g('time');
-
-      const ms = manual[App._safeCellKey(`s_${name}_${day}_sym`)];
-      const auto = rep ? (rep.d[day] || '') : '';
-      document.getElementById('ce-sym').value = (ms !== undefined && ms !== '') ? ms
-        : (auto === 'o' ? '○' : auto === 't' ? '△' : auto === 'x' ? '✕' : auto === 'm' ? '未' : '');
-
-      document.getElementById('ce-p0-chips').innerHTML = chipsHtml(0, CE_P0, 'ce-p0');
-      document.getElementById('ce-p1-chips').innerHTML = chipsHtml(0, CE_P1, 'ce-p1');
-      document.getElementById('ce-p2-chips').innerHTML = chipsHtml(0, CE_P2, 'ce-p2');
-      ceMarkChips();
-
-      document.getElementById('cell-editor').classList.add('open');
-    }
-
-    function closeCellEditor() {
-      document.getElementById('cell-editor').classList.remove('open');
-      ceTarget = null;
-    }
-
-    function clearCellEditor() {
-      ['ce-p0','ce-p1','ce-p2','ce-start','ce-end'].forEach(i => document.getElementById(i).value = '');
-      document.getElementById('ce-early').checked = false;
-      ceAbs = false;
-      ceRenderAbs();
-      ceMarkChips();
-      applyCellEditor();
-    }
-
-    function applyCellEditor() {
-      if (!ceTarget) return;
-      const { name, day } = ceTarget;
-      const v = (i) => document.getElementById(i).value.trim();
-      const main = composeMain(v('ce-p1'), v('ce-p2'), document.getElementById('ce-early').checked);
-      const set = (f, val) => App.setManualCell(currentReqId, `s_${name}_${day}_${f}`, val);
-      set('sub', v('ce-p0'));
-      set('main', main);
-      set('start', v('ce-start'));
-      set('end', v('ce-end'));
-      set('time', v('ce-time'));
-      set('sym', v('ce-sym'));
-      set('abs', ceAbs ? '1' : '');
-      closeCellEditor();
-      showSaved();
-      render();
+      App.openCellEditor({
+        reqId: currentReqId, name, day, ws: req.ws,
+        onSave: () => { showSaved(); render(); }
+      });
     }
 
     /* ===== 手入力ハンドラ ===== */
@@ -1224,16 +1029,7 @@
       // スタッフのセルをタップ → 0部/1部/2部の編集パネル
       cont.addEventListener('click', (e) => {
         if (e.target.closest('select') || e.target.closest('[contenteditable]')) return;
-        // UPの日：押すたびに なし → 500 → 1000
-        const upEl = e.target.closest('[data-upday]');
-        if (upEl) {
-          const d = +upEl.dataset.upday;
-          const cur = App.upOf(App.getManual(currentReqId), d);
-          App.setUp(currentReqId, d, App.nextUp(cur));
-          showSaved();
-          render();
-          return;
-        }
+
         const row = e.target.closest('.dv-row[data-name]');
         if (row) { openCellEditor(row.dataset.name, +row.dataset.day); return; }
         const td = e.target.closest('td.tapcell[data-mkey]');
@@ -1276,6 +1072,9 @@
       const replies = App.getReplies(currentReqId);
       const names = req.staff.slice();
       replies.forEach(r => { if (!names.includes(r.name)) names.push(r.name); });
+      document.querySelectorAll('[data-cnt]').forEach(td => {
+        td.textContent = makanaiOf(+td.dataset.cnt, names, manual).staff;
+      });
       document.querySelectorAll('[data-mkn]').forEach(td => {
         const mk = makanaiOf(+td.dataset.mkn, names, manual);
         td.innerHTML = mk.total + (mk.extra ? `<span class="ex">+${mk.extra}</span>` : '');
@@ -1299,7 +1098,9 @@
     //    _default = 曜日指定なしの時間 → △をつけた全日に適用)
     // 時刻1つ分のパターン: "9" "9:30" "9時" "9時半" "930" "9時30分"
     // → 3つのキャプチャ（時 / 分パターンA / 分パターンB）を持つ
-    const TIME_TOKEN = '(\\d{1,2})(?:[:：時]\\s*(\\d{1,2}|半)\\s*分?|時|(30|半))?';
+    // 「1500まで」「1630まで」のようにコロンなしで分をつける書き方も読む
+    //（以前は 30分と半だけだったので「1500まで」が 0時 になっていた）
+    const TIME_TOKEN = '(\\d{1,2})(?:[:：時]\\s*(\\d{1,2}|半)\\s*分?|時|([0-5]\\d|半))?';
     // 分を時間（小数）にする。「:00」は0分なので足さない
     //（30分単位でない半端な分は、始業は遅い側・終業は早い側に丸めて安全側に寄せる）
     function minOf(a, b, isStart) {
@@ -1346,6 +1147,12 @@
             // "15時まで" パターン
             m = part.match(new RegExp(TIME_TOKEN + '\\s*分?\\s*(?:まで|迄)'));
             if (m) { start = 0; end = parseFloat(m[1]) + minOf(m[2], m[3], false); }
+            else {
+              // 「-1630」「～16:30」のように **終わりだけ** 書かれた場合。
+              //   始業はスタッフマスタの「出勤可能時間」で埋める
+              m = part.match(new RegExp('(?:^|[^0-9])[-−ー－〜～~]\\s*' + TIME_TOKEN + '\\s*$'));
+              if (m) { start = 0; end = parseFloat(m[1]) + minOf(m[2], m[3], false); }
+            }
           }
         }
         if (start === null && end === null) continue;
@@ -1361,7 +1168,7 @@
     }
 
     // 回答1件分の時間制約を組み立てる（曜日ごと備考 > 全体備考 の優先順）
-    function buildTimeCons(reply) {
+    function buildTimeCons(reply, meta) {
       const result = parseTimeConstraints(reply.gnote);
       const dn = reply.dnotes || {};
       Object.keys(dn).forEach(k => {
@@ -1372,19 +1179,37 @@
         const cons = p[i] || p._default || Object.values(p)[0] || null;
         if (cons) result[i] = cons;
       });
+      // 書いてない側を、スタッフマスタの「出勤可能時間」で埋める
+      //   例）駒原 930-1630 で、備考が「-1630」だけ → 930-1630 とする
+      const h = App.staffHours(meta || App.getStaffMeta(), reply.name);
+      if (h) {
+        Object.keys(result).forEach(k => {
+          const c = result[k];
+          // 書いてない側だけ埋める。その週の希望が書いてあればそちらを優先
+          if (!c.start) c.start = h.start;
+          if (c.end >= 99) c.end = h.end;
+        });
+      }
       return result;
     }
 
-    // 回答1件分の備考を表示用テキストにまとめる
-    function noteText(reply) {
-      const parts = [];
-      const dn = reply.dnotes || {};
-      Object.keys(dn).map(Number).sort((a, b) => a - b).forEach(i => {
-        if (dn[i]) parts.push(`${App.DOW_LABELS[i]}:${dn[i]}`);
-      });
-      if (reply.gnote) parts.push(reply.gnote);
-      return parts.join(' / ');
+    // 本人の希望時刻を文字にする（シフト表の「希望時刻」欄用）
+    const _tcCache = {};
+    function wishTime(name, day, replyMap) {
+      const key = name + '@' + day;
+      if (key in _tcCache) return _tcCache[key];
+      const rep = replyMap[name];
+      let out = '';
+      if (rep && (rep.d[day] === 't' || rep.d[day] === 'o')) {
+        const cons = buildTimeCons(rep)[day];
+        if (cons) out = App.fmtRange(cons);
+      }
+      _tcCache[key] = out;
+      return out;
     }
+
+    // 回答1件分の備考を表示用テキストにまとめる
+    function noteText(r) { return App.noteText(r); }
 
     // その日の時間制約を取得（曜日指定 > 曜日なしデフォルト の順）
     function getTimeCons(timeCons, name, day) {
@@ -1457,18 +1282,40 @@
 
       // 区分（★優先 > 主婦 > 無印 > 学生）と、均等化の分母となる希望回数
       const rankOf = (name) => App.rankOf(meta[name] || {});
+
+      // 週の「目安の回数」= 週□〜□回の左側。例「週2〜3回」なら基本2回
+      //   ここに達した人は後回しになる。人が足りない日だけ 3回目がつく
+      const softDays = {};
+      replies.forEach(r => {
+        const m = meta[r.name] || {};
+        if (m.daysMin != null && m.daysMin !== '') softDays[r.name] = Number(m.daysMin);
+      });
+
+      // メモの「土曜は後回し」
+      const noPriDays = {};
+      replies.forEach(r => { noPriDays[r.name] = App.parseNoPriorityDays((meta[r.name] || {}).note); });
+
+      // その日、優先の並びから外して一番後ろに回すか
+      //   ① 週の目安回数に達している
+      //   ② メモでその曜日を「後回し」にしている
+      const isBack = (name, day) =>
+        (softDays[name] !== undefined && assignedCount[name] >= softDays[name]) ||
+        (noPriDays[name] || []).indexOf(day) >= 0;
+
       const wantDays = {};   // 名前 → 「出勤できると言ってくれた回数」
       replies.forEach(r => {
         let n = 0;
         for (let i = 0; i < 7; i++) if (!closed.has(i) && (r.d[i] === 'o' || r.d[i] === 't')) n++;
-        if (maxDays[r.name] !== undefined) n = Math.min(n, maxDays[r.name]);
+        // 均等化の分母は「目安の回数」を優先する（なければ上限）
+        const cap = (softDays[r.name] !== undefined) ? softDays[r.name] : maxDays[r.name];
+        if (cap !== undefined) n = Math.min(n, cap);
         wantDays[r.name] = Math.max(1, n);
       });
       // 充足度（少ない人から入れる）= すでに入った日数 ÷ 希望回数
       const fillRate = (name) => assignedCount[name] / wantDays[name];
 
       const timeCons = {};  // name → { day: {start,end} }
-      replies.forEach(r => { timeCons[r.name] = buildTimeCons(r); });
+      replies.forEach(r => { timeCons[r.name] = buildTimeCons(r, meta); });
 
       // 1日の枠を優先順で定義（人数不足時は先頭から確保: K3 → R2d+R2の2名 → W1 → 残り）
       const PRIORITY_SLOTS = ['K', 'K', 'K', 'R2d', 'R2', 'W', 'R2', 'W', 'T'];
@@ -1512,6 +1359,9 @@
         //  ② 希望回数に対する充足度が低い人（削るときは1人に集中させない）
         //  ③ できるポジションが少ない人（多能な人は調整役として後回し）
         const sorted = available.slice().sort((a, b) => {
+          // 後回しの人は区分より先に後ろへ（★優先でも学生の下になる）
+          const ba = isBack(a.name, day) ? 1 : 0, bb = isBack(b.name, day) ? 1 : 0;
+          if (ba !== bb) return ba - bb;
           const ra = rankOf(a.name), rb = rankOf(b.name);
           if (ra !== rb) return ra - rb;
           const fa = fillRate(a.name), fb = fillRate(b.name);
@@ -1525,10 +1375,16 @@
         const unplaced = new Set(sorted.map(r => r.name));  // 枠選択のレア度計算用
         const assignedToday = new Set();
 
+        // その日、そのポジションにもう新人がいるか
+        //（新人同士を同じポジションに並べない。教える人がいなくなるため）
+        const rookieTaken = (pos) =>
+          results.some(r => r.day === day && r.pos === pos && App.isRookie(meta, r.name));
+        const rookieOk = (name, pos) => !App.isRookie(meta, name) || !rookieTaken(pos);
+
         // 候補枠を計算（時間制約による除外はしない=全ポジション柔軟対応）
         const candsFor = (person, needsMap) => {
           const m = meta[person.name];
-          return (m.positions || []).filter(p => p !== 'R1' && needsMap[p]);
+          return (m.positions || []).filter(p => p !== 'R1' && needsMap[p] && rookieOk(person.name, p));
         };
 
         // 1部（9時〜16時）の時間を決める。数値で保持し、2部の判定後に文字列化する
@@ -1597,11 +1453,15 @@
           for (const p of openPos) {
             // p に移せる配置済みの人（できるポジションが多い人＝調整役から）
             const movable = results
-              .filter(r => r.day === day && r.pos !== p && (meta[r.name].positions || []).indexOf(p) >= 0)
+              .filter(r => r.day === day && r.pos !== p && (meta[r.name].positions || []).indexOf(p) >= 0
+                        && rookieOk(r.name, p))
               .sort((a, b) => (meta[b.name].positions || []).length - (meta[a.name].positions || []).length);
             for (const mv of movable) {
-              const u = idle.filter(x => (meta[x.name].positions || []).indexOf(mv.pos) >= 0)
-                .sort((p, q) => rankOf(p.name) - rankOf(q.name) || fillRate(p.name) - fillRate(q.name))[0];
+              const u = idle.filter(x => (meta[x.name].positions || []).indexOf(mv.pos) >= 0
+                                      && rookieOk(x.name, mv.pos))
+                .sort((p, q) => (isBack(p.name, day) ? 1 : 0) - (isBack(q.name, day) ? 1 : 0)
+                             || rankOf(p.name) - rankOf(q.name)
+                             || fillRate(p.name) - fillRate(q.name))[0];
               const person = byName[mv.name];
               if (!u || !person) continue;
               const freed = mv.pos;
@@ -1624,13 +1484,18 @@
         const dLabel = `${App.fmtMD(App.weekDates(req.ws)[day])}(${App.DOW_LABELS[day]})`;
         for (const person of sorted) {
           if (rankOf(person.name) !== 0 || assignedToday.has(person.name)) continue;
-          const cands = (meta[person.name].positions || []).filter(p => p !== 'R1');
+          if (isBack(person.name, day)) continue;   // 後回しの日は押し込まない
+          const cands = (meta[person.name].positions || []).filter(p => p !== 'R1' && rookieOk(person.name, p));
           if (!cands.length) continue;
           // 同じポジションに入っている優先度の低い人のうち、充足度が高い人と交代
+          //（後回しになっている人がいればそこから外す）
           const victims = results
             .map((r, i) => ({ r, i }))
-            .filter(x => x.r.day === day && cands.indexOf(x.r.pos) >= 0 && rankOf(x.r.name) > 0)
-            .sort((a, b) => rankOf(b.r.name) - rankOf(a.r.name) || fillRate(b.r.name) - fillRate(a.r.name));
+            .filter(x => x.r.day === day && cands.indexOf(x.r.pos) >= 0 &&
+                         (rankOf(x.r.name) > 0 || isBack(x.r.name, day)))
+            .sort((a, b) => (isBack(b.r.name, day) ? 1 : 0) - (isBack(a.r.name, day) ? 1 : 0)
+                         || rankOf(b.r.name) - rankOf(a.r.name)
+                         || fillRate(b.r.name) - fillRate(a.r.name));
           if (!victims.length) continue;   // 交代できなければ諦める（定員超にはしない）
           const v = victims[0];
           const pos = v.r.pos;
@@ -1883,6 +1748,14 @@
       if (shortages2.length) msg += `\n\n【2部の人数不足】\n${shortages2.join('\n')}`;
       if (shortages.length) msg += `\n\n【人数不足】\n${shortages.join('\n')}`;
       if (memoLimits.length) msg += `\n\n【週の希望回数を上限として適用】\n${memoLimits.join(' / ')}`;
+      const softLines = Object.keys(softDays)
+        .filter(n => maxDays[n] !== undefined && maxDays[n] > softDays[n])
+        .map(n => `${n}: 基本 週${softDays[n]}回（人が足りない日だけ 週${maxDays[n]}回まで）→ 今回 ${assignedCount[n] || 0}回`);
+      if (softLines.length) msg += `\n\n【基本は下限、足りない日だけ上限まで】\n${softLines.join('\n')}`;
+      const noPriLines = Object.keys(noPriDays)
+        .filter(n => (noPriDays[n] || []).length)
+        .map(n => `${n}: ${noPriDays[n].map(d => App.DOW_LABELS[d]).join('・')}曜は後回し（メモの指定）`);
+      if (noPriLines.length) msg += `\n\n【曜日で後回しにした人】\n${noPriLines.join('\n')}`;
       if (swapped.length) msg += `\n\n【★優先メンバーのため入れ替え】\n${swapped.join('\n')}`;
       if (skipped.length) msg += `\n\n【△の時間を解釈できず未割当】\n${skipped.join(' / ')}\n→ 手動で調整するか、🤖Claude連携をお使いください`;
       alert(msg);
@@ -2096,6 +1969,11 @@ ${head}${rest}
       txt += `- 人数不足の場合の優先順位: ①K3人 ②R2系2人（R2d優先） ③W1人 ④残り\n`;
       txt += `- シフトに入れる優先順位は **【★優先】> 【主婦】> 無印 > 【学生】**。ただし**定員（計9名）は絶対に超えない**\n`;
       txt += `- 各人の「週□回まで」が書いてあれば、その回数を**上限**とする\n`;
+      txt += `- 「週□〜□回」のように幅で書いてある人は **左の数字を基本**とし、\n`;
+      txt += `  他の人で枚が埋まらない日にだけ右の数字まで伸ばす（例「週2〜3回」= 基本2回、足りない日だけ3回）\n`;
+      txt += `- **【新人】は同じ日の同じポジションに 1名まで**。新人同士を並べない（教える人がいなくなるため）\n`;
+      txt += `- メモに「○曜は後回し」とある人は、**その曜日だけ優先順位を一番下にする**（★優先でも学生の下）。\n`;
+      txt += `  早く上がる日をラストまで残れる人に譲るため。枚が余っていれば入れてよい\n`;
       txt += `- 人数を削るときは **希望回数に対する充足度が高い人から削る**。1人を3日削るのではなく、3人を1日ずつ削って均す\n`;
       txt += `- ★できるポジションが少ない人から優先的に配置し、多くのポジションができる人は後回しにして調整役とする（そうしないとシフトに入れない人が出る）\n\n`;
       txt += `## 1部・2部の仕組み\n`;

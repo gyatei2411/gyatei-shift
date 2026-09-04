@@ -44,7 +44,9 @@
     .shopbar {
       flex: 0 0 auto; background: #7F1D1D; color: #FEE2E2;
       font-size: 13px; font-weight: 700; padding: 5px 14px; text-align: center;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    @media (max-width: 700px) { .shopbar { font-size: 11px; padding: 3px 8px; } }
 
     /* 当日欠勤（欠） */
     td.cell.abs { background: #450A0A !important; }
@@ -69,6 +71,16 @@
     .bv-days button.u1000 { background: #9A3412; border-color: #C2410C; color: #FED7AA; }
     .bv-days button.u500 .d, .bv-days button.u1000 .d { color: #FDE68A; }
     .bv-irow.up .v { color: #FDE68A; font-weight: 900; }
+    /* 情報行（休み・まかない・メモ）の中身 */
+    tr.info td.v .iv { display: block; white-space: nowrap; line-height: 1.25; }
+    tr.info td.v .iv.wrap { white-space: normal; word-break: break-word; overflow-wrap: anywhere; }
+    .up-select {
+      background: #1E293B; color: #FDE68A; border: 1px solid #475569; border-radius: 6px;
+      font: inherit; font-weight: 900; padding: 2px 6px; cursor: pointer;
+    }
+    .shopbar { cursor: default; }
+    body.shop td.cell[data-absn] { cursor: pointer; }
+    body.shop .bv-row[data-absn] { cursor: pointer; }
     .badge-draft {
       background: #B45309; color: #FFF7ED; padding: 3px 10px; border-radius: 999px;
       font-size: 12px; font-weight: 800;
@@ -80,14 +92,21 @@
     /* スマホ横向き: 横は1週間ぶん、縦はスクロール（文字を小さくしすぎない） */
     .fit-wrap.scrolly { overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
-    /* ===== シフト表 ===== */
-    table.board { border-collapse: separate; border-spacing: 3px; }
+    /* ===== シフト表 =====
+       列幅は固定。中身の長さでレイアウトが動かないようにする。
+       入り切らない文字は fitCells() で小さくし、下限を下回ったら折り返す */
+    table.board {
+      border-collapse: separate; border-spacing: 3px;
+      table-layout: fixed; width: 1210px;
+    }
+    table.board col.c-name { width: 130px; }
+    table.board col.c-day { width: 150px; }
     table.board th, table.board td { text-align: center; vertical-align: middle; }
 
     /* 曜日ヘッダ */
     th.day {
       background: #1E293B; color: #CBD5E1; border-radius: 8px;
-      padding: 6px 10px; min-width: 118px;
+      padding: 6px 10px;
     }
     th.day .d-date { font-size: 22px; font-weight: 800; line-height: 1.1; }
     th.day .d-dow { font-size: 15px; font-weight: 700; opacity: 0.8; }
@@ -105,11 +124,11 @@
       background: #1E293B; color: #F1F5F9; border-radius: 8px;
       font-size: 24px; font-weight: 800;
       text-align: left; padding: 4px 14px; white-space: nowrap;
-      min-width: 130px;
+      overflow: hidden;
     }
 
     /* 勤務セル */
-    td.cell { border-radius: 8px; padding: 4px 6px; min-width: 118px; height: 62px; }
+    td.cell { border-radius: 8px; padding: 4px 6px; height: 62px; overflow: hidden; }
     td.cell.off { background: #131C2E; }
     td.cell.closedday { background: #0B1220; }
     td.cell .ci { display: flex; flex-direction: column; align-items: center; justify-content: center; }
@@ -428,7 +447,7 @@
       <button id="btn-shop" onclick="toggleShopMode()" title="店用モード（欠勤・UPをこの端末で設定する。暗証番号がいります）">🔧</button>
       <button onclick="App.forceUpdate ? App.forceUpdate() : location.reload()" title="最新に更新">🔄<span class="lbl"> 更新</span></button>
     </div>
-    <div class="shopbar" id="shopbar" style="display:none">店用モード　シフトをタップ＝欠勤　日付をタップ＝UP（500 → 1000 → なし）</div>
+    <div class="shopbar" id="shopbar" style="display:none">店用モード　シフトをタップで編集　UPは下のUP行</div>
 
     <div class="fit-wrap" id="fit-wrap">
       <div class="fit-inner" id="fit-inner"></div>
@@ -479,11 +498,18 @@
     // 暗証番号。番号そのものは書かず、計算した値だけ持つ
     //   ソースを見てもすぐには分からないというだけで、暗号ではない。
     //   身内の誤操作を防ぐためのもの。番号を変えるときは pinHash('新しい番号') の値をここへ
-    const SHOP_PIN = 973042;
+    const SHOP_PIN = 976925;
     function pinHash(t) {
       let v = 7;
       for (let i = 0; i < t.length; i++) v = (v * 31 + t.charCodeAt(i)) % 1000003;
       return v;
+    }
+
+    function saveUpBoard(sel) {
+      const reqId = reqIds[cursor];
+      if (!reqId) return;
+      App.setUp(reqId, +sel.dataset.upsel, sel.value);
+      render();
     }
 
     function toggleShopMode() {
@@ -507,6 +533,7 @@
       const bar = document.getElementById('shopbar');
       if (b) b.classList.toggle('shop-on', shopMode);
       if (bar) bar.style.display = shopMode ? '' : 'none';
+      document.body.classList.toggle('shop', shopMode);
     }
 
     // 店用モードのタップ
@@ -516,20 +543,15 @@
         const reqId = reqIds[cursor];
         if (!reqId) return;
 
-        const upEl = e.target.closest('[data-upday]');
-        if (upEl) {
-          const d = +upEl.dataset.upday;
-          App.setUp(reqId, d, App.nextUp(App.upOf(App.getManual(reqId), d)));
-          render();
-          return;
-        }
+        // シフトのセル → 編集パネル（シフト表と同じもの）
         const c = e.target.closest('[data-absn]');
         if (c) {
-          const n = c.dataset.absn, d = +c.dataset.absd;
-          const now = App.isAbsent(App.getManual(reqId), n, d);
-          if (!now && !confirm(`${n}さんをこの日の「欠勤」にしますか？`)) return;
-          App.setAbsent(reqId, n, d, !now);
-          render();
+          const req = App.getRequest(reqId);
+          if (!req) return;
+          App.openCellEditor({
+            reqId, name: c.dataset.absn, day: +c.dataset.absd, ws: req.ws,
+            onSave: () => render()
+          });
         }
       });
     }
@@ -555,13 +577,17 @@
     // 表示できる週を集める（確定済みを優先。無ければ全依頼）
     function pickWeeks() {
       const prevId = reqIds[cursor];
-      const every = App.getRequests().slice().sort((a, b) => a.ws < b.ws ? -1 : 1);
+      // 週ごとに1件だけ（同じ週に依頼が2つあれば中身のある方）
+      const every = App.weekList();
       // 終わった週（日曜日を過ぎた週）はタブレットには出さない
       const today = App.todayLocal();
       let all = every.filter(r => !App.isPastWeek(r.ws, today));
       if (!all.length) all = every.slice(-1);   // 全部過去なら一番新しい週だけ残す
-      const confirmed = all.filter(r => App.getConfirmed(r.id));
-      let list = confirmed.length ? confirmed : all;
+      // 過去でない週はすべて見せる。
+      //   以前は「確定済みの週が1つでもあれば確定済みだけ」にしていたため、
+      //   同期して確定データが届いたとたんに未確定の最新週が消えていた。
+      //   未確定の週は「未確定（下書き）」のバッジ付きで出す
+      let list = all;
 
       const urlId = new URLSearchParams(location.search).get('id');
       // URLで週を指定されたときは、未確定でもその週を見られるようにする
@@ -737,7 +763,9 @@
       }
       const names = working;
 
-      let html = `<table class="board${working.length > 12 ? ' compact' : ''}"><thead><tr><th class="corner"></th>`;
+      let html = `<table class="board${working.length > 12 ? ' compact' : ''}">` +
+        `<colgroup><col class="c-name">` + '<col class="c-day">'.repeat(7) + `</colgroup>` +
+        `<thead><tr><th class="corner"></th>`;
       dates.forEach((ds, i) => {
         let cls = 'day';
         if (i === 5) cls += ' sat';
@@ -824,19 +852,28 @@
         for (let d = 0; d < 7; d++) {
           if (closed.has(d)) { r += '<td class="cell closedday"></td>'; continue; }
           const v = fn(d);
-          r += `<td class="v${v ? '' : ' blank'}">${v || '・'}</td>`;
+          r += `<td class="v${v ? '' : ' blank'}"><span class="iv">${v || '・'}</span></td>`;
         }
         return r + '</tr>';
       };
       const anyFam = [0,1,2,3,4,5,6].some(d => !closed.has(d) && cell(`fam_off_${d}`));
       const anyMemo = [0,1,2,3,4,5,6].some(d => !closed.has(d) && cell(`memo_${d}`));
-      if (usedUp) {
+      if (usedUp || shopMode) {
         let r = '<tr class="info up"><td class="name">UP</td>';
         for (let d = 0; d < 7; d++) {
           if (closed.has(d)) { r += '<td class="cell closedday"></td>'; continue; }
           const u = upOfDay(d);
-          r += `<td class="v${u ? '' : ' blank'}" data-upday="${d}"` +
-               (u ? ` style="color:#FDE68A;font-weight:900"` : '') + `>${u ? '+' + u + '円' : '・'}</td>`;
+          if (shopMode) {
+            // 誤タップで変わらないようにプルダウン
+            r += `<td class="v"><select class="up-select" data-upsel="${d}" onchange="saveUpBoard(this)">` +
+                 ['', '500', '1000'].map(v =>
+                   `<option value="${v}" ${v === u ? 'selected' : ''}>${v ? '+' + v + '円' : '・'}</option>`).join('') +
+                 `</select></td>`;
+          } else {
+            r += `<td class="v${u ? '' : ' blank'}"` +
+                 (u ? ` style="color:#FDE68A;font-weight:900"` : '') +
+                 `><span class="iv">${u ? '+' + u + '円' : '・'}</span></td>`;
+          }
         }
         html += r + '</tr>';
       }
@@ -973,8 +1010,13 @@
       const exN = App.extraMakanai(cell(`memo_${d}`)).count;
       const upv = upOfDay(d);
       h += '<div class="bv-info">';
-      h += `<div class="bv-irow up" data-upday="${d}"><span class="l">UP</span>` +
-           `<span class="v">${upv ? '+' + upv + '円' : 'なし'}</span></div>`;
+      h += `<div class="bv-irow up"><span class="l">UP</span>` +
+           (shopMode
+             ? `<span class="v"><select class="up-select" data-upsel="${d}" onchange="saveUpBoard(this)">` +
+               ['', '500', '1000'].map(v =>
+                 `<option value="${v}" ${v === upv ? 'selected' : ''}>${v ? '+' + v + '円' : 'なし'}</option>`).join('') +
+               `</select></span>`
+             : `<span class="v">${upv ? '+' + upv + '円' : 'なし'}</span>`) + `</div>`;
       if (cell(`fam_off_${d}`)) h += `<div class="bv-irow fam"><span class="l">休み</span><span class="v">${esc(cell(`fam_off_${d}`))}</span></div>`;
       h += `<div class="bv-irow mkn"><span class="l">まかない</span><span class="v">${working.length - absN + App.FAMILY.length - offN + exN}</span></div>`;
       if (cell(`memo_${d}`)) h += `<div class="bv-irow"><span class="l">メモ</span><span class="v">${esc(cell(`memo_${d}`))}</span></div>`;
@@ -1057,8 +1099,39 @@
 
 
     // 表を画面いっぱいまで拡大／縮小する（縦横どちらも余白を残さない）
+    // セルの中身が横にはみ出したら、まず文字を小さくする。
+    //   下限（MIN）を下回るならそれ以上は縮めず、折り返して縦に伸ばす。
+    //   列幅は固定なので、長い文字が入っても表全体の形は変わらない
+    const CELL_MIN_PX = 13;   // これより小さくはしない
+    function fitCells() {
+      const table = document.querySelector('#fit-inner table.board');
+      if (!table) return;
+      const targets = table.querySelectorAll('td.cell .pos, td.cell .time, tr.info td.v .iv');
+      targets.forEach(el => {
+        el.style.fontSize = '';
+        el.classList.remove('wrap');
+        el.style.whiteSpace = '';
+        const td = el.closest('td');
+        if (!td) return;
+        const avail = td.clientWidth - 8;
+        if (avail <= 0) return;
+        let size = parseFloat(getComputedStyle(el).fontSize) || 16;
+        let guard = 0;
+        while (el.scrollWidth > avail && size > CELL_MIN_PX && guard++ < 40) {
+          size = Math.max(CELL_MIN_PX, size - 1);
+          el.style.fontSize = size + 'px';
+        }
+        if (el.scrollWidth > avail) {
+          // これ以上は小さくしない。折り返して縦に伸ばす
+          el.classList.add('wrap');
+          el.style.whiteSpace = 'normal';
+        }
+      });
+    }
+
     function fit() {
       if (bvMode === 'day') return;
+      fitCells();
       const wrap = document.getElementById('fit-wrap');
       const inner = document.getElementById('fit-inner');
       if (!inner.firstElementChild) return;

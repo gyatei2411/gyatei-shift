@@ -62,7 +62,8 @@
           <div class="url-info" style="margin-top:6px">スタッフを変えたい場合は <a href="#" onclick="switchTab('staff');return false;" style="color:var(--primary)">スタッフ管理</a> から編集してください。</div>
         </div>
 
-        <button class="btn btn-primary btn-block" onclick="createRequest()">依頼URLを生成</button>
+        <div id="week-exists" style="display:none"></div>
+        <button class="btn btn-primary btn-block" id="btn-create" onclick="createRequest()">依頼URLを生成</button>
 
         <div id="request-result" style="display:none;margin-top:18px"></div>
       </div>
@@ -141,7 +142,13 @@
         <h2>スタッフ名マスタ</h2>
         <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R2d / R1 / W / T）の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。<br>名前の横の <strong>★優先 / 主婦 / 学生</strong> で区分を選べます（もう一度押すと無印）。<br>
         シフトに入れる優先順位は <strong>★優先 ＞ 主婦 ＞ 無印 ＞ 学生</strong> です。<br>
-        <strong>週□〜□回</strong>：〇をつけても全部は入らない人の希望回数。<strong>右側（上限）を超えては割り当てません</strong>。空欄なら制限なし。<br>
+        <strong>週□〜□回</strong>：<strong>左＝基本の回数 / 右＝人が足りない日だけ伸ばす上限</strong>。<br>
+        例「週2〜3回」… <strong>基本は週2回</strong>。他の人で枚が埋まらない日にだけ3回目がつきます（上限は絶対に超えません）。空欄なら制限なし。<br>
+        <strong>新人</strong>：自動割り当てで <strong>同じ日の同じポジションに新人は1名まで</strong>になります（新人同士を並べない）。<br>
+        <strong>出勤可能</strong>：いつも出られる時間帯。例「930-1630」。<br>
+        　毎週の希望と組み合わせます。備考に「-1630」だけ書いてあっても <strong>930-1630</strong> と判断します。<br>
+        <strong>メモに「土曜は後回し」</strong>と書くと、<strong>その曜日だけ</strong>並びで一番後ろに回ります（★優先でも学生の下）。<br>
+        　早く上がる日を他の人に譲るためのものです。枚が余っていればその人も入ります。「土日は優先しない」でもOK。<br>
         人数を削るときは、<strong>希望回数に対する充足度が高い人から削ります</strong>（1人を3日削るのではなく、3人を1日ずつ）。</p><div style="background:#FFF7ED;border:1px solid #FCD34D;border-radius:8px;padding:10px 14px;font-size:0.82rem;color:#92400E;margin-bottom:14px"><strong>1部（9:00〜16:00）</strong>と <strong>2部（16:00〜L）</strong>は別々に設定します。<br>2部のポジションは <strong>W</strong> と <strong>T</strong> の2つだけです。両方に入る人はシフト表に「<strong>R2→W</strong>」のように出ます（同じなら「W」のまま）。<br><strong>K（調理場）は1部・2部を通してK</strong>。時間は 9-L になります（TやWには回りません）。<br><strong>1部がWの人は2部もWのまま</strong>です（Tには行きません）。<br><strong>2部Tは必ず1日3名まで</strong>。<br><strong>必ずT</strong>：1部がW以外の日は必ず2部Tにつける人（西川さん）。シフトに表記され、3名の1人として数えます。<br><strong>応援T</strong>：2部Tへヘルプに行く人（青木さん）。<strong>シフトにTは表記せず</strong>、終業だけLまでになります（例：K 9-L）。3名には数えません。<br>応援Tの人が出勤する日は、<strong>3名のうち1人が16:30上がり</strong>（表記「R2→（T」）になります。</div>
         <div class="form-group">
           <div style="display:flex;gap:8px">
@@ -201,7 +208,66 @@
       document.getElementById('staff-summary').innerHTML =
         `<strong>${staff.length}名</strong>： ${staff.join(' / ')}`;
       renderClosedDays();
+      renderWeekExists();
       renderPastRequests();
+    }
+
+    // その週の依頼の状態を調べる
+    function weekState(ws) {
+      const list = App.getRequests().filter(r => r.ws === ws);
+      if (!list.length) return { exists: false };
+      const best = App.bestOfWeek(ws);
+      const conf = App.getConfirmed(best.id);
+      const cells = Object.keys(App.getManual(best.id)).filter(k => /_main$/.test(k)).length;
+      const replies = App.getReplies(best.id).length;
+      return {
+        exists: true, list, best, conf, cells, replies,
+        // 回答も割当も確定もない → 作り直しても失うものがない
+        empty: !conf && !cells && !replies
+      };
+    }
+
+    // すでにある週なら、作成ボタンを止めて理由を出す
+    function renderWeekExists() {
+      const box = document.getElementById('week-exists');
+      const btn = document.getElementById('btn-create');
+      if (!box || !btn) return;
+      const st = weekState(createWs);
+      if (!st.exists) {
+        box.style.display = 'none';
+        btn.disabled = false;
+        btn.textContent = '依頼URLを生成';
+        btn.classList.remove('btn-outline');
+        btn.classList.add('btn-primary');
+        return;
+      }
+      box.style.display = '';
+      const esc = st.best.id.replace(/'/g, "\\'");
+      if (st.empty) {
+        box.innerHTML =
+          `<div style="background:#FFF7ED;border:1.5px solid #FCD34D;border-radius:8px;padding:12px 14px;font-size:0.85rem;color:#92400E;margin-bottom:10px">` +
+          `この週の依頼は<strong>すでにあります</strong>（回答・割当ともになし）。<br>` +
+          `URLを送り直すだけなら <strong>🔗 URLを表示</strong> を使ってください。<br>` +
+          `定休日やスタッフを変えたいときだけ下のボタンで作り直せます。` +
+          `<div style="margin-top:8px"><button class="btn btn-outline btn-sm" onclick="showUrlAgain('${esc}')">🔗 URLを表示</button></div>` +
+          `</div>`;
+        btn.disabled = false;
+        btn.textContent = 'この週を作り直す';
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-outline');
+      } else {
+        box.innerHTML =
+          `<div style="background:#F0F9FF;border:1.5px solid #7DD3FC;border-radius:8px;padding:12px 14px;font-size:0.85rem;color:#075985;margin-bottom:10px">` +
+          `この週の依頼は<strong>すでにあります</strong>ので、<strong>新しくは作れません</strong>。<br>` +
+          `回答 <strong>${st.replies}名</strong> / 割当 <strong>${st.cells}人日</strong> / 確定 <strong>${st.conf ? 'v' + st.conf.version : 'なし'}</strong><br>` +
+          `URLをもう一度送るなら 🔗 URLを表示、シフトを直すなら 📋 シフト表 へ。` +
+          `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">` +
+          `<button class="btn btn-outline btn-sm" onclick="showUrlAgain('${esc}')">🔗 URLを表示</button>` +
+          `<button class="btn btn-primary btn-sm" onclick="gotoShiftView('${esc}')">📋 シフト表を開く</button>` +
+          `</div></div>`;
+        btn.disabled = true;
+        btn.textContent = 'この週はすでに作成済みです';
+      }
     }
 
     function renderClosedDays() {
@@ -225,6 +291,32 @@
         App.toast('スタッフマスタが空です', 'error');
         return;
       }
+      // 同じ週の依頼は **作らない**。
+      //   二重にできると、シフト表を開いたときに空の方が出て「消えた」と騒ぎになる。
+      //   中身が空のときだけ、古い方を消して作り直す道を残してある
+      const st = weekState(createWs);
+      if (st.exists && !st.empty) {
+        alert(
+          `【${App.weekLabel(createWs)}】の依頼は、すでにあります。\n\n` +
+          `・スタッフの回答　${st.replies}名\n` +
+          `・シフトの割り当て　${st.cells}人日\n` +
+          `・確定　　　　　${st.conf ? 'v' + st.conf.version : 'なし'}\n\n` +
+          `同じ週の依頼は 1つだけ にしています。\n\n` +
+          `・ URLをもう一度送りたい → 「🔗 URLを表示」\n` +
+          `・ シフトを直したい　　 → 「📋 シフト表」`);
+        showUrlAgain(st.best.id);
+        return;
+      }
+      if (st.exists && st.empty) {
+        if (!confirm(
+          `【${App.weekLabel(createWs)}】の依頼はすでにありますが、\n` +
+          `回答も割り当ても入っていません。\n\n` +
+          `古い方を消して、今の定休日・スタッフで作り直します。\n` +
+          `※ 前のURLは使えなくなります。送っているなら送り直してください。\n\n` +
+          `作り直しますか？`)) return;
+        st.list.forEach(r => App.deleteRequest(r.id));
+      }
+
       const req = {
         id: App.newRequestId(),
         ws: createWs,
@@ -237,6 +329,7 @@
 
       showRequestUrl(req.id, '✓ 依頼を作成しました', false);
 
+      renderWeekExists();
       renderPastRequests();
       App.toast('依頼を作成しました', 'success');
       // 自動でこの依頼を購読開始
@@ -253,11 +346,18 @@
       }
       el.innerHTML = reqs.map(r => {
         const replies = App.getReplies(r.id);
+        const dup = App.duplicatesOfWeek(r.ws, r.id);
+        const isBest = !dup.length || App.bestOfWeek(r.ws).id === r.id;
+        const cells = Object.keys(App.getManual(r.id)).filter(k => /_main$/.test(k)).length;
+        const dupBadge = !dup.length ? '' :
+          (isBest
+            ? `<span style="background:#DBEAFE;color:#1D4ED8;font-size:0.72rem;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:8px">この週の本体</span>`
+            : `<span style="background:#FEE2E2;color:#B91C1C;font-size:0.72rem;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:8px" title="同じ週の依頼が他にあります。こちらは中身が少ないので、使っていなければ削除してください">⚠ 週が重複（割当 ${cells}人日）</span>`);
         return `
           <div style="border:1.5px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;${r.id === active ? 'background:#EEF2FF;border-color:var(--primary)' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
               <div>
-                <strong>${App.weekLabel(r.ws)}</strong>
+                <strong>${App.weekLabel(r.ws)}</strong>${dupBadge}
                 <span style="color:var(--muted);font-size:0.85rem;margin-left:8px">対象 ${r.staff.length}名 / 回答 ${replies.length}名</span>
               </div>
               <div class="btn-row">
@@ -313,6 +413,24 @@
       renderCreate();
       renderAggregate();
       App.toast(`【${label}】を削除しました`, 'success');
+    }
+
+    function toggleRookie(name) {
+      const meta = App.getStaffMeta()[name] || {};
+      App.setStaffMeta(name, Object.assign({}, meta, { rookie: !meta.rookie }));
+      renderStaffMaster();
+    }
+
+    function setHours(name, input) {
+      const v = String(input.value || '').trim();
+      if (v && !App.parseHours(v)) {
+        App.toast('時間の書き方が分かりません。例: 930-1630 / 9-L', 'error');
+        input.value = (App.getStaffMeta()[name] || {}).hours || '';
+        return;
+      }
+      const meta = App.getStaffMeta()[name] || {};
+      App.setStaffMeta(name, Object.assign({}, meta, { hours: v }));
+      App.toast(v ? `${name}: 出勤可能 ${v}` : `${name}: 出勤可能時間を消しました`, 'success');
     }
 
     /* ===== ③ 勤怠集計（20日締め） ===== */
@@ -697,7 +815,8 @@
       if (!reqs.length) return null;
       const active = App.getActiveRequest();
       if (active && reqs.some(r => r.id === active)) return active;
-      const sorted = reqs.slice().sort((a, b) => a.ws < b.ws ? -1 : 1);
+      // 同じ週に依頼が2つあるときは、中身のある方を開く
+      const sorted = App.weekList();
       const cur = sorted.find(r => r.ws === App.weekStart());
       if (cur) return cur.id;
       const today = App.todayLocal();
@@ -727,14 +846,15 @@
       if (!staff.length) { el.innerHTML = '<div class="empty-state">スタッフが登録されていません</div>'; return; }
       el.innerHTML = staff.map((n, i) => {
         const m = Object.assign({ positions0: [], positions: [], positions2: [], t2always: false, t2extra: false,
-                                  rank: '', daysMin: null, daysMax: null, note: '', priority: false }, meta[n] || {});
+                                  rank: '', daysMin: null, daysMax: null, note: '', priority: false,
+                                  rookie: false, hours: '' }, meta[n] || {});
         const rk = App.rankKey(m);
         const RC = { priority: '#B45309', housewife: '#0369A1', student: '#7E22CE' };
         const RBG = { priority: '#FFF7ED', housewife: '#F0F9FF', student: '#FAF5FF' };
         const esc = n.replace(/'/g, "\\'");
         return `
         <div class="staff-master-row" style="flex-wrap:wrap;${rk ? `background:${RBG[rk]};border-color:${RC[rk]}` : ''}">
-          <span class="name">${n}${rk ? ` <span style="font-size:0.68rem;color:${RC[rk]};font-weight:700">${App.RANK_LABEL[rk]}</span>` : ''}</span>
+          <span class="name">${n}${rk ? ` <span style="font-size:0.68rem;color:${RC[rk]};font-weight:700">${App.RANK_LABEL[rk]}</span>` : ''}${m.rookie ? ` <span style="font-size:0.68rem;background:#DC2626;color:#fff;font-weight:800;padding:1px 7px;border-radius:999px">新人</span>` : ''}</span>
           <span style="display:inline-flex;gap:4px" title="シフトに入れる優先順位：★優先 ＞ 主婦 ＞ 無印 ＞ 学生">
             ${['priority','housewife','student'].map(k => `
               <button class="btn btn-sm" onclick="setRank('${esc}', '${k}')"
@@ -743,6 +863,11 @@
                        background:${rk === k ? RC[k] : '#fff'};color:${rk === k ? '#fff' : 'var(--muted)'}">
                 ${App.RANK_LABEL[k]}
               </button>`).join('')}
+            <button class="btn btn-sm" onclick="toggleRookie('${esc}')"
+              title="新人。自動割り当てで 同じ日の同じポジションに新人を 1名まで にします"
+              style="padding:3px 10px;font-size:0.76rem;font-weight:700;border-radius:6px;cursor:pointer;
+                     border:1.5px solid ${m.rookie ? '#DC2626' : 'var(--border)'};
+                     background:${m.rookie ? '#DC2626' : '#fff'};color:${m.rookie ? '#fff' : 'var(--muted)'}">新人</button>
           </span>
           <div class="actions">
             <button class="btn btn-outline btn-sm" onclick="renameStaffPrompt('${esc}')" title="名前を変える">✏️</button>
@@ -787,7 +912,7 @@
               応援T
             </label>
             <span style="display:inline-flex;align-items:center;gap:3px;font-size:0.76rem;font-weight:700;color:var(--muted);white-space:nowrap;margin-left:6px"
-              title="週に何回入りたいか。上限（右側）を超えてシフトはつけません。例: 2〜3回">
+              title="左（下限）＝基本の回数。右（上限）＝人が足りない日だけここまで伸ばす。&#10;例「2〜3回」… 基本は週2回。果が埋まらない日にだけ3回目がつく&#10;上限を超えては絶対につけません">
               週
               <input type="number" min="0" max="7" value="${m.daysMin == null ? '' : m.daysMin}" placeholder="-"
                 style="width:44px;text-align:center;font-size:0.78rem;padding:3px 4px;border:1.5px solid var(--border);border-radius:6px"
@@ -798,7 +923,16 @@
                 onchange="setDays('${esc}', 'daysMax', this)">
               回
             </span>
-            <input type="text" placeholder="メモ" value="${(m.note || '').replace(/"/g, '&quot;')}"
+            <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.76rem;font-weight:700;color:var(--muted);white-space:nowrap"
+              title="いつも出られる時間帯。毎週の希望と組み合わせて使います。&#10;例「930-1630」… 備考に「-1630」だけ書いてあっても 930-1630 と判断します&#10;ラストまでなら「9-L」。空欄なら制限なし">
+              出勤可能
+              <input type="text" value="${(m.hours || '').replace(/"/g, '&quot;')}" placeholder="930-1630"
+                style="width:92px;text-align:center;font-size:0.78rem;padding:3px 4px;border:1.5px solid var(--border);border-radius:6px"
+                onchange="setHours('${esc}', this)">
+            </span>
+            <input type="text" placeholder="メモ（例: 土曜は後回し）"
+              title="自由記入。「土曜は後回し」「土日は優先しない」と書くと、&#10;その曜日だけ自動割り当ての並びで一番後ろに回ります（枚が余れば入ります）"
+              value="${(m.note || '').replace(/"/g, '&quot;')}"
               style="flex:1;min-width:120px;font-size:0.78rem;padding:4px 8px;border:1.5px solid var(--border);border-radius:6px"
               onchange="setStaffNote('${esc}', this.value)">
           </div>

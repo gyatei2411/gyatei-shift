@@ -298,6 +298,23 @@ const App = {
     return out;
   },
 
+  // スタッフのメモから「○曜は後回し」を読む → [0..6]（月=0）
+  //   「土曜は後回し」「土日は優先しない」「土・日 後回し」など
+  //   その曜日だけ、自動割り当ての並びで一番後ろに回る（枠が余れば入る）
+  parseNoPriorityDays(note) {
+    const t = String(note || '');
+    const out = [];
+    const re = /([\u6708\u706b\u6c34\u6728\u91d1\u571f\u65e5][\u6708\u706b\u6c34\u6728\u91d1\u571f\u65e5\u66dc\u30fb\u3001,\uff65\s\u3000]*)(?:\u306f|\u306e\u307f|\u3060\u3051)?\s*(?:\u512a\u5148\u3057\u306a\u3044|\u512a\u5148\u305b\u305a|\u512a\u5148\u306a\u3057|\u5f8c\u56de\u3057|\u3042\u3068\u307e\u308f\u3057)/g;
+    let m;
+    while ((m = re.exec(t)) !== null) {
+      for (const c of m[1]) {
+        const i = App.DOW_LABELS.indexOf(c);
+        if (i >= 0 && out.indexOf(i) < 0) out.push(i);
+      }
+    }
+    return out.sort((a, b) => a - b);
+  },
+
   // 家族（役職）。まかないの人数に含める
   //   店=店長 / 若奥=若奥さん / 奥=奥さん / 会=会長
   FAMILY: ['\u5e97', '\u82e5\u5965', '\u5965', '\u4f1a'],
@@ -920,6 +937,370 @@ const App = {
     out.sort((a, b) => a.date < b.date ? -1 : 1);
     return out;
   },
+
+  /* ===== 同じ週に依頼が2つあるとき =====
+     間違って作り直した空の依頼が混ざることがある。
+     その場合は **中身のある方**を見せる（空の方を開いて「消えた」とならないように） */
+
+  // 依頼の「中身の濃さ」。確定済み > マスが多い > 回答が多い
+  requestScore(r) {
+    if (!r) return -1;
+    const c = App.getConfirmed(r.id);
+    const cells = Object.keys((c && c.cells) || App.getManual(r.id) || {}).length;
+    return (c ? 1000000 : 0) + cells * 100 + App.getReplies(r.id).length;
+  },
+
+  // その週の代表の1件
+  bestOfWeek(ws) {
+    const list = App.getRequests().filter(r => r.ws === ws);
+    if (!list.length) return null;
+    return list.slice().sort((a, b) =>
+      App.requestScore(b) - App.requestScore(a) ||
+      ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1))[0];
+  },
+
+  // 週ごとに1件だけ、週の順に並べる（前の週/次の週の移動に使う）
+  weekList() {
+    const by = {};
+    App.getRequests().forEach(r => {
+      if (!by[r.ws] || App.requestScore(r) > App.requestScore(by[r.ws])) by[r.ws] = r;
+    });
+    return Object.keys(by).sort().map(k => by[k]);
+  },
+
+  // 同じ週の他の依頼（重複）
+  duplicatesOfWeek(ws, exceptId) {
+    return App.getRequests().filter(r => r.ws === ws && r.id !== exceptId);
+  },
+
+  /* ===== セル編集パネル（シフト表とタブレットの共通） =====
+     順番は実際の決め方に合わせてある。
+       1部（その日の一番大きな役割）→ 2部（何時まで）→ 出勤時間 → 決定
+       そのあとで 0部（微調整）と、本人の希望（参考） */
+
+  CE_P1: ['K', 'R2', 'R2d', 'R1', 'W', 'T'],
+  CE_P2: ['W', 'T', 'K'],
+  CE_P0: ['C', '1F', 'Rj', 'Tj', 'm', 'C\u30fbm', '1F\u30fbm', 'Rj\u30fbm', 'Tj\u30fbm'],
+
+  // 「R2→（T」のような表記を 1部 / 2部 / 早上がり に分解する
+  parseMain(txt) {
+    const t = String(txt || '').trim();
+    if (!t) return { p1: '', p2: '', early: false };
+    const seg = t.split('\u2192');
+    if (seg.length > 1) {
+      let b = seg.slice(1).join('\u2192');
+      const early = /[\uff08(]/.test(b);
+      b = b.replace(/[\uff08(\uff09)]/g, '').trim();
+      return { p1: seg[0].trim(), p2: b, early };
+    }
+    const early = /[\uff08(]/.test(t);
+    const p = t.replace(/[\uff08(\uff09)]/g, '').trim();
+    return early ? { p1: p, p2: p, early: true } : { p1: p, p2: '', early: false };
+  },
+
+  composeMain(p1, p2, early) {
+    p1 = String(p1 || '').trim();
+    p2 = String(p2 || '').trim();
+    if (!p1 && !p2) return '';
+    if (!p2) return p1;
+    if (!p1) return (early ? '\uff08' : '') + p2;
+    if (p1 === p2) return early ? `\uff08${p2}` : p1;
+    return early ? `${p1}\u2192\uff08${p2}` : `${p1}\u2192${p2}`;
+  },
+
+  // 本人の備考（曜日ごと ＋ 全体）
+  noteText(reply) {
+    if (!reply) return '';
+    const parts = [];
+    const dn = reply.dnotes || {};
+    Object.keys(dn).map(Number).sort((a, b) => a - b).forEach(i => {
+      if (dn[i]) parts.push(`${App.DOW_LABELS[i]}:${dn[i]}`);
+    });
+    if (reply.gnote) parts.push(reply.gnote);
+    return parts.join(' / ');
+  },
+
+  _ce: null,
+
+  _ceBuild() {
+    if (App._ce) return App._ce;
+    const css = document.createElement('style');
+    css.textContent = `
+      #ce-back { display:none; position:fixed; inset:0; z-index:4000;
+        background:rgba(15,23,42,0.6); align-items:flex-end; justify-content:center;
+        font-family:"Yu Gothic","Hiragino Kaku Gothic ProN","Meiryo",sans-serif; }
+      #ce-back.open { display:flex; }
+      #ce-back * { box-sizing:border-box; }
+      .ce-sheet { background:#fff; color:#0F172A; width:100%; max-width:560px;
+        border-radius:18px 18px 0 0; padding:14px 16px 20px; max-height:94vh; overflow-y:auto;
+        box-shadow:0 -6px 30px rgba(0,0,0,0.35); -webkit-overflow-scrolling:touch; }
+      @media (min-width:640px){ #ce-back{align-items:center} .ce-sheet{border-radius:18px} }
+      .ce-head { display:flex; align-items:center; gap:10px; margin-bottom:8px;
+        position:sticky; top:-14px; background:#fff; padding:10px 0 8px; z-index:2; }
+      .ce-head .ce-name { font-size:1.35rem; font-weight:900; }
+      .ce-head .ce-day { font-size:1rem; font-weight:800; color:#64748B; }
+      .ce-head .ce-close { margin-left:auto; background:#F1F5F9; border:none; border-radius:10px;
+        padding:10px 16px; font-size:0.95rem; font-weight:800; cursor:pointer; font-family:inherit; }
+      .ce-hint { font-size:0.82rem; color:#475569; margin:0 0 10px; line-height:1.6;
+        background:#F8FAFC; border-radius:8px; padding:8px 10px; }
+      .ce-hint:empty { display:none; }
+      .ce-field { margin-bottom:14px; }
+      .ce-field > label { display:block; font-size:0.88rem; font-weight:900; color:#1E293B; margin-bottom:6px; }
+      .ce-field > label .sub { font-weight:600; color:#64748B; font-size:0.78rem; }
+      .ce-field input, .ce-field select { width:100%; font-size:1.15rem; font-weight:800;
+        padding:13px 12px; border:1.5px solid #CBD5E1; border-radius:12px; background:#fff;
+        font-family:inherit; color:#0F172A; }
+      .ce-field input:focus, .ce-field select:focus { outline:none; border-color:#4F46E5; }
+      .ce-2col { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+      .ce-chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+      .ce-chips button { background:#F1F5F9; border:1.5px solid #CBD5E1; border-radius:10px;
+        padding:11px 16px; font-size:1.05rem; font-weight:800; cursor:pointer;
+        font-family:inherit; color:#334155; min-width:56px; }
+      .ce-chips button.on { background:#4F46E5; border-color:#4F46E5; color:#fff; }
+      .ce-check { display:flex; align-items:center; gap:10px; font-size:1rem; font-weight:800;
+        color:#334155; margin-top:10px; }
+      .ce-check input { width:26px; height:26px; }
+      .ce-actions { display:flex; gap:10px; margin:18px 0 6px; }
+      .ce-actions button { flex:1; border:none; border-radius:12px; padding:16px;
+        font-size:1.1rem; font-weight:900; cursor:pointer; font-family:inherit; }
+      .ce-actions .ce-clear { background:#FEE2E2; color:#B91C1C; flex:0 0 38%; }
+      .ce-actions .ce-ok { background:#4F46E5; color:#fff; }
+      .ce-abs { width:100%; padding:14px; border-radius:12px; border:2px solid #FCA5A5;
+        background:#fff; color:#B91C1C; font-weight:900; font-size:1rem; cursor:pointer;
+        font-family:inherit; margin-bottom:14px; }
+      .ce-abs.on { background:#DC2626; border-color:#DC2626; color:#fff; }
+      .ce-later { border-top:2px dashed #E2E8F0; margin-top:6px; padding-top:14px; }
+      .ce-later > h4 { font-size:0.82rem; font-weight:900; color:#64748B; margin:0 0 10px; }
+    `;
+    document.head.appendChild(css);
+
+    const back = document.createElement('div');
+    back.id = 'ce-back';
+    back.innerHTML = `
+      <div class="ce-sheet">
+        <div class="ce-head">
+          <span class="ce-name" id="ce-name"></span>
+          <span class="ce-day" id="ce-day"></span>
+          <button class="ce-close" id="ce-close">\u9589\u3058\u308b</button>
+        </div>
+        <div class="ce-hint" id="ce-hint"></div>
+
+        <button type="button" class="ce-abs" id="ce-abs"></button>
+
+        <div class="ce-field">
+          <label>1\u90e8\u3000<span class="sub">9:00\u301c16:00\u3000\u307e\u305a\u3053\u3053\u304b\u3089\u6c7a\u3081\u307e\u3059</span></label>
+          <input id="ce-p1" placeholder="\u4f8b: K / R2 / W" autocomplete="off">
+          <div class="ce-chips" id="ce-p1-chips"></div>
+        </div>
+
+        <div class="ce-field">
+          <label>2\u90e8\u3000<span class="sub">16:00\u301cL\u3002\u540c\u3058\u30dd\u30b8\u30b7\u30e7\u30f3\u3092\u7d9a\u3051\u308b\u306a\u3089\u7a7a\u6b04\u3067OK</span></label>
+          <input id="ce-p2" placeholder="\u4f8b: W / T" autocomplete="off">
+          <div class="ce-chips" id="ce-p2-chips"></div>
+          <label class="ce-check">
+            <input type="checkbox" id="ce-early">16:30\u3067\u5148\u306b\u4e0a\u304c\u308b
+          </label>
+        </div>
+
+        <div class="ce-field ce-2col">
+          <div>
+            <label>\u59cb\u696d</label>
+            <input id="ce-start" placeholder="9 / 930 / 10" autocomplete="off" inputmode="numeric">
+          </div>
+          <div>
+            <label>\u7d42\u696d</label>
+            <input id="ce-end" placeholder="-16 / -1630 / -L" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="ce-actions">
+          <button class="ce-clear" id="ce-clear">\u3053\u306e\u65e5\u3092\u7a7a\u306b</button>
+          <button class="ce-ok" id="ce-ok">\u6c7a\u5b9a</button>
+        </div>
+
+        <div class="ce-later">
+          <h4>\u2193 \u3053\u3053\u304b\u3089\u306f\u3042\u3068\u3067\u3088\u3044\u3082\u306e</h4>
+          <div class="ce-field">
+            <label>0\u90e8\u3000<span class="sub">9:00\u301c9:30 \u671d\u306e\u6e96\u5099\u3002\u5168\u90e8\u6c7a\u307e\u3063\u3066\u304b\u3089\u3067OK</span></label>
+            <input id="ce-p0" placeholder="\u4f8b: C / C\u30fbm" autocomplete="off">
+            <div class="ce-chips" id="ce-p0-chips"></div>
+          </div>
+          <div class="ce-field ce-2col">
+            <div>
+              <label>\u51fa\u52e4\u53ef\u5426</label>
+              <select id="ce-sym">
+                <option value="">\u30fb</option>
+                <option value="\u25cb">\u25cb \u7d42\u65e5\u53ef</option>
+                <option value="\u25b3">\u25b3 \u6761\u4ef6\u4ed8\u304d</option>
+                <option value="\u2715">\u2715 \u4e0d\u53ef</option>
+                <option value="\u672a">\u672a \u672a\u5b9a</option>
+              </select>
+            </div>
+            <div>
+              <label>\u5e0c\u671b\u6642\u523b\u3000<span class="sub">\u672c\u4eba\u306e\u7533\u544a</span></label>
+              <input id="ce-time" placeholder="\u4f8b: 930-16" autocomplete="off">
+            </div>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(back);
+
+    back.addEventListener('click', (e) => { if (e.target === back) App.closeCellEditor(); });
+    back.querySelector('#ce-close').onclick = () => App.closeCellEditor();
+    back.querySelector('#ce-ok').onclick = () => App._ceApply();
+    back.querySelector('#ce-clear').onclick = () => App._ceClear();
+    back.querySelector('#ce-abs').onclick = () => { App._ce.abs = !App._ce.abs; App._ceRenderAbs(); };
+
+    App._ce = { el: back, target: null, abs: false, onSave: null };
+    return App._ce;
+  },
+
+  _ceRenderAbs() {
+    const b = document.getElementById('ce-abs');
+    if (!b) return;
+    b.classList.toggle('on', !!App._ce.abs);
+    b.textContent = App._ce.abs
+      ? '\u26a0 \u5f53\u65e5\u6b20\u52e4\uff08\u6b20\uff09\u3000\u2190 \u3082\u3046\u4e00\u5ea6\u62bc\u3059\u3068\u623b\u3057\u307e\u3059'
+      : '\u26a0 \u5f53\u65e5\u6b20\u52e4\u306b\u3059\u308b\uff08\u6b20\uff09';
+  },
+
+  _ceChips(list, inputId, boxId) {
+    const box = document.getElementById(boxId);
+    box.innerHTML = list.map(v => `<button type="button" data-v="${v}">${v}</button>`).join('') +
+                    `<button type="button" data-v="">\u7a7a\u306b</button>`;
+    box.querySelectorAll('button').forEach(b => {
+      b.onclick = () => { document.getElementById(inputId).value = b.dataset.v; App._ceMark(); };
+    });
+  },
+
+  _ceMark() {
+    [['ce-p1', 'ce-p1-chips'], ['ce-p2', 'ce-p2-chips'], ['ce-p0', 'ce-p0-chips']].forEach(([i, c]) => {
+      const v = (document.getElementById(i).value || '').trim();
+      document.getElementById(c).querySelectorAll('button').forEach(b => {
+        b.classList.toggle('on', b.dataset.v === v);
+      });
+    });
+  },
+
+  // opts: { reqId, name, day, ws, onSave }
+  openCellEditor(opts) {
+    const ce = App._ceBuild();
+    ce.target = opts;
+    ce.onSave = opts.onSave || null;
+
+    const cells = App.getManual(opts.reqId);
+    const g = (f) => cells[App._safeCellKey(`s_${opts.name}_${opts.day}_${f}`)] || '';
+    const m = App.parseMain(g('main'));
+    const dates = App.weekDates(opts.ws);
+
+    document.getElementById('ce-name').textContent = opts.name;
+    document.getElementById('ce-day').textContent =
+      `${App.fmtMD(dates[opts.day])}\uff08${App.DOW_LABELS[opts.day]}\uff09`;
+
+    const rep = App.getReplies(opts.reqId).find(r => r.name === opts.name);
+    const meta = App.getStaffMeta()[opts.name] || {};
+    const can = [];
+    if ((meta.positions || []).length) can.push(`1\u90e8: ${meta.positions.join(',')}`);
+    if ((meta.positions2 || []).length) can.push(`2\u90e8: ${meta.positions2.join(',')}`);
+    if ((meta.positions0 || []).length) can.push(`0\u90e8: ${meta.positions0.join(',')}`);
+    if (meta.hours) can.push(`\u51fa\u52e4\u53ef\u80fd: ${meta.hours}`);
+    const nt = App.noteText(rep);
+    const esc = (t) => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    document.getElementById('ce-hint').innerHTML =
+      (can.length ? esc(can.join(' / ')) : '') + (nt ? `<br>\u672c\u4eba\u306e\u5099\u8003 \u2026 ${esc(nt)}` : '');
+
+    document.getElementById('ce-p1').value = m.p1;
+    document.getElementById('ce-p2').value = m.p2;
+    document.getElementById('ce-early').checked = m.early;
+    document.getElementById('ce-start').value = g('start');
+    document.getElementById('ce-end').value = g('end');
+    document.getElementById('ce-p0').value = g('sub');
+    document.getElementById('ce-time').value = g('time');
+
+    const ms = cells[App._safeCellKey(`s_${opts.name}_${opts.day}_sym`)];
+    const auto = rep ? (rep.d[opts.day] || '') : '';
+    document.getElementById('ce-sym').value = (ms !== undefined && ms !== '') ? ms
+      : (auto === 'o' ? '\u25cb' : auto === 't' ? '\u25b3' : auto === 'x' ? '\u2715' : auto === 'm' ? '\u672a' : '');
+
+    ce.abs = App.isAbsent(cells, opts.name, opts.day);
+    App._ceRenderAbs();
+    App._ceChips(App.CE_P1, 'ce-p1', 'ce-p1-chips');
+    App._ceChips(App.CE_P2, 'ce-p2', 'ce-p2-chips');
+    App._ceChips(App.CE_P0, 'ce-p0', 'ce-p0-chips');
+    App._ceMark();
+
+    ce.el.classList.add('open');
+    ce.el.querySelector('.ce-sheet').scrollTop = 0;
+  },
+
+  closeCellEditor() {
+    if (App._ce) { App._ce.el.classList.remove('open'); App._ce.target = null; }
+  },
+
+  _ceClear() {
+    ['ce-p1', 'ce-p2', 'ce-p0', 'ce-start', 'ce-end'].forEach(i => document.getElementById(i).value = '');
+    document.getElementById('ce-early').checked = false;
+    App._ce.abs = false;
+    App._ceRenderAbs();
+    App._ceMark();
+    App._ceApply();
+  },
+
+  _ceApply() {
+    const ce = App._ce;
+    if (!ce || !ce.target) return;
+    const { reqId, name, day } = ce.target;
+    const v = (i) => document.getElementById(i).value.trim();
+    const set = (f, val) => App.setManualCell(reqId, `s_${name}_${day}_${f}`, val);
+    set('main', App.composeMain(v('ce-p1'), v('ce-p2'), document.getElementById('ce-early').checked));
+    set('sub', v('ce-p0'));
+    set('start', v('ce-start'));
+    set('end', v('ce-end'));
+    set('time', v('ce-time'));
+    set('sym', v('ce-sym'));
+    set('abs', ce.abs ? '1' : '');
+    const cb = ce.onSave;
+    App.closeCellEditor();
+    if (cb) cb();
+  },
+
+  /* ===== 出勤可能時間（スタッフマスタ） =====
+     毎週の希望と組み合わせて使う。
+     例：駒原さんの出勤可能時間が 930-1630 なら、
+           備考に「-1630」だけ書いてあっても 930-1630 と判断できる */
+
+  // '930-1630' / '9:30-16:30' / '10-L' → { start, end }。読めなければ null
+  parseHours(txt) {
+    const t = String(txt || '').trim();
+    if (!t) return null;
+    const n = t.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+    const m = n.match(/^(\d{1,2})(?::|：|時)?([0-5]\d)?\s*[-〜～~−ー－]\s*(L|l|Ｌ|ラスト|(\d{1,2})(?::|：|時)?([0-5]\d)?)$/);
+    if (!m) return null;
+    const start = parseInt(m[1], 10) + (m[2] ? parseInt(m[2], 10) / 60 : 0);
+    const end = m[4] ? parseInt(m[4], 10) + (m[5] ? parseInt(m[5], 10) / 60 : 0) : 99;
+    if (isNaN(start) || isNaN(end)) return null;
+    return { start: Math.round(start * 2) / 2, end: end >= 99 ? 99 : Math.round(end * 2) / 2 };
+  },
+
+  staffHours(meta, name) {
+    return App.parseHours(((meta || {})[name] || {}).hours);
+  },
+
+  // 時刻を表記に戻す（9.5 → '930' / 99 → 'L'）
+  fmtHour(t, isEnd) {
+    if (t >= 99) return isEnd ? 'L' : '';
+    return t % 1 === 0.5 ? `${Math.floor(t)}30` : String(t);
+  },
+  fmtRange(c) {
+    if (!c) return '';
+    const a = (c.start > 0) ? App.fmtHour(c.start, false) : '';
+    const b = (c.end < 99) ? App.fmtHour(c.end, true) : (c.start > 0 ? 'L' : '');
+    if (!a && !b) return '';
+    return `${a}-${b}`;
+  },
+
+  // 新人かどうか
+  isRookie(meta, name) { return !!((meta || {})[name] || {}).rookie; },
 
   lineShareUrl(text) {
     return 'https://line.me/R/share?text=' + encodeURIComponent(text);
