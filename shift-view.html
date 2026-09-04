@@ -180,17 +180,32 @@
     .save-indicator.show { opacity: 1; }
 
     /* ===== 印刷: A4横1ページに自動フィット ===== */
+    /* 印刷するときだけ出す見出し */
+    #print-head { display: none; }
+
     @media print {
       @page { size: A4 landscape; margin: 6mm; }
-      body { background: #fff; }
-      .sv-toolbar, .sv-stats, .sv-edit-hint, .save-indicator { display: none !important; }
-      .sv-container { margin: 0; padding: 0; overflow: visible; }
+      html, body { background: #fff; }
+      /* 紙にはシフト表だけ。他は全部消す */
+      .sv-toolbar, .sv-stats, .sv-edit-hint, .save-indicator,
+      .sv-hint-toggle, #sv-hints, #cell-editor,
+      #import-dialog, #history-dialog, .day-view { display: none !important; }
+      .sv-container { margin: 0 !important; padding: 0 !important; overflow: visible; }
+      #print-head {
+        display: block; font-size: 11px; font-weight: 800; color: #000; margin: 0 0 3px;
+      }
+      #print-head .sub { font-weight: 600; margin-left: 10px; }
+      .shift-table tr, .shift-table thead { page-break-inside: avoid; break-inside: avoid; }
       .shift-table {
         box-shadow: none;
         zoom: var(--print-zoom, 1);
+        page-break-inside: avoid;
+        break-inside: avoid;
       }
       .shift-table th, .shift-table td { border-color: #000; }
-      .shift-table .sym-select { -webkit-appearance: none; appearance: none; background: transparent; }
+      .shift-table .sym-select {
+        -webkit-appearance: none; appearance: none; background: transparent; border: none;
+      }
       * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
 
@@ -481,6 +496,7 @@
   </div>
 
   <div class="sv-container">
+    <div id="print-head"></div>
     <div id="content"></div>
   </div>
 
@@ -595,6 +611,8 @@
         App.subscribeSettings(deferredRender);   // 朝の基準人数などの共通設定
       }
       render();
+      // 用紙の向きを先に決めておく（Ctrl+P をいきなり押されても1枚に収まるように）
+      setTimeout(computePrintZoom, 300);
     }
 
     // 編集中なら再描画を保留
@@ -685,6 +703,12 @@
       const unsubmitted = req.staff.filter(n => !submittedNames.has(n));
 
       updateWeekNav();
+      const ph = document.getElementById('print-head');
+      if (ph) {
+        const pc = App.getConfirmed(currentReqId);
+        ph.innerHTML = `ぎゃあてい　シフト表　${App.weekLabel(req.ws)}` +
+          `<span class="sub">${pc ? `確定 v${pc.version}` : '下書き（未確定）'}</span>`;
+      }
       document.getElementById('meta-line').textContent =
         `${App.weekLabel(req.ws)}　提出 ${replies.length}/${req.staff.length}名` +
         (App.isOnline() ? '（オンライン同期中）' : '');
@@ -2187,22 +2211,58 @@ ${head}${rest}
       App.toast(`${count}件取り込みました`, 'success');
     }
 
-    /* ===== 印刷: A4横1枚にフィット ===== */
+    /* ===== 印刷: 1週間分を A4横 1枚に =====
+       🖨ボタンでも Ctrl+P でも、同じように1枚に収まる */
     function printFit() {
-      if (viewMode !== 'table') { viewMode = 'table'; render(); }   // 印刷は必ず表で
-      computePrintZoom();
-      window.print();
+      window.print();   // あとは beforeprint がやる
     }
-    window.addEventListener('beforeprint', computePrintZoom);
+
+    let printPrevMode = null;
+    window.addEventListener('beforeprint', () => {
+      // 「1日ずつ」で見ていても、印刷は必ず1週間の表で
+      if (viewMode !== 'table') {
+        printPrevMode = viewMode;
+        viewMode = 'table';
+        render();
+      }
+      computePrintZoom();
+    });
+    window.addEventListener('afterprint', () => {
+      if (printPrevMode) { viewMode = printPrevMode; printPrevMode = null; render(); }
+    });
+
+    // 表を A4 1枚に収める。縦・横は大きく印刷できる方を自動で選ぶ
+    //   （スタッフが多い週は縦長の表になるので縦、少ない週は横が大きく出る）
+    let pageStyleEl = null;
+    function setPrintPage(orient) {
+      if (!pageStyleEl) {
+        pageStyleEl = document.createElement('style');
+        document.head.appendChild(pageStyleEl);
+      }
+      pageStyleEl.textContent = `@media print { @page { size: A4 ${orient}; margin: 6mm; } }`;
+    }
 
     function computePrintZoom() {
+      const root = document.documentElement;
+      root.style.setProperty('--print-zoom', '1');   // 先に等倍に戻してから測る
       const t = document.querySelector('.shift-table');
-      if (!t) return;
-      // A4横 297x210mm - 余白6mm×2 = 285x198mm (96dpi: 1mm≒3.7795px)
-      const pageW = 285 * 3.7795;
-      const pageH = 198 * 3.7795;
-      const scale = Math.min(pageW / t.offsetWidth, pageH / t.offsetHeight, 1);
-      document.documentElement.style.setProperty('--print-zoom', scale.toFixed(3));
+      if (!t) return 1;
+      const r = t.getBoundingClientRect();
+      if (!r.width || !r.height) return 1;
+
+      // A4 = 297×210mm。余白6mm×2 を引いたのが印刷できる幅（96dpiで 1mm = 3.7795px）
+      const MM = 3.7795;
+      const HEAD = 18;                 // 見出しの高さ
+      const land = { w: 285 * MM, h: 198 * MM - HEAD, o: 'landscape' };
+      const port = { w: 198 * MM, h: 285 * MM - HEAD, o: 'portrait'  };
+      const fit = (p) => Math.min(p.w / r.width, p.h / r.height, 1);
+      const best = fit(port) > fit(land) ? port : land;
+
+      setPrintPage(best.o);
+      // 0.97 は保険。プリンタの余白や丸めで 2枚目にこぼれないように
+      const scale = fit(best) * 0.97;
+      root.style.setProperty('--print-zoom', scale.toFixed(3));
+      return scale;
     }
 
     function escapeHtml(s) {
