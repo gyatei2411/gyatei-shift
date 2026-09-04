@@ -71,16 +71,26 @@
     .bv-days button.u1000 { background: #9A3412; border-color: #C2410C; color: #FED7AA; }
     .bv-days button.u500 .d, .bv-days button.u1000 .d { color: #FDE68A; }
     .bv-irow.up .v { color: #FDE68A; font-weight: 900; }
+    .hist-ver .board-tag {
+      background: #7F1D1D; color: #FEE2E2; font-size: 11px; font-weight: 800;
+      padding: 1px 8px; border-radius: 999px; margin-left: 8px;
+    }
     /* 情報行（休み・まかない・メモ）の中身 */
     tr.info td.v .iv { display: block; white-space: nowrap; line-height: 1.25; }
     tr.info td.v .iv.wrap { white-space: normal; word-break: break-word; overflow-wrap: anywhere; }
+    tr.info.editable td.v { cursor: pointer; box-shadow: inset 0 0 0 1px #B91C1C; border-radius: 6px; }
+    tr.info.editable td.v.blank .iv { color: #B91C1C; opacity: 0.8; }
     .up-select {
       background: #1E293B; color: #FDE68A; border: 1px solid #475569; border-radius: 6px;
       font: inherit; font-weight: 900; padding: 2px 6px; cursor: pointer;
     }
     .shopbar { cursor: default; }
-    body.shop td.cell[data-absn] { cursor: pointer; }
-    body.shop .bv-row[data-absn] { cursor: pointer; }
+    body.shop td.cell[data-cn] { cursor: pointer; }
+    body.shop .bv-row[data-cn] { cursor: pointer; }
+    /* 店用モードで「ここに入れられる」と分かるように */
+    body.shop td.cell.off { box-shadow: inset 0 0 0 1px #334155; }
+    td.cell .plus { font-size: 22px; font-weight: 900; color: #475569; line-height: 1; }
+    .board.compact td.cell .plus { font-size: 17px; }
     .badge-draft {
       background: #B45309; color: #FFF7ED; padding: 3px 10px; border-radius: 999px;
       font-size: 12px; font-weight: 800;
@@ -447,7 +457,7 @@
       <button id="btn-shop" onclick="toggleShopMode()" title="店用モード（欠勤・UPをこの端末で設定する。暗証番号がいります）">🔧</button>
       <button onclick="App.forceUpdate ? App.forceUpdate() : location.reload()" title="最新に更新">🔄<span class="lbl"> 更新</span></button>
     </div>
-    <div class="shopbar" id="shopbar" style="display:none">店用モード　シフトをタップで編集　UPは下のUP行</div>
+    <div class="shopbar" id="shopbar" style="display:none">店用モード　空のマスも含めてタップで編集　未確定の週も見えます</div>
 
     <div class="fit-wrap" id="fit-wrap">
       <div class="fit-inner" id="fit-inner"></div>
@@ -505,6 +515,111 @@
       return v;
     }
 
+    // メモ・休みをタブレットで直す。
+    //   表全体を拡大縮小しているので、直接打つとカーソルがずれる。
+    //   確実な prompt で入力させる
+    function editInfoCell(key, d) {
+      const reqId = reqIds[cursor];
+      if (!reqId) return;
+      const req = App.getRequest(reqId);
+      const ds = App.weekDates(req.ws)[d];
+      const cur = App.getManual(reqId)[App._safeCellKey(key + d)] || '';
+      const isMemo = key === 'memo_';
+      const title = `${App.fmtMD(ds)}（${App.DOW_LABELS[d]}）の` + (isMemo ? 'メモ' : '休み（家族）');
+      const hint = isMemo
+        ? '\n「まかゆうま」のように「まか」で始めると、まかないの人数に足します。'
+        : '\n店=店長 / 若=若奥さん / 奥=奥さん / 会=会長。「1人」「2人」と人数だけでもOK。';
+      const v = prompt(title + hint, cur);
+      if (v === null) return;
+      App.setManualCell(reqId, key + d, String(v).trim());
+      render();
+    }
+
+    const CELL_FIELDS = ['main', 'sub', 'start', 'end', 'time', 'sym'];
+
+    // その人・その日の中身を一行にする（履歴用）
+    function summarizeCell(reqId, name, day) {
+      const conf = App.getConfirmed(reqId);
+      const cells = conf ? (conf.cells || {}) : App.getManual(reqId);
+      const g = f => cells[App._safeCellKey(`s_${name}_${day}_${f}`)] || '';
+      const pos = g('main'), sub0 = g('sub'), t = (g('start') + g('end')).trim();
+      if (!pos && !sub0 && !t) return '出勤なし';
+      return (pos || '—') + (sub0 ? `/サブ${sub0}` : '') + (t ? ` ${t}` : '');
+    }
+
+    // 確定済みの週をタブレットで直したとき、確定版にも反映する。
+    //   タブレットは確定版を見ているので、これがないと直しても画面が変わらない。
+    //   **直したマスだけ**を差し替える（管理画面で作りかけの他の修正を巻き込まないため）。
+    //   バージョンは上げない。
+    //
+    //   履歴は **GROUP_MIN 分以内の修正を 1つにまとめる**。
+    //   3人続けて直しても履歴は1件で、3行並ぶだけになる。
+    //   同じマスを何度も直したら 「最初の状態 → 今の状態」にまとめ、
+    //   元に戻したらその行ごと消す
+    const GROUP_MIN = 30;
+    const BOARD_TAG = '（タブレットで修正）';
+
+    // 同じマスの行があればまとめる
+    function mergeChange(list, prefix, was, after) {
+      const out = list.slice();
+      const i = out.findIndex(l => l.indexOf(prefix) === 0);
+      if (i >= 0) {
+        const m = out[i].slice(prefix.length).match(/^(.*?) → /);
+        const first = m ? m[1] : was;          // このまとまりでの最初の状態
+        if (first === after) { out.splice(i, 1); return out; }   // 元に戻った
+        out[i] = prefix + first + ' → ' + after + BOARD_TAG;
+        return out;
+      }
+      if (was === after) return out;
+      out.push(prefix + was + ' → ' + after + BOARD_TAG);
+      return out;
+    }
+
+    function publishCell(reqId, name, day, was) {
+      const conf = App.getConfirmed(reqId);
+      if (!conf) return;   // 未確定ならそのまま見える
+      const live = App.getManual(reqId);
+      const cells = Object.assign({}, conf.cells || {});
+      CELL_FIELDS.forEach(f => {
+        const k = App._safeCellKey(`s_${name}_${day}_${f}`);
+        if (live[k] === undefined || live[k] === '') delete cells[k];
+        else cells[k] = live[k];
+      });
+      const after = (() => {
+        const g = f => cells[App._safeCellKey(`s_${name}_${day}_${f}`)] || '';
+        const pos = g('main'), sub0 = g('sub'), t = (g('start') + g('end')).trim();
+        if (!pos && !sub0 && !t) return '出勤なし';
+        return (pos || '—') + (sub0 ? `/サブ${sub0}` : '') + (t ? ` ${t}` : '');
+      })();
+      if (was === after) return;   // 変わっていなければ何もしない
+
+      const req = App.getRequest(reqId);
+      const ds = App.weekDates(req.ws)[day];
+      const prefix = `${App.fmtMD(ds)}(${App.DOW_LABELS[day]}) ${name}: `;
+
+      const at = new Date().toISOString();
+      const hist = (conf.history || []).slice();
+      const last = hist[hist.length - 1];
+      const inGroup = last && last.board &&
+        (Date.now() - new Date(last.at).getTime()) < GROUP_MIN * 60 * 1000;
+
+      if (inGroup) {
+        const changes = mergeChange(last.changes || [], prefix, was, after);
+        if (!changes.length) hist.pop();   // 全部元に戻った
+        else hist[hist.length - 1] = Object.assign({}, last, { at, changes });
+      } else {
+        hist.push({ v: conf.version, at, changes: [prefix + was + ' → ' + after + BOARD_TAG], board: true });
+      }
+
+      App.saveConfirmed(reqId, {
+        version: conf.version,
+        at,
+        cells,
+        avail: conf.avail || [],
+        history: hist
+      });
+    }
+
     function saveUpBoard(sel) {
       const reqId = reqIds[cursor];
       if (!reqId) return;
@@ -524,6 +639,7 @@
       }
       shopMode = !shopMode;
       updateShopUI();
+      pickWeeks();   // 未確定の週を出し入れする
       render();
     }
 
@@ -534,6 +650,7 @@
       shopMode = false;
       if (App.closeCellEditor) App.closeCellEditor();
       updateShopUI();
+      pickWeeks();   // 未確定の週を見ていたら、確定済みの週に戻る
       render();
     }
     document.addEventListener('visibilitychange', () => { if (document.hidden) lockShopMode(); });
@@ -554,14 +671,20 @@
         const reqId = reqIds[cursor];
         if (!reqId) return;
 
+        // メモ・休み（家族）
+        const info = e.target.closest('[data-editkey]');
+        if (info) { editInfoCell(info.dataset.editkey, +info.dataset.editday); return; }
+
         // シフトのセル → 編集パネル（シフト表と同じもの）
-        const c = e.target.closest('[data-absn]');
+        const c = e.target.closest('[data-cn]');
         if (c) {
           const req = App.getRequest(reqId);
           if (!req) return;
+          const nm = c.dataset.cn, dy = +c.dataset.cd;
+          const was = summarizeCell(reqId, nm, dy);
           App.openCellEditor({
-            reqId, name: c.dataset.absn, day: +c.dataset.absd, ws: req.ws,
-            onSave: () => render()
+            reqId, name: nm, day: dy, ws: req.ws,
+            onSave: () => { publishCell(reqId, nm, dy, was); render(); }
           });
         }
       });
@@ -597,7 +720,8 @@
       // スタッフに見せるのは 確定した週だけ。
       //   以前は「確定済みが1つでもあれば確定済みだけ」という全か無かの判定だったため、
       //   同期の有無で表示が変わっていた（更新前は下書きが見えていた）
-      let list = all.filter(r => App.getConfirmed(r.id));
+      //   ただし **店用モードのときだけ** は下書き（未確定）も見られる
+      let list = shopMode ? all : all.filter(r => App.getConfirmed(r.id));
 
       const urlId = new URLSearchParams(location.search).get('id');
       // URLで週を指定されたときだけは、未確定でもその週を見られる
@@ -672,7 +796,7 @@
         `${App.weekLabel(req.ws)}　確定${hist.length}回（うち修正${hist.length - 1}回）`;
       document.getElementById('hist-body').innerHTML = hist.slice().reverse().map(h => `
         <div class="hist-ver ${h.v === conf.version ? 'latest' : ''}">
-          <div class="v">v${h.v}<span class="when">${fmtStamp(h.at)}</span>${h.v === conf.version ? '<span class="now">← 今表示している内容</span>' : ''}</div>
+          <div class="v">v${h.v}${h.board ? '<span class="board-tag">タブレット</span>' : ''}<span class="when">${fmtStamp(h.at)}</span>${h.v === conf.version ? '<span class="now">← 今表示している内容</span>' : ''}</div>
           <ul>${(h.changes || []).map(c => `<li>${esc(c)}</li>`).join('')}</ul>
         </div>
       `).join('');
@@ -769,13 +893,15 @@
         showMsg('この週は<strong>スタッフが登録されていません</strong>。');
         return;
       }
-      if (!working.length) {
+      if (!working.length && !shopMode) {
         showMsg('この週はまだ<strong>ポジションが割り当てられていません</strong>。<br>管理画面のシフト表で割り当ててから確定してください。');
         return;
       }
-      const names = working;
+      // 店用モードは **全員** を表に出す。
+      //   今週シフトのない人もこの場で入れられるように
+      const names = shopMode ? all : working;
 
-      let html = `<table class="board${working.length > 12 ? ' compact' : ''}">` +
+      let html = `<table class="board${names.length > 12 ? ' compact' : ''}">` +
         `<colgroup><col class="c-name">` + '<col class="c-day">'.repeat(7) + `</colgroup>` +
         `<thead><tr><th class="corner"></th>`;
       dates.forEach((ds, i) => {
@@ -821,7 +947,7 @@
             const head = part1.replace(/[（(）)]/g, '').trim();
             const cls = POS_CLASS[head] || 'p-etc';
             if (head && POS_CLASS[head]) usedPos[head] = cls;
-            const tdHead = `<td class="cell ${cls}${abs ? ' abs' : ''}" data-absn="${esc(name)}" data-absd="${d}">`;
+            const tdHead = `<td class="cell ${cls}${abs ? ' abs' : ''}" data-cn="${esc(name)}" data-cd="${d}">`;
             if (abs) {
               // 急なお休み。「欠」を大きく、入っていたシフトは小さく残す
               r += tdHead + '<div class="ci">' +
@@ -841,13 +967,15 @@
             continue;
           }
           // 出勤していない日 → ○/△で出せると答えていれば交代候補として表示
+          //   店用モードならここもタップできる（その場でシフトに入れられる）
+          const mark = shopMode ? ` data-cn="${esc(name)}" data-cd="${d}"` : '';
           const sym = symOf(name, d);
           if (sym === 'o' || sym === 't' || sym === 'm') {
             usedAvail = true;
             const mk = sym === 'o' ? '○' : sym === 't' ? '△' : '未';
-            r += `<td class="cell av-${sym}"><div class="ci"><span class="mark">${mk}</span></div></td>`;
+            r += `<td class="cell av-${sym}"${mark}><div class="ci"><span class="mark">${mk}</span></div></td>`;
           } else {
-            r += '<td class="cell off"></td>';
+            r += `<td class="cell off"${mark}>` + (shopMode ? '<div class="ci"><span class="plus">＋</span></div>' : '') + '</td>';
           }
         }
         return r + '</tr>';
@@ -859,12 +987,15 @@
       // 休み（家族）とメモは当日の情報なので、確定版ではなく今の入力を見る
       const cell = (k) => live[App._safeCellKey(k)] || '';
       const worksCount = (d) => names.filter(n => worksOn(n, d) && !isAbs(n, d)).length;
-      const infoRow = (cls, label, fn) => {
-        let r = `<tr class="info ${cls}"><td class="name">${label}</td>`;
+      // editKey を渡すと、店用モードのときタップで直せる
+      const infoRow = (cls, label, fn, editKey) => {
+        const ed = editKey && shopMode;
+        let r = `<tr class="info ${cls}${ed ? ' editable' : ''}"><td class="name">${label}</td>`;
         for (let d = 0; d < 7; d++) {
           if (closed.has(d)) { r += '<td class="cell closedday"></td>'; continue; }
           const v = fn(d);
-          r += `<td class="v${v ? '' : ' blank'}"><span class="iv">${v || '・'}</span></td>`;
+          r += `<td class="v${v ? '' : ' blank'}"${ed ? ` data-editkey="${editKey}" data-editday="${d}"` : ''}>` +
+               `<span class="iv">${v || (ed ? '✏' : '・')}</span></td>`;
         }
         return r + '</tr>';
       };
@@ -889,18 +1020,18 @@
         }
         html += r + '</tr>';
       }
-      if (anyFam) html += infoRow('fam', '休み', d => esc(cell(`fam_off_${d}`)));
+      if (anyFam || shopMode) html += infoRow('fam', '休み', d => esc(cell(`fam_off_${d}`)), 'fam_off_');
       html += infoRow('mkn', 'まかない', d => {
         return String(worksCount(d) + App.FAMILY.length - App.familyOffCount(cell(`fam_off_${d}`)) +
                       App.extraMakanai(cell(`memo_${d}`)).count);
       });
-      if (anyMemo) html += infoRow('', 'メモ', d => esc(cell(`memo_${d}`)));
+      if (anyMemo || shopMode) html += infoRow('', 'メモ', d => esc(cell(`memo_${d}`)), 'memo_');
 
       html += '</tbody></table>';
 
       // 今週シフトなしの人は、表の下に小さくまとめて出す（在籍していることが分かるように）
       const restEl = document.getElementById('resting');
-      if (resting.length) {
+      if (resting.length && !shopMode) {
         const chips = resting.map(n => {
           const days = [];
           for (let d = 0; d < 7; d++) {
@@ -979,8 +1110,9 @@
       if (closed.has(d)) return h + '<div class="msg">定休日です</div>';
 
       const working = names.filter(n => worksOn(n, d));
+      // 店用モードなら、回答のない人も含めて全員出す（その場で入れられるように）
       const avail = names.concat(resting).filter(n => !worksOn(n, d))
-        .filter(n => ['o','t','m'].indexOf(symOf(n, d)) >= 0);
+        .filter(n => shopMode || ['o','t','m'].indexOf(symOf(n, d)) >= 0);
 
       const rowFor = (n) => {
         const pos = get(n, d, 'main'), sub = get(n, d, 'sub');
@@ -989,7 +1121,7 @@
         const cls = POS_CLASS[head] || 'p-etc';
         const time = (get(n, d, 'start') + get(n, d, 'end')).trim();
         const abs = isAbs(n, d);
-        return `<div class="bv-row ${cls}${abs ? ' abs' : ''}" data-absn="${esc(n)}" data-absd="${d}">` +
+        return `<div class="bv-row ${cls}${abs ? ' abs' : ''}" data-cn="${esc(n)}" data-cd="${d}">` +
           `<span class="bv-name">${esc(n)}</span>` +
           (abs ? '<span class="bv-ketsu">欠</span>' : '') +
           `<span class="bv-pos">` +
@@ -1006,13 +1138,14 @@
            : '<div class="bv-row" style="color:#64748B;justify-content:center">まだ割り当てられていません</div>') + '</div>';
 
       if (avail.length) {
-        h += '<div class="bv-sec">この日は出られると回答（交代を頼めます）</div>';
+        h += `<div class="bv-sec">${shopMode ? 'この日は入っていない人（タップで入れられます）' : 'この日は出られると回答（交代を頼めます）'}</div>`;
         h += '<div class="bv-list">' + avail.map(n => {
           const sm = symOf(n, d);
-          const mk = sm === 'o' ? '○' : sm === 't' ? '△' : '未';
-          const col = sm === 'o' ? '#4ADE80' : sm === 't' ? '#FBBF24' : '#C4B5FD';
-          return `<div class="bv-row av"><span class="bv-name">${esc(n)}</span>` +
-                 `<span class="bv-pos"></span>` +
+          const mk = sm === 'o' ? '○' : sm === 't' ? '△' : sm === 'm' ? '未' : sm === 'x' ? '✕' : '・';
+          const col = sm === 'o' ? '#4ADE80' : sm === 't' ? '#FBBF24' : sm === 'm' ? '#C4B5FD' : '#64748B';
+          return `<div class="bv-row av"${shopMode ? ` data-cn="${esc(n)}" data-cd="${d}"` : ''}>` +
+                 `<span class="bv-name">${esc(n)}</span>` +
+                 `<span class="bv-pos">${shopMode ? '<span style="color:#475569">＋</span>' : ''}</span>` +
                  `<span class="bv-mark" style="color:${col}">${mk}</span></div>`;
         }).join('') + '</div>';
       }

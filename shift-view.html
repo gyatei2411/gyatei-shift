@@ -1786,7 +1786,7 @@
     }
 
     // 2つのスナップショットの差分を日本語の行にする
-    // includeQuiet=true のときだけ「休み（家族）・メモ」の変更を 1行だけ含める
+    // includeQuiet=true のときだけ「休み（家族）・メモ・0部」の変更を 1行だけ含める
     //（履歴には残さないが、未確定の判定には使う）
     function diffCells(oldCells, newCells, req, includeQuiet) {
       oldCells = oldCells || {}; newCells = newCells || {};
@@ -1796,14 +1796,18 @@
       Object.keys(oldCells).forEach(k => keys[k] = 1);
       Object.keys(newCells).forEach(k => keys[k] = 1);
 
-      const touched = {};   // "name@@day" -> true
+      const touched = {};      // "name@@day" -> true（履歴に残す変更）
+      const touchedSub = {};   // 0部（サブ）だけの変更
       const others = [];
       let quiet = 0;        // 休み（家族）・メモの変更件数
       Object.keys(keys).forEach(k => {
         const a = oldCells[k] || '', b = newCells[k] || '';
         if (a === b) return;
         let m;
-        if ((m = k.match(/^s_(.+)_(\d)_(start|end|time|sub|main|sym)$/))) { touched[m[1] + '@@' + m[2]] = 1; return; }
+        if ((m = k.match(/^s_(.+)_(\d)_(start|end|time|main|sym)$/))) { touched[m[1] + '@@' + m[2]] = 1; return; }
+        // 0部（サブ）だけの変更は履歴に残さない。
+        //   全部決まってからの微調整なので、シフトの修正としては数えない
+        if ((m = k.match(/^s_(.+)_(\d)_sub$/))) { touchedSub[m[1] + '@@' + m[2]] = 1; return; }
         if ((m = k.match(/^note_(\d)$/))) { others.push(`${dayLabel(+m[1])} 備考: ${a || '(空)'} → ${b || '(空)'}`); return; }
         if (/^(fam_off_|memo_)\d$/.test(k)) { quiet++; return; }   // 履歴には残さない
         if ((m = k.match(/^h_(yoso|up|bup)_(\d)$/))) {
@@ -1828,8 +1832,12 @@
         return { d, name, txt: `${dayLabel(d)} ${name}: ${summarize(oldCells, name, d)} → ${summarize(newCells, name, d)}` };
       });
       lines.sort((a, b) => a.d - b.d || (a.name < b.name ? -1 : 1));
+      // 1部・2部・時間が動いていない、0部だけの変更の数
+      const subOnly = Object.keys(touchedSub).filter(g => !touched[g]).length;
+
       const out = lines.map(l => l.txt).concat(others);
       if (includeQuiet && quiet) out.push(`休み・メモの修正 ${quiet}件`);
+      if (includeQuiet && subOnly) out.push(`0部の修正 ${subOnly}件`);
       return out;
     }
 
@@ -1853,6 +1861,7 @@
       badge.style.display = '';
       if (dirty) {
         badge.innerHTML = `⚠ 未確定の修正あり（表示中は v${c.version}）`;
+        badge.title = diffCells(c.cells, currentCells(), req, true).slice(0, 10).join('\n');
         badge.style.background = '#F59E0B';
         btn.textContent = '🔄 修正を確定';
         btn.style.background = '#059669';
@@ -1880,20 +1889,21 @@
 
 よろしいですか？`;
       } else {
-        changes = diffCells(cur.cells, cells, req, false);   // 休み・メモは履歴に残さない
+        changes = diffCells(cur.cells, cells, req, false);   // 休み・メモ・0部は履歴に残さない
         if (!diffCells(cur.cells, cells, req, true).length) {
           App.toast('前回の確定から変更はありません', 'warn'); return;
         }
         if (!changes.length) {
-          // 休み（家族）・メモだけの修正 → 履歴は増やさず、中身だけ差し替える
-          if (!confirm('休み（家族）・メモの修正をタブレットに反映します。' + '\\n' +
-                       '（バージョンは増やさず、変更履歴にも残しません）' + '\\n\\n' +
+          // 休み（家族）・メモ・0部だけの修正 → 履歴は増やさず、中身だけ差し替える
+          const quietWhat = diffCells(cur.cells, cells, req, true).join(' / ');
+          if (!confirm(`${quietWhat} をタブレットに反映します。` + '\n' +
+                       '（バージョンは増やさず、変更履歴にも残しません）' + '\n\n' +
                        'よろしいですか？')) return;
           const av = App.getReplies(currentReqId).map(r => ({ n: r.name, d: r.d }));
           App.saveConfirmed(currentReqId, {
             version: cur.version, at: new Date().toISOString(), cells, avail: av, history: cur.history
           });
-          App.toast('休み・メモを反映しました', 'success');
+          App.toast('タブレットに反映しました（履歴には残していません）', 'success');
           renderConfirmStatus();
           return;
         }
