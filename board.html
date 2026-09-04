@@ -492,8 +492,8 @@
     /* ===== 店用モード =====
        普段は見るだけ。この端末（店のタブレット）でだけ ON にしておくと
        欠勤とUPをその場で押せる。スタッフのスマホは OFF のままなので見るだけ */
-    const SHOP_KEY = 'sa_v4_board_shop';
-    let shopMode = localStorage.getItem(SHOP_KEY) === '1';
+    // 覚えさせない。ページを読み直したら必ずロックから始まる
+    let shopMode = false;
 
     // 暗証番号。番号そのものは書かず、計算した値だけ持つ
     //   ソースを見てもすぐには分からないというだけで、暗号ではない。
@@ -523,10 +523,21 @@
         }
       }
       shopMode = !shopMode;
-      localStorage.setItem(SHOP_KEY, shopMode ? '1' : '');
       updateShopUI();
       render();
     }
+
+    // 画面が消えたら鍵をかけ直す。
+    //   タブレットを置きっぱなしにしても、店用モードのままにならないように
+    function lockShopMode() {
+      if (!shopMode) return;
+      shopMode = false;
+      if (App.closeCellEditor) App.closeCellEditor();
+      updateShopUI();
+      render();
+    }
+    document.addEventListener('visibilitychange', () => { if (document.hidden) lockShopMode(); });
+    window.addEventListener('pagehide', lockShopMode);
 
     function updateShopUI() {
       const b = document.getElementById('btn-shop');
@@ -583,16 +594,17 @@
       const today = App.todayLocal();
       let all = every.filter(r => !App.isPastWeek(r.ws, today));
       if (!all.length) all = every.slice(-1);   // 全部過去なら一番新しい週だけ残す
-      // 過去でない週はすべて見せる。
-      //   以前は「確定済みの週が1つでもあれば確定済みだけ」にしていたため、
-      //   同期して確定データが届いたとたんに未確定の最新週が消えていた。
-      //   未確定の週は「未確定（下書き）」のバッジ付きで出す
-      let list = all;
+      // スタッフに見せるのは 確定した週だけ。
+      //   以前は「確定済みが1つでもあれば確定済みだけ」という全か無かの判定だったため、
+      //   同期の有無で表示が変わっていた（更新前は下書きが見えていた）
+      let list = all.filter(r => App.getConfirmed(r.id));
 
       const urlId = new URLSearchParams(location.search).get('id');
-      // URLで週を指定されたときは、未確定でもその週を見られるようにする
-      if (urlId && !list.some(r => r.id === urlId) && every.some(r => r.id === urlId)) {
-        list = every.filter(r => !App.isPastWeek(r.ws, today) || r.id === urlId);
+      // URLで週を指定されたときだけは、未確定でもその週を見られる
+      //（シフト表の「タブレット表示」から確かめる用）
+      if (urlId && !list.some(r => r.id === urlId)) {
+        const extra = every.find(r => r.id === urlId);
+        if (extra) list = list.concat([extra]).sort((a, b) => a.ws < b.ws ? -1 : 1);
       }
       reqIds = list.map(r => r.id);
       let idx = -1;

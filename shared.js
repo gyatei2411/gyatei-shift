@@ -640,13 +640,25 @@ const App = {
       if (!data) return;  // ルール未設定・データなしなら localStorage を維持
       const all = {};
       Object.values(data).forEach(m => {
-        if (m && m.name) all[m.name] = {
-          positions0: m.positions0 || [],
-          positions: m.positions || [], positions2: m.positions2 || [],
-          t2always: !!m.t2always, t2extra: !!m.t2extra,
-          rank: m.rank || '', daysMin: m.daysMin || null, daysMax: m.daysMax || null,
-          note: m.note || '', priority: !!m.priority
-        };
+        if (!m || !m.name) return;
+        // 知らないフィールドも落とさない。
+        //   以前は拾う項目を列挙していたため、新しく増やした
+        //   rookie（新人）や hours（出勤可能時間）が同期のたびに消えていた
+        const o = Object.assign({}, m);
+        delete o.name;
+        o.positions0 = m.positions0 || [];
+        o.positions  = m.positions  || [];
+        o.positions2 = m.positions2 || [];
+        o.t2always = !!m.t2always;
+        o.t2extra  = !!m.t2extra;
+        o.rookie   = !!m.rookie;
+        o.priority = !!m.priority;
+        o.rank  = m.rank  || '';
+        o.note  = m.note  || '';
+        o.hours = m.hours || '';
+        o.daysMin = (m.daysMin === undefined || m.daysMin === '') ? null : m.daysMin;
+        o.daysMax = (m.daysMax === undefined || m.daysMax === '') ? null : m.daysMax;
+        all[m.name] = o;
       });
       App._write(App.KEYS.staffmeta, all);
       onUpdate && onUpdate();
@@ -1084,9 +1096,6 @@ const App = {
           <button class="ce-close" id="ce-close">\u9589\u3058\u308b</button>
         </div>
         <div class="ce-hint" id="ce-hint"></div>
-
-        <button type="button" class="ce-abs" id="ce-abs"></button>
-
         <div class="ce-field">
           <label>1\u90e8\u3000<span class="sub">9:00\u301c16:00\u3000\u307e\u305a\u3053\u3053\u304b\u3089\u6c7a\u3081\u307e\u3059</span></label>
           <input id="ce-p1" placeholder="\u4f8b: K / R2 / W" autocomplete="off">
@@ -1125,6 +1134,9 @@ const App = {
             <input id="ce-p0" placeholder="\u4f8b: C / C\u30fbm" autocomplete="off">
             <div class="ce-chips" id="ce-p0-chips"></div>
           </div>
+
+          <button type="button" class="ce-abs" id="ce-abs"></button>
+
           <div class="ce-field ce-2col">
             <div>
               <label>\u51fa\u52e4\u53ef\u5426</label>
