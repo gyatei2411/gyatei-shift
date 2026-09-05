@@ -887,9 +887,21 @@
 
       const all = (req.staff || []).slice();
       const working = all.filter(n => { for (let d = 0; d < 7; d++) if (!closed.has(d) && worksOn(n, d)) return true; return false; });
-      const resting = all.filter(n => working.indexOf(n) < 0);
+      // ○△未 で答えている人も表の中に入れる。
+      //   ○△は交代を頼める人、未はまだ答えていない人なので、表の中で見えたほうが早い。
+      //   ✕だけ・回答なし（＝この週はまったく入れない人）だけを表の外にまとめる
+      const hasMark = (n) => {
+        for (let d = 0; d < 7; d++) {
+          if (closed.has(d)) continue;
+          const sm = symOf(n, d);
+          if (sm === 'o' || sm === 't' || sm === 'm') return true;
+        }
+        return false;
+      };
+      const shown = all.filter(n => working.indexOf(n) >= 0 || hasMark(n));
+      const resting = all.filter(n => shown.indexOf(n) < 0);
 
-      if (!working.length && !resting.length) {
+      if (!all.length) {
         showMsg('この週は<strong>スタッフが登録されていません</strong>。');
         return;
       }
@@ -899,7 +911,7 @@
       }
       // 店用モードは **全員** を表に出す。
       //   今週シフトのない人もこの場で入れられるように
-      const names = shopMode ? all : working;
+      const names = shopMode ? all : shown;
 
       let html = `<table class="board${names.length > 12 ? ' compact' : ''}">` +
         `<colgroup><col class="c-name">` + '<col class="c-day">'.repeat(7) + `</colgroup>` +
@@ -1029,7 +1041,7 @@
 
       html += '</tbody></table>';
 
-      // 今週シフトなしの人は、表の下に小さくまとめて出す（在籍していることが分かるように）
+      // この週まったく入れない人（✕だけ・回答なし）だけ、表の下に小さくまとめて出す
       const restEl = document.getElementById('resting');
       if (resting.length && !shopMode) {
         const chips = resting.map(n => {
