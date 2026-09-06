@@ -39,6 +39,13 @@
     }
     .topbar button:disabled { opacity: 0.3; cursor: default; }
     .topbar button.shop-on { background: #B91C1C; color: #FEE2E2; border-color: #EF4444; }
+    /* メモ帳への行き来。未検討のアイデアがあると件数が出る */
+    .topbar button.memo { background: #312E81; color: #C7D2FE; border-color: #4338CA; }
+    .topbar button.memo .cnt {
+      display: none; margin-left: 5px; background: #FBBF24; color: #78350F;
+      border-radius: 999px; padding: 0 6px; font-size: 11px; font-weight: 800;
+    }
+    .topbar button.memo.has-new .cnt { display: inline; }
 
     /* 店用モードの帯 */
     .shopbar {
@@ -449,6 +456,7 @@
       <span class="badge-draft" id="draft-badge" style="display:none">未確定（下書き）</span>
       <span class="stamp" id="stamp"></span>
       <span class="spacer"></span>
+      <button id="btn-memo" class="memo" onclick="location.href='memo.html'" title="アイデアとリーダー会議の議事録">📝<span class="lbl"> メモ帳</span><span class="cnt" id="memo-cnt"></span></button>
       <button id="btn-prev" onclick="moveWeek(-1)" title="前の週">◀<span class="lbl"> 前の週</span></button>
       <button id="btn-next" onclick="moveWeek(1)" title="次の週"><span class="lbl">次の週 </span>▶</button>
       <button id="btn-hist" onclick="openHistory()" style="display:none" title="変更履歴">📜<span class="lbl"> 変更履歴</span><span class="cnt"></span></button>
@@ -698,6 +706,7 @@
           () => { fbError = false; pickWeeks(); render(); },
           () => { fbError = true; render(); }
         );
+        watchMemoCount();
       }
       updateShopUI();
       wireShopTaps();
@@ -706,6 +715,19 @@
       window.addEventListener('resize', fit);
       // タブレット放置対策: 5分ごとに再描画（日付またぎ・同期漏れ対策）
       setInterval(() => { pickWeeks(); render(); }, 5 * 60 * 1000);
+    }
+
+    // メモ帳の「まだ会議に上げていないアイデア」の件数をボタンに出す
+    function watchMemoCount() {
+      App.fbDB.ref('memos/ideas').on('value', snap => {
+        const all = snap.val() || {};
+        const n = Object.values(all).filter(i => i && !i.deleted && (i.status || 'new') === 'new').length;
+        const btn = document.getElementById('btn-memo');
+        const cnt = document.getElementById('memo-cnt');
+        if (!btn || !cnt) return;
+        cnt.textContent = n;
+        btn.classList.toggle('has-new', n > 0);
+      }, () => {});   // ルール未設定なら黙って何も出さない
     }
 
     // 表示できる週を集める（確定済みを優先。無ければ全依頼）
