@@ -275,7 +275,7 @@ const Memo = {
     draft:   'gy_memo_draft'
   },
   // 議事録を書ける人の初期値（変更は画面の「⚙ リーダーの名前を登録・変更」から）
-  LEADERS: ['青木', '渡邉', '西川', '駒原', '大橋'],
+  LEADERS: ['店長', '若奥', '青木', '渡邉', '西川', '駒原', '大橋'],
   STATUS: {
     new:   { label: '未検討',        cls: 'badge-new' },
     done:  { label: '会議で検討中',   cls: 'badge-done' },
@@ -547,7 +547,11 @@ function renderIdeas() {
           <button class="like-btn ${liked ? 'on' : ''}" onclick="toggleLike('${i.id}')">
             👍 いいね${likes ? ' ' + likes : ''}
           </button>
-          ${mine ? `<button class="btn btn-outline btn-sm" onclick="deleteIdea('${i.id}')">🗑 取り消す</button>` : ''}
+          ${mine
+            ? `<button class="btn btn-outline btn-sm" onclick="deleteIdea('${i.id}')">🗑 取り消す</button>`
+            : canEdit()
+              ? `<button class="btn btn-outline btn-sm" title="リーダーとして記入中なので消せます"
+                   onclick="deleteIdea('${i.id}')">🗑 削除</button>` : ''}
         </div>
       </div>`;
   }).join('');
@@ -565,13 +569,17 @@ function toggleLike(id) {
 }
 
 function deleteIdea(id) {
-  if (!confirm('このアイデアを取り消しますか？')) return;
-  // 物理削除せず deleted フラグにする（誤操作から戻せるように）
-  Memo.ideas[id].deleted = true;
-  Memo.write(Memo.K.ideas, Memo.ideas);
-  if (App.fbReady) App.fbDB.ref('memos/ideas/' + id + '/deleted').set(true).catch(() => {});
-  renderIdeas();
-  App.toast('取り消しました', 'info');
+  const i = Memo.ideas[id];
+  if (!i) return;
+  confirmDelete(`${Memo.esc(i.name)}さんのアイデア（${Memo.fmtDate(i.date)}）`,
+    Memo.esc(i.text), () => {
+      // 物理削除せず deleted フラグにする（万一のときDBから戻せるように）
+      i.deleted = true;
+      Memo.write(Memo.K.ideas, Memo.ideas);
+      if (App.fbReady) App.fbDB.ref('memos/ideas/' + id + '/deleted').set(true).catch(() => {});
+      renderIdeas();
+      App.toast('消しました', 'info');
+    });
 }
 
 /* =========================================================================
@@ -616,12 +624,14 @@ function renderLockBox() {
 function setLeader(n) {
   Memo.write(Memo.K.leader, n);
   renderMtg();
+  renderIdeas();   // リーダーの間はアイデアも整理できるので、削除ボタンの出方が変わる
   App.toast(n + ' として記入できます', 'success');
 }
 
 function clearLeader() {
   Memo.write(Memo.K.leader, '');
   renderMtg();
+  renderIdeas();
 }
 
 function editLeaders() {
@@ -744,7 +754,10 @@ function renderMtgDetail() {
 
   const ed = canEdit();
   const dis = ed ? '' : 'disabled';
-  const staff = App.getStaff();
+  // 出席者はスタッフ名簿＋リーダー（店長・若奥はシフトの名簿に載っていないので先頭に足す）
+  const roster = App.getStaff();
+  const staff = (Memo.leaders.length ? Memo.leaders : Memo.LEADERS)
+    .filter(n => !roster.includes(n)).concat(roster);
   const newIdeas = ideaArray().filter(i => (i.status || 'new') === 'new').length;
 
   host.innerHTML = `
@@ -779,7 +792,14 @@ function renderMtgDetail() {
         </div>
       </div>
 
-      <div class="sec-title">議題（アイデアページから拾う）</div>
+      <div class="sec-title">① ミーティングメモ（話の流れ）</div>
+      <p class="hint no-print" style="margin-bottom:8px">
+        会議が進むまま、ここに書いていってください。アイデアの話は②に詳しく残せます。
+      </p>
+      <textarea rows="8" ${dis} placeholder="（例）&#10;・先週の振り返り。土曜の12時台が回らなかった&#10;・お盆の予約状況を共有&#10;・新人の入り方について"
+        oninput="setMtgFieldLater('memo', this.value)">${Memo.esc(m.memo || '')}</textarea>
+
+      <div class="sec-title">② 議題（アイデアページから拾う）</div>
       ${ed ? `
         <div class="btn-row no-print" style="margin-bottom:14px">
           <button class="btn btn-primary" onclick="openPicker()">
@@ -790,15 +810,11 @@ function renderMtgDetail() {
 
       <div id="topicHost">${renderTopics(m, ed)}</div>
 
-      <div class="sec-title">次回までにやること</div>
+      <div class="sec-title">③ 次回までにやること</div>
       <div id="todoHost">${renderTodos(m, ed)}</div>
       ${ed ? `<div class="btn-row no-print" style="margin-top:10px">
                 <button class="btn btn-outline btn-sm" onclick="addTodo()">＋ やることを足す</button>
               </div>` : ''}
-
-      <div class="sec-title">そのほかのメモ</div>
-      <textarea rows="4" ${dis} placeholder="連絡事項・共有事項など"
-        oninput="setMtgFieldLater('memo', this.value)">${Memo.esc(m.memo || '')}</textarea>
 
       <div class="btn-row no-print" style="margin-top:20px">
         <button class="btn btn-outline" onclick="window.print()">🖨 印刷する</button>
@@ -890,13 +906,23 @@ function addFreeTopic() {
 }
 
 function removeTopic(tid) {
-  if (!confirm('この議題を消しますか？')) return;
-  withMtg(m => {
-    const t = (m.topics || []).find(x => x.id === tid);
-    // アイデア側の「会議で検討中」を元に戻す
-    if (t && t.ideaId && Memo.ideas[t.ideaId]) updateIdeaStatus(t.ideaId, 'new', '', '');
-    m.topics = (m.topics || []).filter(x => x.id !== tid);
-  });
+  const m0 = Memo.minutes[Memo.curMtg];
+  const t0 = m0 && (m0.topics || []).find(x => x.id === tid);
+  if (!t0) return;
+  const src = t0.ideaId && Memo.ideas[t0.ideaId];
+  confirmDelete('この議題を議事録から外します',
+    `${src ? '💡 ' + Memo.esc(src.name) + 'さんのアイデア<br>' + Memo.esc(src.text)
+           : Memo.esc(t0.title || '(無題)')}
+     ${t0.text ? '<br><br><b>書いた内容</b><br>' + Memo.esc(t0.text) : ''}
+     ${src ? '<br><br>アイデアそのものは消えません。「未検討」に戻ります。' : ''}`,
+    () => {
+      withMtg(m => {
+        const t = (m.topics || []).find(x => x.id === tid);
+        // アイデア側の「会議で検討中」を元に戻す
+        if (t && t.ideaId && Memo.ideas[t.ideaId]) updateIdeaStatus(t.ideaId, 'new', '', '');
+        m.topics = (m.topics || []).filter(x => x.id !== tid);
+      });
+    });
 }
 
 function setTopicLater(tid, k, v) {
@@ -944,7 +970,15 @@ function addTodo() {
 }
 
 function removeTodo(tid) {
-  withMtg(m => { m.todos = (m.todos || []).filter(x => x.id !== tid); });
+  const m0 = Memo.minutes[Memo.curMtg];
+  const t0 = m0 && (m0.todos || []).find(x => x.id === tid);
+  if (!t0) return;
+  const doIt = () => withMtg(m => { m.todos = (m.todos || []).filter(x => x.id !== tid); });
+  // まだ何も書いていない行は、いちいち聞かずに消す
+  if (!(t0.text || '').trim() && !(t0.who || '').trim()) { doIt(); return; }
+  confirmDelete('この「やること」を消します',
+    `${Memo.esc(t0.text || '(内容なし)')}
+     ${t0.who ? '<br>担当: ' + Memo.esc(t0.who) : ''}`, doIt);
 }
 
 function setTodo(tid, k, v) {
@@ -962,19 +996,27 @@ function setTodoLater(tid, k, v) {
 }
 
 function deleteMtg(id) {
-  if (!confirm('この議事録を削除しますか？')) return;
   const m = Memo.minutes[id];
-  if (m) {
-    // 取り上げていたアイデアを未検討に戻す
-    (m.topics || []).forEach(t => {
-      if (t.ideaId && Memo.ideas[t.ideaId]) updateIdeaStatus(t.ideaId, 'new', '', '');
+  if (!m) return;
+  const nT = (m.topics || []).length;
+  const nD = (m.todos || []).length;
+  const head = (m.memo || '').trim().split('\n')[0] || '（ミーティングメモは空です）';
+  confirmDelete(`${Memo.fmtDate(m.date)} のリーダーミーティングの議事録`,
+    `記録: ${Memo.esc(m.writer || '-')}　議題 ${nT}件　やること ${nD}件<br>
+     <span style="color:var(--muted)">${Memo.esc(head)}</span>
+     ${nT ? '<br><br>この議事録で取り上げたアイデアは「未検討」に戻ります。' : ''}`,
+    () => {
+      // 取り上げていたアイデアを未検討に戻す
+      (m.topics || []).forEach(t => {
+        if (t.ideaId && Memo.ideas[t.ideaId]) updateIdeaStatus(t.ideaId, 'new', '', '');
+      });
+      m.deleted = true;
+      pushMtg(m);
+      Memo.curMtg = null;
+      renderMtg();
+      renderIdeas();
+      App.toast('議事録を消しました', 'info');
     });
-    m.deleted = true;
-    pushMtg(m);
-  }
-  Memo.curMtg = null;
-  renderMtg();
-  renderIdeas();
 }
 
 /* =========================================================================
@@ -1052,6 +1094,27 @@ function applyPicker() {
 /* =========================================================================
    モーダル
    ========================================================================= */
+/* 削除は必ずこのモーダルを通す。
+   「やめる」と「はい、消します」を離して並べ、押し間違いを減らす */
+function confirmDelete(what, detailHtml, fn) {
+  Memo._del = fn;
+  openModal('本当に消していいですか？',
+    `<p style="font-weight:800;margin-bottom:10px">${what}</p>
+     <div class="topic-src" style="font-size:0.92rem;color:var(--text);margin-bottom:0">${detailHtml}</div>
+     <p class="hint" style="margin-top:14px;color:var(--danger);font-weight:700">
+       一度消すと、この画面からは元に戻せません。</p>`,
+    `<button class="btn btn-outline" onclick="closeModal()">やめる</button>
+     <span style="width:40px"></span>
+     <button class="btn" style="background:var(--danger);color:#fff" onclick="runDelete()">はい、消します</button>`);
+}
+
+function runDelete() {
+  const f = Memo._del;
+  Memo._del = null;
+  closeModal();
+  if (f) f();
+}
+
 function openModal(title, body, foot) {
   document.getElementById('modalHost').innerHTML = `
     <div class="modal-bg" onclick="if(event.target===this)closeModal()">
@@ -1063,7 +1126,10 @@ function openModal(title, body, foot) {
     </div>`;
 }
 
-function closeModal() { document.getElementById('modalHost').innerHTML = ''; }
+function closeModal() {
+  Memo._del = null;   // 「やめる」で閉じたら削除の予約も捨てる
+  document.getElementById('modalHost').innerHTML = '';
+}
 
 /* 入力のたびに下書きを保存 */
 document.addEventListener('input', e => {
