@@ -731,7 +731,7 @@ const App = {
   //（スマホは古い HTML/JS を抛え込むことがあるため）
   forceUpdate() {
     const files = ['shared.js', 'xlsx-export.js', 'firebase-config.js', 'style.css',
-                   'admin.html', 'shift-view.html', 'board.html', 'reply.html'];
+                   'admin.html', 'shift-view.html', 'board.html', 'reply.html', 'memo.html'];
     return Promise.all(files.map(f => fetch(f, { cache: 'reload' }).catch(() => {})))
       .then(() => { location.reload(); });
   },

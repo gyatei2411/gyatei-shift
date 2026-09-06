@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ぎゃあていメモ">
+  <title>メモ帳 - ぎゃあてい</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="shared.js"></script>
+  <style>
+    /* ===== タブレット共用前提: タップ領域を大きめに ===== */
+    body { -webkit-text-size-adjust: 100%; }
+    .container { max-width: 1100px; }
+
+    .tabs-big { display: flex; gap: 10px; margin-bottom: 20px; }
+    .tab-big {
+      flex: 1; padding: 16px 10px; border-radius: 12px; border: 2px solid var(--border);
+      background: #fff; color: var(--muted); font-size: 1.02rem; font-weight: 800;
+      cursor: pointer; font-family: inherit; text-align: center; line-height: 1.35;
+    }
+    .tab-big small { display: block; font-size: 0.72rem; font-weight: 600; opacity: 0.85; margin-top: 3px; }
+    .tab-big.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .tab-big.active.mtg { background: var(--purple); border-color: var(--purple); }
+
+    /* ===== 名前選択 ===== */
+    .name-box { max-height: 168px; overflow-y: auto; }
+    .name-pill { font-size: 0.92rem; padding: 9px 14px; }
+
+    /* ===== アイデアカード ===== */
+    .idea-list { display: flex; flex-direction: column; gap: 12px; }
+    .idea-card {
+      background: #fff; border: 1.5px solid var(--border); border-radius: 12px;
+      padding: 14px 16px;
+    }
+    .idea-card.picked { border-color: var(--purple); background: #FAF8FF; }
+    .idea-head {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      font-size: 0.8rem; color: var(--muted); margin-bottom: 8px;
+    }
+    .idea-head .who { font-weight: 800; color: var(--text); font-size: 0.92rem; }
+    .idea-text { font-size: 1rem; white-space: pre-wrap; word-break: break-word; }
+    .idea-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+    .badge {
+      display: inline-block; padding: 3px 9px; border-radius: 999px;
+      font-size: 0.72rem; font-weight: 800; white-space: nowrap;
+    }
+    .badge-new   { background: #FEF3C7; color: #92400E; }
+    .badge-done  { background: #E0E7FF; color: #3730A3; }
+    .badge-adopt { background: #D1FAE5; color: #065F46; }
+    .badge-hold  { background: #F1F5F9; color: #475569; }
+    .badge-drop  { background: #FEE2E2; color: #991B1B; }
+
+    .like-btn {
+      background: #fff; border: 1.5px solid var(--border-strong); border-radius: 999px;
+      padding: 6px 14px; font-size: 0.85rem; font-weight: 700; color: var(--muted);
+      cursor: pointer; font-family: inherit;
+    }
+    .like-btn.on { background: #FEF3C7; border-color: var(--warning); color: #92400E; }
+
+    .filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+    .filter-btn {
+      background: #fff; border: 1.5px solid var(--border); border-radius: 999px;
+      padding: 7px 14px; font-size: 0.85rem; font-weight: 700; color: var(--muted);
+      cursor: pointer; font-family: inherit;
+    }
+    .filter-btn.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+    /* ===== 議事録 ===== */
+    .mtg-lock {
+      background: #FFFBEB; border: 1.5px solid #FCD34D; border-radius: 12px;
+      padding: 16px; margin-bottom: 18px;
+    }
+    .mtg-lock .lock-title { font-weight: 800; margin-bottom: 6px; }
+    .mtg-lock .lock-sub { font-size: 0.85rem; color: var(--muted); margin-bottom: 12px; }
+
+    .topic {
+      border: 1.5px solid var(--border); border-radius: 12px; padding: 14px;
+      margin-bottom: 12px; background: #fff;
+    }
+    .topic-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+    .topic-no {
+      flex: 0 0 auto; width: 28px; height: 28px; border-radius: 8px;
+      background: var(--purple); color: #fff; font-weight: 800; font-size: 0.85rem;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .topic-title { flex: 1; font-weight: 800; font-size: 1rem; word-break: break-word; }
+    .topic-src {
+      font-size: 0.78rem; color: var(--muted); background: var(--muted-bg);
+      border-left: 3px solid var(--border-strong); padding: 8px 10px; border-radius: 0 6px 6px 0;
+      margin-bottom: 10px; white-space: pre-wrap;
+    }
+    .result-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .result-btn {
+      background: #fff; border: 1.5px solid var(--border); border-radius: 8px;
+      padding: 7px 13px; font-size: 0.85rem; font-weight: 700; color: var(--muted);
+      cursor: pointer; font-family: inherit;
+    }
+    .result-btn.on[data-r="adopt"] { background: #D1FAE5; border-color: var(--success); color: #065F46; }
+    .result-btn.on[data-r="hold"]  { background: #F1F5F9; border-color: var(--border-strong); color: #334155; }
+    .result-btn.on[data-r="drop"]  { background: #FEE2E2; border-color: var(--danger); color: #991B1B; }
+
+    .todo-row {
+      display: flex; gap: 8px; align-items: center; padding: 9px 0;
+      border-bottom: 1px dashed var(--border);
+    }
+    .todo-row:last-child { border-bottom: none; }
+    .todo-row input[type="checkbox"] { width: 22px; height: 22px; flex: 0 0 auto; }
+    .todo-row .t-text { flex: 1; min-width: 120px; }
+    .todo-row .t-who { width: 110px; flex: 0 0 auto; }
+    .todo-row .t-due { width: 148px; flex: 0 0 auto; }
+    .todo-row.done .t-text { text-decoration: line-through; color: var(--muted); }
+
+    .mtg-list-item {
+      display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+      border: 1.5px solid var(--border); border-radius: 10px; background: #fff;
+      cursor: pointer; margin-bottom: 8px;
+    }
+    .mtg-list-item:hover { border-color: var(--purple); }
+    .mtg-list-item.active { border-color: var(--purple); background: #FAF8FF; }
+    .mtg-list-item .m-date { font-weight: 800; font-size: 0.95rem; }
+    .mtg-list-item .m-sub { font-size: 0.78rem; color: var(--muted); }
+    .mtg-list-item .spacer { flex: 1; }
+
+    /* ===== 議題ピッカー ===== */
+    .modal-bg {
+      position: fixed; inset: 0; background: rgba(15,23,42,0.55);
+      display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 900;
+    }
+    .modal {
+      background: #fff; border-radius: 16px; width: 100%; max-width: 620px;
+      max-height: 88vh; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .modal-head { padding: 16px 20px; border-bottom: 1px solid var(--border); font-weight: 800; }
+    .modal-body { padding: 16px 20px; overflow-y: auto; flex: 1; }
+    .modal-foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+    .pick-row {
+      display: flex; gap: 10px; align-items: flex-start; padding: 11px 0;
+      border-bottom: 1px dashed var(--border); cursor: pointer;
+    }
+    .pick-row input[type="checkbox"] { width: 22px; height: 22px; margin-top: 2px; flex: 0 0 auto; }
+
+    .sec-title {
+      font-size: 0.78rem; font-weight: 800; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.06em; margin: 22px 0 10px;
+    }
+
+    .hint { font-size: 0.82rem; color: var(--muted); line-height: 1.6; }
+
+    @media (max-width: 700px) {
+      .container { padding: 0 12px 60px; margin-top: 14px; }
+      .todo-row { flex-wrap: wrap; }
+      .todo-row .t-who, .todo-row .t-due { width: calc(50% - 4px); }
+    }
+
+    /* ===== 印刷（議事録を紙で配る用） ===== */
+    @media print {
+      .header, .tabs-big, .no-print, .btn, .filter-row { display: none !important; }
+      body { background: #fff; }
+      .container { max-width: none; margin: 0; padding: 0; }
+      .card { box-shadow: none; border: none; padding: 0; }
+      .topic { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📝 ぎゃあてい メモ帳</h1>
+  <div class="header-actions">
+    <a href="board.html">シフト表</a>
+    <span class="conn-badge" id="connBadge">⚪ ローカル</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="tabs-big">
+    <button class="tab-big active" id="tabIdea" onclick="switchTab('idea')">
+      💡 アイデア<small>こんなことできたら／こうしたらどうやろう</small>
+    </button>
+    <button class="tab-big mtg" id="tabMtg" onclick="switchTab('mtg')">
+      📋 リーダー会議<small>週1のミーティング議事録</small>
+    </button>
+  </div>
+
+  <!-- ================= アイデアページ ================= -->
+  <div id="pageIdea">
+
+    <div class="card">
+      <h2>アイデアを書く</h2>
+      <p class="card-sub">思いつきで大丈夫です。書いたものは週1のリーダー会議で必ず目を通します。</p>
+
+      <div class="form-group">
+        <label class="form-label">日付</label>
+        <input type="date" class="form-input" id="iDate" style="max-width:220px">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">名前</label>
+        <div class="name-options name-box" id="iNameBox"></div>
+        <input type="text" class="form-input" id="iNameFree" placeholder="名簿にない人はここに入力" style="margin-top:8px">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">内容</label>
+        <textarea id="iText" rows="4" placeholder="例）2Fの窓際の席、夏場めちゃくちゃ暑いのでロールカーテン付けられへんかな"></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary btn-block" onclick="submitIdea()">💡 アイデアを投稿する</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>みんなのアイデア <span id="iCount" style="font-size:0.85rem;color:var(--muted);font-weight:600"></span></h2>
+      <div class="filter-row">
+        <button class="filter-btn on" data-f="all"   onclick="setFilter('all')">すべて</button>
+        <button class="filter-btn"    data-f="new"   onclick="setFilter('new')">未検討</button>
+        <button class="filter-btn"    data-f="adopt" onclick="setFilter('adopt')">やることに決定</button>
+        <button class="filter-btn"    data-f="mine"  onclick="setFilter('mine')">この端末から</button>
+        <input type="text" class="form-input" id="iSearch" placeholder="🔍 言葉で探す"
+               oninput="renderIdeas()" style="flex:1;min-width:160px;max-width:280px">
+      </div>
+      <div class="idea-list" id="ideaList"></div>
+    </div>
+
+  </div>
+
+  <!-- ================= 議事録ページ ================= -->
+  <div id="pageMtg" style="display:none">
+
+    <div id="mtgLockBox"></div>
+
+    <div class="card no-print">
+      <h2>議事録一覧</h2>
+      <p class="card-sub">週1のリーダーミーティングの記録です。閲覧は全員できます。</p>
+      <div id="mtgList"></div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-primary" id="btnNewMtg" onclick="newMeeting()">＋ 今週の議事録を作る</button>
+      </div>
+    </div>
+
+    <div id="mtgDetail"></div>
+
+  </div>
+
+</div>
+
+<div id="modalHost"></div>
+
+<script>
+/* =========================================================================
+   ぎゃあてい メモ帳
+   - 1ページ目: アイデア（誰でも書ける）
+   - 2ページ目: リーダーミーティング議事録（記録者を選んだ人だけ書ける）
+   - Firebase Realtime Database の memos/ 配下を全端末で共有
+     memos/ideas/{id}    … アイデア
+     memos/minutes/{id}  … 議事録
+     settings/leaders    … リーダー名（議事録を書ける人）
+   - Firebase 未設定でも localStorage で単独動作する
+   ========================================================================= */
+
+const Memo = {
+  K: {
+    device:  'gy_memo_device',
+    ideas:   'gy_memo_ideas',
+    minutes: 'gy_memo_minutes',
+    leader:  'gy_memo_leader',    // この端末で選ばれている記録者
+    draft:   'gy_memo_draft'
+  },
+  // 議事録を書ける人の初期値（変更は画面の「⚙ リーダーの名前を登録・変更」から）
+  LEADERS: ['青木', '渡邉', '西川', '駒原', '大橋'],
+  STATUS: {
+    new:   { label: '未検討',        cls: 'badge-new' },
+    done:  { label: '会議で検討中',   cls: 'badge-done' },
+    adopt: { label: 'やることに決定', cls: 'badge-adopt' },
+    hold:  { label: '保留',          cls: 'badge-hold' },
+    drop:  { label: '今回は見送り',   cls: 'badge-drop' }
+  },
+
+  ideas: {},     // id -> idea
+  minutes: {},   // id -> minute
+  leaders: [],
+  deviceId: '',
+  tab: 'idea',
+  filter: 'all',
+  curMtg: null,   // 開いている議事録 id
+  iName: '',
+  saveTimer: {},
+
+  /* ---------- localStorage ---------- */
+  read(k, def) {
+    try { return JSON.parse(localStorage.getItem(k) || JSON.stringify(def)); }
+    catch (e) { return def; }
+  },
+  write(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+
+  newId(p) { return p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); },
+
+  today() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  },
+
+  fmtDate(ds) {
+    if (!ds) return '';
+    const d = new Date(ds + 'T00:00:00');
+    if (isNaN(d)) return ds;
+    const w = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+    return (d.getMonth() + 1) + '/' + d.getDate() + '(' + w + ')';
+  },
+
+  esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+};
+
+/* =========================================================================
+   起動
+   ========================================================================= */
+function init() {
+  // 端末ID（いいねの二重防止・自分の投稿判定に使う。個人特定はしない）
+  Memo.deviceId = Memo.read(Memo.K.device, '');
+  if (!Memo.deviceId) {
+    Memo.deviceId = Memo.newId('dev');
+    Memo.write(Memo.K.device, Memo.deviceId);
+  }
+
+  Memo.ideas = Memo.read(Memo.K.ideas, {});
+  Memo.minutes = Memo.read(Memo.K.minutes, {});
+  Memo.leaders = Memo.read('gy_memo_leaders', []);
+
+  document.getElementById('iDate').value = Memo.today();
+  renderNameBox();
+  restoreDraft();
+
+  // Firebase 接続（shared.js が DOMContentLoaded で初期化済み）
+  if (App.initFirebase()) {
+    document.getElementById('connBadge').textContent = '🟢 オンライン同期';
+    document.getElementById('connBadge').classList.add('online');
+    subscribeAll();
+    App.subscribeSettings(() => renderNameBox());
+    App.subscribeStaffMeta(() => renderNameBox());
+  }
+
+  renderIdeas();
+  renderMtg();
+}
+
+/* Firebase 購読 */
+function subscribeAll() {
+  App.fbDB.ref('memos/ideas').on('value', snap => {
+    Memo.ideas = snap.val() || {};
+    Memo.write(Memo.K.ideas, Memo.ideas);
+    renderIdeas();
+    if (Memo.tab === 'mtg') safeRenderMtg();
+  }, err => console.warn('ideas read failed:', err && err.message));
+
+  App.fbDB.ref('memos/minutes').on('value', snap => {
+    Memo.minutes = snap.val() || {};
+    Memo.write(Memo.K.minutes, Memo.minutes);
+    if (Memo.tab === 'mtg') safeRenderMtg();
+  }, err => console.warn('minutes read failed:', err && err.message));
+
+  App.fbDB.ref('settings/leaders').on('value', snap => {
+    const v = snap.val();
+    if (Array.isArray(v)) {
+      Memo.leaders = v;
+      Memo.write('gy_memo_leaders', v);
+      if (Memo.tab === 'mtg') safeRenderMtg();
+    }
+  }, () => {});
+}
+
+/* 他の端末の更新が届いても、いま誰かが入力している最中なら描き直さない。
+   （書いている途中でカーソルが飛ぶのを防ぐ。入力欄から離れた時点で反映する） */
+function safeRenderMtg() {
+  const ae = document.activeElement;
+  const page = document.getElementById('pageMtg');
+  if (ae && page && page.contains(ae) && /^(INPUT|TEXTAREA)$/.test(ae.tagName)) {
+    Memo.pendingMtgRender = true;
+    return;
+  }
+  Memo.pendingMtgRender = false;
+  renderMtg();
+}
+
+document.addEventListener('focusout', () => {
+  if (!Memo.pendingMtgRender) return;
+  setTimeout(() => {
+    const ae = document.activeElement;
+    if (ae && /^(INPUT|TEXTAREA)$/.test(ae.tagName)) return;  // 別の入力欄へ移っただけ
+    Memo.pendingMtgRender = false;
+    if (Memo.tab === 'mtg') renderMtg();
+  }, 150);
+});
+
+/* =========================================================================
+   タブ切替
+   ========================================================================= */
+function switchTab(t) {
+  Memo.tab = t;
+  document.getElementById('tabIdea').classList.toggle('active', t === 'idea');
+  document.getElementById('tabMtg').classList.toggle('active', t === 'mtg');
+  document.getElementById('pageIdea').style.display = t === 'idea' ? '' : 'none';
+  document.getElementById('pageMtg').style.display = t === 'mtg' ? '' : 'none';
+  if (t === 'mtg') renderMtg();
+  window.scrollTo(0, 0);
+}
+
+/* =========================================================================
+   アイデア: 入力フォーム
+   ========================================================================= */
+function renderNameBox() {
+  const staff = App.getStaff();
+  const box = document.getElementById('iNameBox');
+  box.innerHTML = staff.map(n =>
+    `<button type="button" class="name-pill ${n === Memo.iName ? 'selected' : ''}"
+       data-n="${Memo.esc(n)}" onclick="pickName(this.dataset.n)">${Memo.esc(n)}</button>`).join('');
+}
+
+function pickName(n) {
+  Memo.iName = (Memo.iName === n) ? '' : n;
+  document.getElementById('iNameFree').value = '';
+  renderNameBox();
+  saveDraft();
+}
+
+/* 書きかけをこの端末に保存（誤タップ・画面消灯で消えないように） */
+function saveDraft() {
+  Memo.write(Memo.K.draft, {
+    text: document.getElementById('iText').value,
+    name: Memo.iName,
+    free: document.getElementById('iNameFree').value,
+    at: Date.now()
+  });
+}
+
+function restoreDraft() {
+  const d = Memo.read(Memo.K.draft, null);
+  // 共用端末なので、30分以上前の書きかけは他人のものとみなして捨てる
+  if (!d || !d.at || Date.now() - d.at > 30 * 60 * 1000) return;
+  document.getElementById('iText').value = d.text || '';
+  document.getElementById('iNameFree').value = d.free || '';
+  Memo.iName = d.name || '';
+  renderNameBox();
+}
+
+function submitIdea() {
+  const text = document.getElementById('iText').value.trim();
+  const free = document.getElementById('iNameFree').value.trim();
+  const name = free || Memo.iName;
+  const date = document.getElementById('iDate').value || Memo.today();
+
+  if (!name) { App.toast('名前を選ぶか入力してください', 'error'); return; }
+  if (!text) { App.toast('内容を書いてください', 'error'); return; }
+
+  const idea = {
+    id: Memo.newId('idea'),
+    date: date,
+    name: name,
+    text: text,
+    status: 'new',
+    at: Date.now(),
+    device: Memo.deviceId,
+    likes: {}
+  };
+
+  Memo.ideas[idea.id] = idea;
+  Memo.write(Memo.K.ideas, Memo.ideas);
+  if (App.fbReady) {
+    App.fbDB.ref('memos/ideas/' + idea.id).set(idea)
+      .catch(e => App.toast('保存できませんでした: ' + e.message, 'error'));
+  }
+
+  // 共用端末なので投稿したら名前と内容はクリアする（次の人に残さない）
+  document.getElementById('iText').value = '';
+  document.getElementById('iNameFree').value = '';
+  Memo.iName = '';
+  localStorage.removeItem(Memo.K.draft);
+  renderNameBox();
+  renderIdeas();
+  App.toast('投稿しました。ありがとうございます！', 'success');
+  window.scrollTo({ top: document.getElementById('ideaList').offsetTop - 80, behavior: 'smooth' });
+}
+
+/* =========================================================================
+   アイデア: 一覧
+   ========================================================================= */
+function setFilter(f) {
+  Memo.filter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+  renderIdeas();
+}
+
+function ideaArray() {
+  return Object.values(Memo.ideas || {})
+    .filter(i => i && !i.deleted)
+    .sort((a, b) => (b.at || 0) - (a.at || 0));
+}
+
+function renderIdeas() {
+  const q = (document.getElementById('iSearch').value || '').trim();
+  let list = ideaArray();
+
+  if (Memo.filter === 'new')   list = list.filter(i => (i.status || 'new') === 'new');
+  if (Memo.filter === 'adopt') list = list.filter(i => i.status === 'adopt');
+  if (Memo.filter === 'mine')  list = list.filter(i => i.device === Memo.deviceId);
+  if (q) list = list.filter(i => (i.text + ' ' + i.name).includes(q));
+
+  const newCount = ideaArray().filter(i => (i.status || 'new') === 'new').length;
+  document.getElementById('iCount').textContent =
+    `（全${ideaArray().length}件 / 未検討${newCount}件）`;
+
+  const host = document.getElementById('ideaList');
+  if (!list.length) {
+    host.innerHTML = '<div class="empty-state">まだアイデアがありません。<br>最初の1件を書いてみてください。</div>';
+    return;
+  }
+
+  host.innerHTML = list.map(i => {
+    const st = Memo.STATUS[i.status || 'new'] || Memo.STATUS.new;
+    const likes = Object.keys(i.likes || {}).length;
+    const liked = !!(i.likes || {})[Memo.deviceId];
+    const mine = i.device === Memo.deviceId;
+    const mtg = i.mtgId && Memo.minutes[i.mtgId];
+    return `
+      <div class="idea-card">
+        <div class="idea-head">
+          <span class="who">${Memo.esc(i.name)}</span>
+          <span>${Memo.fmtDate(i.date)}</span>
+          <span class="badge ${st.cls}">${st.label}</span>
+        </div>
+        <div class="idea-text">${Memo.esc(i.text)}</div>
+        ${i.decision ? `<div class="topic-src" style="margin-top:10px;border-left-color:var(--purple)">
+            <b>会議での結論</b>${mtg ? '（' + Memo.fmtDate(mtg.date) + 'の会議）' : ''}<br>${Memo.esc(i.decision)}
+          </div>` : ''}
+        <div class="idea-foot">
+          <button class="like-btn ${liked ? 'on' : ''}" onclick="toggleLike('${i.id}')">
+            👍 いいね${likes ? ' ' + likes : ''}
+          </button>
+          ${mine ? `<button class="btn btn-outline btn-sm" onclick="deleteIdea('${i.id}')">🗑 取り消す</button>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function toggleLike(id) {
+  const i = Memo.ideas[id];
+  if (!i) return;
+  i.likes = i.likes || {};
+  if (i.likes[Memo.deviceId]) delete i.likes[Memo.deviceId];
+  else i.likes[Memo.deviceId] = true;
+  Memo.write(Memo.K.ideas, Memo.ideas);
+  if (App.fbReady) App.fbDB.ref('memos/ideas/' + id + '/likes').set(i.likes).catch(() => {});
+  renderIdeas();
+}
+
+function deleteIdea(id) {
+  if (!confirm('このアイデアを取り消しますか？')) return;
+  // 物理削除せず deleted フラグにする（誤操作から戻せるように）
+  Memo.ideas[id].deleted = true;
+  Memo.write(Memo.K.ideas, Memo.ideas);
+  if (App.fbReady) App.fbDB.ref('memos/ideas/' + id + '/deleted').set(true).catch(() => {});
+  renderIdeas();
+  App.toast('取り消しました', 'info');
+}
+
+/* =========================================================================
+   議事録: 記録者の選択（＝書き込みロック解除）
+   ========================================================================= */
+function curLeader() { return Memo.read(Memo.K.leader, ''); }
+
+function canEdit() { return !!curLeader(); }
+
+function renderMtg() {
+  renderLockBox();
+  renderMtgList();
+  renderMtgDetail();
+}
+
+function renderLockBox() {
+  const host = document.getElementById('mtgLockBox');
+  const me = curLeader();
+  if (me) {
+    host.innerHTML = `
+      <div class="mtg-lock no-print" style="background:#F0FDF4;border-color:#86EFAC">
+        <div class="lock-title">✏️ ${Memo.esc(me)} として記入中</div>
+        <div class="lock-sub">この端末では議事録を編集できます。書き終わったら記入者を解除してください。</div>
+        <button class="btn btn-outline btn-sm" onclick="clearLeader()">記入者を解除する</button>
+      </div>`;
+    return;
+  }
+  const leaders = Memo.leaders.length ? Memo.leaders : Memo.LEADERS;
+  host.innerHTML = `
+    <div class="mtg-lock no-print">
+      <div class="lock-title">🔒 議事録の記入はリーダーのみ</div>
+      <div class="lock-sub">閲覧は自由です。書き込むときは自分の名前を選んでください。</div>
+      <div class="name-options name-box">
+        ${leaders.map(n => `<button type="button" class="name-pill" data-n="${Memo.esc(n)}" onclick="setLeader(this.dataset.n)">${Memo.esc(n)}</button>`).join('')}
+      </div>
+      <div style="margin-top:12px">
+        <button class="btn btn-outline btn-sm" onclick="editLeaders()">⚙ リーダーの名前を登録・変更</button>
+      </div>
+    </div>`;
+}
+
+function setLeader(n) {
+  Memo.write(Memo.K.leader, n);
+  renderMtg();
+  App.toast(n + ' として記入できます', 'success');
+}
+
+function clearLeader() {
+  Memo.write(Memo.K.leader, '');
+  renderMtg();
+}
+
+function editLeaders() {
+  const cur = Memo.leaders.length ? Memo.leaders : Memo.LEADERS;
+  // 名簿にいない人（辞めた人など）が現に登録されていても消えないように足しておく
+  const staff = App.getStaff().slice();
+  cur.forEach(n => { if (!staff.includes(n)) staff.push(n); });
+  const rows = staff.map(n => `
+    <label class="pick-row">
+      <input type="checkbox" value="${Memo.esc(n)}" ${cur.includes(n) ? 'checked' : ''}>
+      <span>${Memo.esc(n)}</span>
+    </label>`).join('');
+  openModal('リーダーを選ぶ',
+    `<p class="hint" style="margin-bottom:12px">ここで選んだ人だけが、議事録の記入者リストに出てきます。全端末に反映されます。</p>${rows}`,
+    `<button class="btn btn-outline" onclick="closeModal()">やめる</button>
+     <button class="btn btn-primary" onclick="saveLeaders()">保存する</button>`);
+}
+
+function saveLeaders() {
+  const list = Array.from(document.querySelectorAll('#modalHost input[type=checkbox]:checked')).map(c => c.value);
+  Memo.leaders = list;
+  Memo.write('gy_memo_leaders', list);
+  if (App.fbReady) App.fbDB.ref('settings/leaders').set(list).catch(e => App.toast(e.message, 'error'));
+  closeModal();
+  renderMtg();
+  App.toast('リーダーを保存しました', 'success');
+}
+
+/* =========================================================================
+   議事録: 一覧と作成
+   ========================================================================= */
+function mtgArray() {
+  return Object.values(Memo.minutes || {})
+    .filter(m => m && !m.deleted)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+}
+
+function renderMtgList() {
+  const list = mtgArray();
+  const host = document.getElementById('mtgList');
+  document.getElementById('btnNewMtg').style.display = canEdit() ? '' : 'none';
+
+  if (!list.length) {
+    host.innerHTML = '<div class="empty-state">議事録はまだありません。</div>';
+    return;
+  }
+  if (!Memo.curMtg || !Memo.minutes[Memo.curMtg]) Memo.curMtg = list[0].id;
+
+  host.innerHTML = list.map(m => {
+    const done = (m.todos || []).filter(t => t.done).length;
+    const all = (m.todos || []).length;
+    return `
+      <div class="mtg-list-item ${m.id === Memo.curMtg ? 'active' : ''}" onclick="openMtg('${m.id}')">
+        <div>
+          <div class="m-date">${Memo.fmtDate(m.date)} の会議</div>
+          <div class="m-sub">記録: ${Memo.esc(m.writer || '-')}　議題 ${(m.topics || []).length}件
+            ${all ? `　TODO ${done}/${all}` : ''}</div>
+        </div>
+        <div class="spacer"></div>
+        <div style="color:var(--muted)">›</div>
+      </div>`;
+  }).join('');
+}
+
+function openMtg(id) {
+  Memo.curMtg = id;
+  renderMtgList();
+  renderMtgDetail();
+  const el = document.getElementById('mtgDetail');
+  if (el) window.scrollTo({ top: el.offsetTop - 70, behavior: 'smooth' });
+}
+
+function newMeeting() {
+  if (!canEdit()) { App.toast('先に記入者を選んでください', 'error'); return; }
+  const m = {
+    id: Memo.newId('mtg'),
+    date: Memo.today(),
+    writer: curLeader(),
+    attendees: [],
+    topics: [],
+    todos: [],
+    memo: '',
+    at: Date.now(),
+    updatedAt: Date.now(),
+    updatedBy: curLeader()
+  };
+  Memo.minutes[m.id] = m;
+  Memo.curMtg = m.id;
+  pushMtg(m);
+  renderMtg();
+  App.toast('議事録を作成しました', 'success');
+}
+
+function pushMtg(m) {
+  m.updatedAt = Date.now();
+  m.updatedBy = curLeader() || m.updatedBy || '';
+  Memo.minutes[m.id] = m;
+  Memo.write(Memo.K.minutes, Memo.minutes);
+  if (App.fbReady) {
+    App.fbDB.ref('memos/minutes/' + m.id).set(m)
+      .catch(e => App.toast('保存できませんでした: ' + e.message, 'error'));
+  }
+}
+
+/* 入力のたびに保存すると重いので少し待ってからまとめて保存する */
+function pushMtgLater(m) {
+  Memo.minutes[m.id] = m;
+  Memo.write(Memo.K.minutes, Memo.minutes);
+  clearTimeout(Memo.saveTimer[m.id]);
+  Memo.saveTimer[m.id] = setTimeout(() => pushMtg(m), 700);
+}
+
+/* =========================================================================
+   議事録: 本体
+   ========================================================================= */
+function renderMtgDetail() {
+  const host = document.getElementById('mtgDetail');
+  const m = Memo.minutes[Memo.curMtg];
+  if (!m || m.deleted) { host.innerHTML = ''; return; }
+
+  const ed = canEdit();
+  const dis = ed ? '' : 'disabled';
+  const staff = App.getStaff();
+  const newIdeas = ideaArray().filter(i => (i.status || 'new') === 'new').length;
+
+  host.innerHTML = `
+    <div class="card">
+      <h2>${Memo.fmtDate(m.date)} リーダーミーティング</h2>
+      <p class="card-sub">
+        記録: ${Memo.esc(m.writer || '-')}
+        ${m.updatedAt ? '　最終更新 ' + new Date(m.updatedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+        ${m.updatedBy ? '（' + Memo.esc(m.updatedBy) + '）' : ''}
+      </p>
+
+      <div class="form-group" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div>
+          <label class="form-label">開催日</label>
+          <input type="date" class="form-input" style="width:200px" value="${m.date || ''}" ${dis}
+                 onchange="setMtgField('date', this.value)">
+        </div>
+        <div style="flex:1;min-width:200px">
+          <label class="form-label">記録者</label>
+          <input type="text" class="form-input" value="${Memo.esc(m.writer || '')}" ${dis}
+                 oninput="setMtgFieldLater('writer', this.value)">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">出席者</label>
+        <div class="name-options name-box">
+          ${staff.map(n => `
+            <button type="button" class="name-pill ${(m.attendees || []).includes(n) ? 'selected' : ''}"
+              data-n="${Memo.esc(n)}"
+              ${ed ? 'onclick="toggleAttendee(this.dataset.n)"' : 'disabled'}>${Memo.esc(n)}</button>`).join('')}
+        </div>
+      </div>
+
+      <div class="sec-title">議題（アイデアページから拾う）</div>
+      ${ed ? `
+        <div class="btn-row no-print" style="margin-bottom:14px">
+          <button class="btn btn-primary" onclick="openPicker()">
+            💡 アイデアから議題を取り込む${newIdeas ? '（未検討 ' + newIdeas + '件）' : ''}
+          </button>
+          <button class="btn btn-outline" onclick="addFreeTopic()">＋ その場の議題を足す</button>
+        </div>` : ''}
+
+      <div id="topicHost">${renderTopics(m, ed)}</div>
+
+      <div class="sec-title">次回までにやること</div>
+      <div id="todoHost">${renderTodos(m, ed)}</div>
+      ${ed ? `<div class="btn-row no-print" style="margin-top:10px">
+                <button class="btn btn-outline btn-sm" onclick="addTodo()">＋ やることを足す</button>
+              </div>` : ''}
+
+      <div class="sec-title">そのほかのメモ</div>
+      <textarea rows="4" ${dis} placeholder="連絡事項・共有事項など"
+        oninput="setMtgFieldLater('memo', this.value)">${Memo.esc(m.memo || '')}</textarea>
+
+      <div class="btn-row no-print" style="margin-top:20px">
+        <button class="btn btn-outline" onclick="window.print()">🖨 印刷する</button>
+        ${ed ? `<button class="btn btn-danger-outline btn-sm" onclick="deleteMtg('${m.id}')">🗑 この議事録を削除</button>` : ''}
+      </div>
+    </div>`;
+}
+
+function renderTopics(m, ed) {
+  const topics = m.topics || [];
+  if (!topics.length) {
+    return '<div class="empty-state">議題がありません。' +
+      (ed ? 'アイデアページから取り込んでください。' : '') + '</div>';
+  }
+  const dis = ed ? '' : 'disabled';
+  return topics.map((t, idx) => {
+    const src = t.ideaId && Memo.ideas[t.ideaId];
+    return `
+      <div class="topic">
+        <div class="topic-head">
+          <div class="topic-no">${idx + 1}</div>
+          <div class="topic-title">${src
+            ? `💡 ${Memo.esc(src.name)}さんのアイデア <span style="font-weight:600;font-size:0.82rem;color:var(--muted)">${Memo.fmtDate(src.date)}</span>`
+            : Memo.esc(t.title || '(無題)')}</div>
+          ${ed ? `<button class="btn btn-outline btn-sm no-print" onclick="removeTopic('${t.id}')">×</button>` : ''}
+        </div>
+        ${src ? `<div class="topic-src" style="font-size:0.95rem;color:var(--text)">${Memo.esc(src.text)}</div>` : ''}
+        ${!src && t.ideaId ? '<div class="topic-src">（元のアイデアは取り消されました）</div>' : ''}
+        <label class="form-label">話したこと・決まったこと</label>
+        <textarea rows="3" ${dis} placeholder="例）見積りを取って、7万円までなら夏前に入れる"
+          oninput="setTopicLater('${t.id}', 'text', this.value)">${Memo.esc(t.text || '')}</textarea>
+        <div class="result-row no-print">
+          ${['adopt', 'hold', 'drop'].map(r => `
+            <button class="result-btn ${t.result === r ? 'on' : ''}" data-r="${r}"
+              ${ed ? `onclick="setResult('${t.id}', '${r}')"` : 'disabled'}>
+              ${r === 'adopt' ? '✅ やる' : r === 'hold' ? '⏸ 保留' : '✕ 見送り'}
+            </button>`).join('')}
+        </div>
+        ${t.result ? `<div style="margin-top:8px"><span class="badge ${Memo.STATUS[t.result === 'adopt' ? 'adopt' : t.result === 'hold' ? 'hold' : 'drop'].cls}">
+          結論: ${t.result === 'adopt' ? 'やることに決定' : t.result === 'hold' ? '保留' : '今回は見送り'}</span></div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+function renderTodos(m, ed) {
+  const todos = m.todos || [];
+  if (!todos.length) return '<div class="empty-state">やることはまだ登録されていません。</div>';
+  const dis = ed ? '' : 'disabled';
+  return todos.map(t => `
+    <div class="todo-row ${t.done ? 'done' : ''}">
+      <input type="checkbox" ${t.done ? 'checked' : ''} ${dis} onchange="setTodo('${t.id}', 'done', this.checked)">
+      <input type="text" class="form-input t-text" value="${Memo.esc(t.text || '')}" placeholder="やること" ${dis}
+             oninput="setTodoLater('${t.id}', 'text', this.value)">
+      <input type="text" class="form-input t-who" value="${Memo.esc(t.who || '')}" placeholder="担当" ${dis}
+             oninput="setTodoLater('${t.id}', 'who', this.value)">
+      <input type="date" class="form-input t-due" value="${t.due || ''}" ${dis}
+             onchange="setTodo('${t.id}', 'due', this.value)">
+      ${ed ? `<button class="btn btn-outline btn-sm no-print" onclick="removeTodo('${t.id}')">×</button>` : ''}
+    </div>`).join('');
+}
+
+/* ---------- 議事録の更新 ---------- */
+function withMtg(fn, later) {
+  const m = Memo.minutes[Memo.curMtg];
+  if (!m || !canEdit()) return null;
+  fn(m);
+  if (later) pushMtgLater(m); else { pushMtg(m); renderMtg(); }
+  return m;
+}
+
+function setMtgField(k, v) { withMtg(m => { m[k] = v; }); }
+function setMtgFieldLater(k, v) { withMtg(m => { m[k] = v; }, true); }
+
+function toggleAttendee(n) {
+  withMtg(m => {
+    m.attendees = m.attendees || [];
+    const i = m.attendees.indexOf(n);
+    if (i >= 0) m.attendees.splice(i, 1); else m.attendees.push(n);
+  });
+}
+
+function addFreeTopic() {
+  const title = prompt('議題を入力してください');
+  if (!title) return;
+  withMtg(m => {
+    m.topics = m.topics || [];
+    m.topics.push({ id: Memo.newId('t'), title: title, text: '', result: '' });
+  });
+}
+
+function removeTopic(tid) {
+  if (!confirm('この議題を消しますか？')) return;
+  withMtg(m => {
+    const t = (m.topics || []).find(x => x.id === tid);
+    // アイデア側の「会議で検討中」を元に戻す
+    if (t && t.ideaId && Memo.ideas[t.ideaId]) updateIdeaStatus(t.ideaId, 'new', '', '');
+    m.topics = (m.topics || []).filter(x => x.id !== tid);
+  });
+}
+
+function setTopicLater(tid, k, v) {
+  withMtg(m => {
+    const t = (m.topics || []).find(x => x.id === tid);
+    if (t) t[k] = v;
+  }, true);
+}
+
+/* 議題の結論を出す → 元のアイデアのステータスにも反映する */
+function setResult(tid, r) {
+  const m = Memo.minutes[Memo.curMtg];
+  if (!m || !canEdit()) return;
+  const t = (m.topics || []).find(x => x.id === tid);
+  if (!t) return;
+  t.result = (t.result === r) ? '' : r;
+  pushMtg(m);
+  if (t.ideaId) {
+    const st = t.result === 'adopt' ? 'adopt' : t.result === 'hold' ? 'hold' : t.result === 'drop' ? 'drop' : 'done';
+    updateIdeaStatus(t.ideaId, st, t.text || '', m.id);
+  }
+  renderMtg();
+  renderIdeas();
+}
+
+function updateIdeaStatus(ideaId, status, decision, mtgId) {
+  const i = Memo.ideas[ideaId];
+  if (!i) return;
+  i.status = status;
+  i.decision = decision || '';
+  i.mtgId = mtgId || '';
+  Memo.write(Memo.K.ideas, Memo.ideas);
+  if (App.fbReady) {
+    App.fbDB.ref('memos/ideas/' + ideaId)
+      .update({ status: i.status, decision: i.decision, mtgId: i.mtgId })
+      .catch(() => {});
+  }
+}
+
+function addTodo() {
+  withMtg(m => {
+    m.todos = m.todos || [];
+    m.todos.push({ id: Memo.newId('td'), text: '', who: '', due: '', done: false });
+  });
+}
+
+function removeTodo(tid) {
+  withMtg(m => { m.todos = (m.todos || []).filter(x => x.id !== tid); });
+}
+
+function setTodo(tid, k, v) {
+  withMtg(m => {
+    const t = (m.todos || []).find(x => x.id === tid);
+    if (t) t[k] = v;
+  });
+}
+
+function setTodoLater(tid, k, v) {
+  withMtg(m => {
+    const t = (m.todos || []).find(x => x.id === tid);
+    if (t) t[k] = v;
+  }, true);
+}
+
+function deleteMtg(id) {
+  if (!confirm('この議事録を削除しますか？')) return;
+  const m = Memo.minutes[id];
+  if (m) {
+    // 取り上げていたアイデアを未検討に戻す
+    (m.topics || []).forEach(t => {
+      if (t.ideaId && Memo.ideas[t.ideaId]) updateIdeaStatus(t.ideaId, 'new', '', '');
+    });
+    m.deleted = true;
+    pushMtg(m);
+  }
+  Memo.curMtg = null;
+  renderMtg();
+  renderIdeas();
+}
+
+/* =========================================================================
+   アイデア → 議題 の取り込み
+   ========================================================================= */
+function openPicker() {
+  const m = Memo.minutes[Memo.curMtg];
+  if (!m) return;
+  const already = new Set((m.topics || []).map(t => t.ideaId).filter(Boolean));
+
+  const list = ideaArray().filter(i => !already.has(i.id));
+  if (!list.length) {
+    openModal('アイデアから議題を取り込む',
+      '<div class="empty-state">取り込めるアイデアがありません。</div>',
+      '<button class="btn btn-outline" onclick="closeModal()">閉じる</button>');
+    return;
+  }
+
+  // 未検討 → いいねの多い順に並べて、拾い漏れを減らす
+  list.sort((a, b) => {
+    const an = (a.status || 'new') === 'new' ? 0 : 1;
+    const bn = (b.status || 'new') === 'new' ? 0 : 1;
+    if (an !== bn) return an - bn;
+    return Object.keys(b.likes || {}).length - Object.keys(a.likes || {}).length;
+  });
+
+  const rows = list.map(i => {
+    const st = Memo.STATUS[i.status || 'new'] || Memo.STATUS.new;
+    const likes = Object.keys(i.likes || {}).length;
+    return `
+      <label class="pick-row">
+        <input type="checkbox" value="${i.id}">
+        <span style="flex:1">
+          <span class="idea-head" style="margin-bottom:4px">
+            <span class="who">${Memo.esc(i.name)}</span>
+            <span>${Memo.fmtDate(i.date)}</span>
+            <span class="badge ${st.cls}">${st.label}</span>
+            ${likes ? `<span style="font-size:0.78rem">👍${likes}</span>` : ''}
+          </span>
+          <span style="display:block;white-space:pre-wrap">${Memo.esc(i.text)}</span>
+        </span>
+      </label>`;
+  }).join('');
+
+  openModal('アイデアから議題を取り込む',
+    `<p class="hint" style="margin-bottom:12px">チェックしたアイデアが議題として並びます。未検討のものが上に来ています。</p>${rows}`,
+    `<button class="btn btn-outline" onclick="closeModal()">やめる</button>
+     <button class="btn btn-primary" onclick="applyPicker()">議題に追加</button>`);
+}
+
+function applyPicker() {
+  const ids = Array.from(document.querySelectorAll('#modalHost input[type=checkbox]:checked')).map(c => c.value);
+  if (!ids.length) { closeModal(); return; }
+  withMtg(m => {
+    m.topics = m.topics || [];
+    ids.forEach(id => {
+      const i = Memo.ideas[id];
+      if (!i) return;
+      m.topics.push({
+        id: Memo.newId('t'),
+        ideaId: id,
+        title: i.text.length > 40 ? i.text.slice(0, 40) + '…' : i.text,
+        text: '',
+        result: ''
+      });
+      // まだ結論は出ていないので「会議で検討中」にする
+      if ((i.status || 'new') === 'new') updateIdeaStatus(id, 'done', '', m.id);
+    });
+  });
+  closeModal();
+  renderIdeas();
+  App.toast(ids.length + '件を議題に追加しました', 'success');
+}
+
+/* =========================================================================
+   モーダル
+   ========================================================================= */
+function openModal(title, body, foot) {
+  document.getElementById('modalHost').innerHTML = `
+    <div class="modal-bg" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <div class="modal-head">${title}</div>
+        <div class="modal-body">${body}</div>
+        ${foot ? `<div class="modal-foot">${foot}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+function closeModal() { document.getElementById('modalHost').innerHTML = ''; }
+
+/* 入力のたびに下書きを保存 */
+document.addEventListener('input', e => {
+  if (e.target.id === 'iText' || e.target.id === 'iNameFree') saveDraft();
+});
+
+window.addEventListener('load', () => setTimeout(init, 60));
+</script>
+</body>
+</html>
