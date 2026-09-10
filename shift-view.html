@@ -567,12 +567,15 @@
                                       !App.isAbsent(manual, n, day)).length;
       const fam = App.FAMILY.length - App.familyOffCount(manual[App._safeCellKey(`fam_off_${day}`)]);
       const ex = App.extraMakanai(manual[App._safeCellKey(`memo_${day}`)]);
-      return { staff, fam, extra: ex.count, exNames: ex.names, total: staff + fam + ex.count };
+      return { staff, fam, extra: ex.count, exNames: ex.names, total: Math.max(0, staff + fam + ex.count) };
     }
+
+    // まかないの増減の見せ方（+2 / −2）。マイナスをそのまま足すと「+-2」になってしまう
+    function exLabel(n) { return (n > 0 ? '+' : '−') + Math.abs(n); }
 
     function makanaiTitle(mk) {
       return `スタッフ${mk.staff}名 ＋ 家族${mk.fam}名` +
-             (mk.extra ? ` ＋ その他${mk.extra}名（${mk.exNames.join('・')}）` : '');
+             (mk.extra ? ` ${mk.extra > 0 ? '＋ その他' : '− '}${Math.abs(mk.extra)}名（${mk.exNames.join('・')}）` : '');
     }
 
     // スタッフのセル：タップ（クリック）すると編集パネルが開く
@@ -767,11 +770,11 @@
         if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
         const mk = makanaiOf(i, orderedNames, manual);
         html += `<td colspan="3" class="mkn${mk.extra ? ' has-extra' : ''}" data-mkn="${i}"` +
-                ` title="${makanaiTitle(mk)}">${mk.total}${mk.extra ? `<span class="ex">+${mk.extra}</span>` : ''}</td>`;
+                ` title="${makanaiTitle(mk)}">${mk.total}${mk.extra ? `<span class="ex">${exLabel(mk.extra)}</span>` : ''}</td>`;
       }
       html += '<td></td></tr>';
 
-      html += `<tr class="row-note"><td class="lbl" title="自由記入。「まかゆうま」のように「まか」で始めると、その人をまかないの人数に足します">メモ</td>`;
+      html += `<tr class="row-note"><td class="lbl" title="自由記入。「まかゆうま」のように「まか」で始めると、その人をまかないの人数に足します。「まか-2名」で2名減らせます">メモ</td>`;
       for (let i = 0; i < 7; i++) {
         if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
         html += edCell(`memo_${i}`, 'gnote', manual, 'colspan="3"');
@@ -973,7 +976,7 @@
         `<span class="dv-ival ro" data-cnt="${d}" title="スタッフだけ。家族は含みません">${mk.staff}</span></div>` +
         `<div class="dv-irow"><span class="dv-ilbl">まかない</span>` +
         `<span class="dv-ival ro" data-mkn="${d}" title="${makanaiTitle(mk)}">${mk.total}` +
-        (mk.extra ? `<span class="ex">+${mk.extra}（${escapeHtml(mk.exNames.join('・'))}）</span>` : '') +
+        (mk.extra ? `<span class="ex">${exLabel(mk.extra)}（${escapeHtml(mk.exNames.join('・'))}）</span>` : '') +
         `</span></div>` +
         `<div class="dv-irow"><span class="dv-ilbl">メモ</span>` +
         `<span class="dv-ival editable" contenteditable="plaintext-only" data-mkey="memo_${d}">${escapeHtml(cell(`memo_${d}`))}</span></div>` +
@@ -1078,7 +1081,7 @@
       });
       document.querySelectorAll('[data-mkn]').forEach(td => {
         const mk = makanaiOf(+td.dataset.mkn, names, manual);
-        td.innerHTML = mk.total + (mk.extra ? `<span class="ex">+${mk.extra}</span>` : '');
+        td.innerHTML = mk.total + (mk.extra ? `<span class="ex">${exLabel(mk.extra)}</span>` : '');
         td.classList.toggle('has-extra', !!mk.extra);
         td.title = makanaiTitle(mk);
       });
@@ -1093,118 +1096,18 @@
 
     /* ===== 自動割り当て ===== */
 
-    // △の全体備考から時間制約をパース
-    // 戻り値: { 0: {start: 9, end: 15}, ..., _default: {...} }
-    //   (day index → 制約。end=99 は「ラストまでOK」。
-    //    _default = 曜日指定なしの時間 → △をつけた全日に適用)
-    // 時刻1つ分のパターン: "9" "9:30" "9時" "9時半" "930" "9時30分"
-    // → 3つのキャプチャ（時 / 分パターンA / 分パターンB）を持つ
-    // 「1500まで」「1630まで」のようにコロンなしで分をつける書き方も読む
-    //（以前は 30分と半だけだったので「1500まで」が 0時 になっていた）
-    const TIME_TOKEN = '(\\d{1,2})(?:[:：時]\\s*(\\d{1,2}|半)\\s*分?|時|([0-5]\\d|半))?';
-    // 分を時間（小数）にする。「:00」は0分なので足さない
-    //（30分単位でない半端な分は、始業は遅い側・終業は早い側に丸めて安全側に寄せる）
-    function minOf(a, b, isStart) {
-      const v = (a === undefined || a === null || a === '') ? b : a;
-      if (v === undefined || v === null || v === '') return 0;
-      if (v === '半') return 0.5;
-      const mm = parseInt(v, 10);
-      if (isNaN(mm) || mm === 0) return 0;
-      if (mm === 30) return 0.5;
-      return isStart ? (mm < 30 ? 0.5 : 1) : (mm < 30 ? 0 : 0.5);
-    }
-    const SEP = '\\s*(?:[-−ー－〜～~]+|から)\\s*';
-
-    function parseTimeConstraints(gnote) {
-      const result = {};
-      if (!gnote) return result;
-      // 全角数字を半角に正規化
-      gnote = String(gnote).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
-      const dowMap = { '月': 0, '火': 1, '水': 2, '木': 3, '金': 4, '土': 5, '日': 6 };
-      // 文をスラッシュ・改行・読点で分割
-      const parts = gnote.split(/[\/\n、。]/);
-      for (const part of parts) {
-        // 曜日の抽出（複数曜日対応: 「火・木は…」）
-        const days = [];
-        // 「月:9:30-16」「土日は…」のような書き方も拾う
-        const dowMatches = part.match(/[月火水木金土日](?=[月火水木金土日]|曜|[はの・、:：]|$)/g) || part.match(/[月火水木金土日]曜/g);
-        if (dowMatches) dowMatches.forEach(m => { const d = dowMap[m[0]]; if (d !== undefined && !days.includes(d)) days.push(d); });
-
-        let start = null, end = null;
-        // "9-15" "9時-15時半" "9:30-16" "930-16" "11時から15時" パターン
-        let m = part.match(new RegExp(TIME_TOKEN + SEP + TIME_TOKEN));
-        if (m) {
-          start = parseFloat(m[1]) + minOf(m[2], m[3], true);
-          end = parseFloat(m[4]) + minOf(m[5], m[6], false);
-        } else if ((m = part.match(new RegExp(TIME_TOKEN + SEP + '(?:L|l|Ｌ|ラスト|ラストまで|最後)')))) {
-          // "9-L" "9時〜ラスト" → 終業はラストまで
-          start = parseFloat(m[1]) + minOf(m[2], m[3], true);
-          end = 99;
-        } else {
-          // "17時以降" "17時半から" パターン
-          m = part.match(new RegExp(TIME_TOKEN + '\\s*分?\\s*(?:以降|以後|から)'));
-          if (m) { start = parseFloat(m[1]) + minOf(m[2], m[3], true); end = 99; }
-          else {
-            // "15時まで" パターン
-            m = part.match(new RegExp(TIME_TOKEN + '\\s*分?\\s*(?:まで|迄)'));
-            if (m) { start = 0; end = parseFloat(m[1]) + minOf(m[2], m[3], false); }
-            else {
-              // 「-1630」「～16:30」のように **終わりだけ** 書かれた場合。
-              //   始業はスタッフマスタの「出勤可能時間」で埋める
-              m = part.match(new RegExp('(?:^|[^0-9])[-−ー－〜～~]\\s*' + TIME_TOKEN + '\\s*$'));
-              if (m) { start = 0; end = parseFloat(m[1]) + minOf(m[2], m[3], false); }
-            }
-          }
-        }
-        if (start === null && end === null) continue;
-        const cons = { start: start ?? 0, end: end ?? 99 };
-        if (days.length) {
-          days.forEach(d => { result[d] = cons; });
-        } else {
-          // 曜日指定なし → △をつけた全日のデフォルト制約
-          result._default = cons;
-        }
-      }
-      return result;
-    }
-
-    // 回答1件分の時間制約を組み立てる（曜日ごと備考 > 全体備考 の優先順）
-    function buildTimeCons(reply, meta) {
-      const result = parseTimeConstraints(reply.gnote);
-      const dn = reply.dnotes || {};
-      Object.keys(dn).forEach(k => {
-        const i = Number(k);
-        if (isNaN(i) || !dn[k]) return;
-        const p = parseTimeConstraints(dn[k]);
-        // 曜日ごと欄は曜日名なしで書かれる想定（"9:30-16"）。曜日名が書かれていても拾う
-        const cons = p[i] || p._default || Object.values(p)[0] || null;
-        if (cons) result[i] = cons;
-      });
-      // 書いてない側を、スタッフマスタの「出勤可能時間」で埋める
-      //   例）駒原 930-1630 で、備考が「-1630」だけ → 930-1630 とする
-      const h = App.staffHours(meta || App.getStaffMeta(), reply.name);
-      if (h) {
-        Object.keys(result).forEach(k => {
-          const c = result[k];
-          // 書いてない側だけ埋める。その週の希望が書いてあればそちらを優先
-          if (!c.start) c.start = h.start;
-          if (c.end >= 99) c.end = h.end;
-        });
-      }
-      return result;
-    }
+    // 備考の時間パース（「9時半〜16時半」→ {start:9.5, end:16.5}）は shared.js にある。
+    //   タブレット表示でも同じものを使うため移した
+    const buildTimeCons = App.buildTimeCons;
 
     // 本人の希望時刻を文字にする（シフト表の「希望時刻」欄用）
     const _tcCache = {};
     function wishTime(name, day, replyMap) {
       const key = name + '@' + day;
       if (key in _tcCache) return _tcCache[key];
-      const rep = replyMap[name];
-      let out = '';
-      if (rep && (rep.d[day] === 't' || rep.d[day] === 'o')) {
-        const cons = buildTimeCons(rep)[day];
-        if (cons) out = App.fmtRange(cons);
-      }
+      // 曜日を書かずに「9時半〜17時でお願いします」とだけ書いた人は _default に入る。
+      //   以前は その日の指定だけを見ていたので、この書き方が拾えていなかった
+      const out = App.wishTimeText(replyMap[name], day);
       _tcCache[key] = out;
       return out;
     }
@@ -1214,9 +1117,7 @@
 
     // その日の時間制約を取得（曜日指定 > 曜日なしデフォルト の順）
     function getTimeCons(timeCons, name, day) {
-      const tc = timeCons[name];
-      if (!tc) return null;
-      return tc[day] || tc._default || null;
+      return App.consOfDay(timeCons[name], day);
     }
 
     // 割り当て指示から「◯◯はN日だけ」制約をパース
@@ -1789,6 +1690,35 @@
     // 2つのスナップショットの差分を日本語の行にする
     // includeQuiet=true のときだけ「休み（家族）・メモ・0部」の変更を 1行だけ含める
     //（履歴には残さないが、未確定の判定には使う）
+    // セル1つ分の中身を一行にする（履歴用）
+    function summarizeCells(cells, name, d) {
+      const get = f => cells[App._safeCellKey(`s_${name}_${d}_${f}`)] || '';
+      const pos = get('main'), sub = get('sub'), st = get('start'), en = get('end');
+      if (!pos && !sub && !st && !en) return '出勤なし';
+      const t = (st || en) ? `${st}${en}` : '';
+      return (pos || '—') + (sub ? `/サブ${sub}` : '') + (t ? ` ${t}` : '');
+    }
+
+    // 直近の修正を **タブレットの画面に出す** ための一覧。
+    //   { n: 名前, d: 曜日, was: 修正前 } を確定版の履歴に一緒に入れておくと、
+    //   タブレットが「元は W 10-16 だった」と取り消し線で見せられる
+    function cellEdits(oldCells, newCells, req) {
+      oldCells = oldCells || {}; newCells = newCells || {};
+      const touched = {};
+      const keys = {};
+      Object.keys(oldCells).forEach(k => keys[k] = 1);
+      Object.keys(newCells).forEach(k => keys[k] = 1);
+      Object.keys(keys).forEach(k => {
+        if ((oldCells[k] || '') === (newCells[k] || '')) return;
+        const m = k.match(/^s_(.+)_(\d)_(start|end|time|main|sym)$/);
+        if (m) touched[m[1] + '@@' + m[2]] = 1;
+      });
+      return Object.keys(touched).map(g => {
+        const p = g.split('@@');
+        return { n: p[0], d: +p[1], was: summarizeCells(oldCells, p[0], +p[1]) };
+      });
+    }
+
     function diffCells(oldCells, newCells, req, includeQuiet) {
       oldCells = oldCells || {}; newCells = newCells || {};
       const dates = App.weekDates(req.ws);
@@ -1819,18 +1749,10 @@
         others.push(`${k}: ${a || '(空)'} → ${b || '(空)'}`);
       });
 
-      const summarize = (cells, name, d) => {
-        const get = f => cells[App._safeCellKey(`s_${name}_${d}_${f}`)] || '';
-        const pos = get('main'), sub = get('sub'), st = get('start'), en = get('end');
-        if (!pos && !sub && !st && !en) return '出勤なし';
-        const t = (st || en) ? `${st}${en}` : '';
-        return (pos || '—') + (sub ? `/サブ${sub}` : '') + (t ? ` ${t}` : '');
-      };
-
       const lines = Object.keys(touched).map(g => {
         const parts = g.split('@@');
         const name = parts[0], d = +parts[1];
-        return { d, name, txt: `${dayLabel(d)} ${name}: ${summarize(oldCells, name, d)} → ${summarize(newCells, name, d)}` };
+        return { d, name, txt: `${dayLabel(d)} ${name}: ${summarizeCells(oldCells, name, d)} → ${summarizeCells(newCells, name, d)}` };
       });
       lines.sort((a, b) => a.d - b.d || (a.name < b.name ? -1 : 1));
       // 1部・2部・時間が動いていない、0部だけの変更の数
@@ -1922,7 +1844,11 @@ ${head}${rest}
 
       const version = (cur ? cur.version : 0) + 1;
       const at = new Date().toISOString();
-      const history = (cur && cur.history ? cur.history : []).concat([{ v: version, at, changes }]);
+      // 初回確定は「全員が新しく入った」ことになってしまうので edits は付けない
+      const history = (cur && cur.history ? cur.history : []).concat([
+        cur ? { v: version, at, changes, edits: cellEdits(cur.cells, cells, req) }
+            : { v: version, at, changes }
+      ]);
       // 出勤可否も一緒に記録（タブレットで「入っていないが出られる日」を出すため）
       const avail = App.getReplies(currentReqId).map(r => ({ n: r.name, d: r.d }));
       App.saveConfirmed(currentReqId, { version, at, cells, avail, history });

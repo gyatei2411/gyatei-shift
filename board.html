@@ -67,6 +67,23 @@
       padding: 1px 8px; margin-right: 6px; font-size: 15px; font-weight: 900;
     }
 
+    /* 一番最後の変更（直近の修正）を画面に残す。
+       欠勤と同じで、元のシフトは取り消し線で見えるようにしておく */
+    td.cell .was-line, td.cell .new-line {
+      display: block; text-align: center; line-height: 1.15; margin-top: 1px;
+      font-size: 11px; font-weight: 700;
+    }
+    td.cell .was-line { color: #FCA5A5; text-decoration: line-through; opacity: 0.85; }
+    td.cell .new-line { color: #FDE68A; font-weight: 800; opacity: 0.9; }
+    td.cell.off.dropped { background: #1F2937; }
+    .bv-row .bv-was {
+      flex: 0 0 auto; margin-left: 8px; font-size: 13px; font-weight: 700;
+      color: #FCA5A5; text-decoration: line-through;
+    }
+    .bv-row .bv-new { flex: 0 0 auto; margin-left: 8px; font-size: 13px; font-weight: 800; color: #FDE68A; }
+    /* 本人が出した希望時間（確定後も見たい。ラストまで頼めるかの判断に使う） */
+    .bv-row .bv-wish { flex: 0 0 auto; margin-left: 10px; font-size: 14px; font-weight: 700; color: #C4B5FD; }
+
     /* UPの日 */
     th.day.u500  { background: #78350F; }
     th.day.u1000 { background: #9A3412; }
@@ -535,7 +552,8 @@
       const isMemo = key === 'memo_';
       const title = `${App.fmtMD(ds)}（${App.DOW_LABELS[d]}）の` + (isMemo ? 'メモ' : '休み（家族）');
       const hint = isMemo
-        ? '\n「まかゆうま」のように「まか」で始めると、まかないの人数に足します。'
+        ? '\n「まかゆうま」のように「まか」で始めると、まかないの人数に足します。' +
+          '\n「まか-2名」と書くと2名減らします。'
         : '\n店=店長 / 若=若奥さん / 奥=奥さん / 会=会長。「1人」「2人」と人数だけでもOK。';
       const v = prompt(title + hint, cur);
       if (v === null) return;
@@ -583,6 +601,18 @@
       return out;
     }
 
+    // 画面に「元は○○だった」と出すための一覧。changes と同じようにまとめる
+    function mergeEdits(list, name, day, was, after) {
+      const out = (list || []).slice();
+      const i = out.findIndex(e => e && e.n === name && e.d === day);
+      if (i >= 0) {
+        if (out[i].was === after) out.splice(i, 1);   // 元に戻った
+        return out;                                   // それ以外は最初の状態のまま
+      }
+      if (was === after) return out;
+      return out.concat([{ n: name, d: day, was }]);
+    }
+
     function publishCell(reqId, name, day, was) {
       const conf = App.getConfirmed(reqId);
       if (!conf) return;   // 未確定ならそのまま見える
@@ -613,10 +643,15 @@
 
       if (inGroup) {
         const changes = mergeChange(last.changes || [], prefix, was, after);
+        const edits = mergeEdits(last.edits, name, day, was, after);
         if (!changes.length) hist.pop();   // 全部元に戻った
-        else hist[hist.length - 1] = Object.assign({}, last, { at, changes });
+        else hist[hist.length - 1] = Object.assign({}, last, { at, changes, edits });
       } else {
-        hist.push({ v: conf.version, at, changes: [prefix + was + ' → ' + after + BOARD_TAG], board: true });
+        hist.push({
+          v: conf.version, at, board: true,
+          changes: [prefix + was + ' → ' + after + BOARD_TAG],
+          edits: [{ n: name, d: day, was }]
+        });
       }
 
       App.saveConfirmed(reqId, {
@@ -907,6 +942,31 @@
              : (c === '✕' || c === '×') ? 'x' : '';
       };
 
+      // 本人が出した希望時間。確定したあとも見たいので、確定版の avail ではなく
+      //   回答そのもの（備考つき）から読む
+      const repMap = {};
+      App.getReplies(reqId).forEach(r => { if (r && r.name) repMap[r.name] = r; });
+      const meta = App.getStaffMeta();
+      const _wish = {};
+      wishOf = (n, d) => {
+        const k = n + '@' + d;
+        if (!(k in _wish)) {
+          const w = App.wishTimeText(repMap[n], d, meta);
+          // 終わりだけ書いた人は '-16' になる。そのままだと読みにくいので言い換える
+          _wish[k] = (w && w.indexOf('-') === 0) ? w.slice(1) + 'まで' : w;
+        }
+        return _wish[k];
+      };
+
+      // 一番最後の変更履歴 → 直したマスに「元は○○だった」と出す。
+      //   古い履歴には edits がないので、その週は何も出ない
+      const lastHist = ((conf && conf.history) || []).slice(-1)[0];
+      const editMap = {};
+      ((lastHist && lastHist.edits) || []).forEach(e => {
+        if (e && e.n) editMap[e.n + '@' + e.d] = e.was || '';
+      });
+      wasOf = (n, d) => editMap[n + '@' + d];
+
       const all = (req.staff || []).slice();
       const working = all.filter(n => { for (let d = 0; d < 7; d++) if (!closed.has(d) && worksOn(n, d)) return true; return false; });
       // ○△未 で答えている人も表の中に入れる。
@@ -960,7 +1020,17 @@
       let used0 = false;
       let used2 = false;
       let usedAbs = false;
+      let usedEdit = false;
       const usedUp = [0,1,2,3,4,5,6].some(i => !closed.has(i) && upOfDay(i));
+
+      // 直したマスに出す一行（入っている人 / 外れた人 で出し分ける）
+      const wasLine = (n, d, isWorking) => {
+        const w = wasOf(n, d);
+        if (w === undefined) return '';
+        usedEdit = true;
+        if (w === '出勤なし') return isWorking ? '<span class="new-line">新しく追加</span>' : '';
+        return `<span class="was-line">元 ${esc(w)}</span>`;
+      };
 
       const rowFor = (name) => {
         let r = `<tr><td class="name">${esc(name)}</td>`;
@@ -997,19 +1067,22 @@
                 (part2 ? `<span class="p2">→${esc(part2)}</span>` : '') +
                 `</span>` : '') +
               (time ? `<span class="time">${esc(time)}</span>` : '') +
-              `</div></td>`;
+              `</div>` + wasLine(name, d, true) + `</td>`;
             continue;
           }
           // 出勤していない日 → ○/△で出せると答えていれば交代候補として表示
           //   店用モードならここもタップできる（その場でシフトに入れられる）
           const mark = shopMode ? ` data-cn="${esc(name)}" data-cd="${d}"` : '';
+          const wl = wasLine(name, d, false);   // 今回シフトから外れた人の、元のシフト
           const sym = symOf(name, d);
           if (sym === 'o' || sym === 't' || sym === 'm') {
             usedAvail = true;
             const mk = sym === 'o' ? '○' : sym === 't' ? '△' : '未';
-            r += `<td class="cell av-${sym}"${mark}><div class="ci"><span class="mark">${mk}</span></div></td>`;
+            r += `<td class="cell av-${sym}"${mark}><div class="ci"><span class="mark">${mk}</span></div>${wl}</td>`;
           } else {
-            r += `<td class="cell off"${mark}>` + (shopMode ? '<div class="ci"><span class="plus">＋</span></div>' : '') + '</td>';
+            r += `<td class="cell off${wl ? ' dropped' : ''}"${mark}>` +
+                 (shopMode ? '<div class="ci"><span class="plus">＋</span></div>' : '') + wl +
+                 '</td>';
           }
         }
         return r + '</tr>';
@@ -1056,8 +1129,8 @@
       }
       if (anyFam || shopMode) html += infoRow('fam', '休み', d => esc(cell(`fam_off_${d}`)), 'fam_off_');
       html += infoRow('mkn', 'まかない', d => {
-        return String(worksCount(d) + App.FAMILY.length - App.familyOffCount(cell(`fam_off_${d}`)) +
-                      App.extraMakanai(cell(`memo_${d}`)).count);
+        return String(Math.max(0, worksCount(d) + App.FAMILY.length - App.familyOffCount(cell(`fam_off_${d}`)) +
+                      App.extraMakanai(cell(`memo_${d}`)).count));
       });
       if (anyMemo || shopMode) html += infoRow('', 'メモ', d => esc(cell(`memo_${d}`)), 'memo_');
 
@@ -1096,7 +1169,7 @@
       if (bvOn) bvw.innerHTML = buildBoardDay(req, dates, closed, names, resting, todayStr, get, worksOn, symOf, live, isAbs, upOfDay);
       updateBoardModeBtn();
 
-      buildLegend(usedPos, usedAvail, used0, used2, usedAbs, usedUp);
+      buildLegend(usedPos, usedAvail, used0, used2, usedAbs, usedUp, usedEdit);
 
       fit();
     }
@@ -1121,6 +1194,10 @@
         ? '\uD83D\uDCC5<span class="lbl"> 1週間</span>'
         : '\uD83D\uDCF1<span class="lbl"> 1日ずつ</span>';
     }
+
+    // 1日ずつ表示からも使うので、render() の外に出しておく
+    let wishOf = () => '';        // 本人が出した希望時間（'930-17'）
+    let wasOf = () => undefined;  // 一番最後の変更で、そのマスが元は何だったか
 
     function setBvDay(d) { bvDay = d; render(); }
 
@@ -1155,6 +1232,8 @@
         const cls = POS_CLASS[head] || 'p-etc';
         const time = (get(n, d, 'start') + get(n, d, 'end')).trim();
         const abs = isAbs(n, d);
+        const w = wasOf(n, d);
+        const wish = wishOf(n, d);
         return `<div class="bv-row ${cls}${abs ? ' abs' : ''}" data-cn="${esc(n)}" data-cd="${d}">` +
           `<span class="bv-name">${esc(n)}</span>` +
           (abs ? '<span class="bv-ketsu">欠</span>' : '') +
@@ -1162,7 +1241,11 @@
             (sub ? `<span class="p0">${esc(sub)}</span>` : '') + esc(seg[0]) +
             (seg.length > 1 ? `<span class="p2">→${esc(seg.slice(1).join('→'))}</span>` : '') +
           `</span>` +
-          `<span class="bv-time">${esc(time)}</span></div>`;
+          (w === undefined ? '' : w === '出勤なし'
+            ? '<span class="bv-new">新</span>' : `<span class="bv-was">元 ${esc(w)}</span>`) +
+          `<span class="bv-time">${esc(time)}</span>` +
+          (wish ? `<span class="bv-wish">希望 ${esc(wish)}</span>` : '') +
+          `</div>`;
       };
 
       const absN = working.filter(n => isAbs(n, d)).length;
@@ -1177,9 +1260,13 @@
           const sm = symOf(n, d);
           const mk = sm === 'o' ? '○' : sm === 't' ? '△' : sm === 'm' ? '未' : sm === 'x' ? '✕' : '・';
           const col = sm === 'o' ? '#4ADE80' : sm === 't' ? '#FBBF24' : sm === 'm' ? '#C4B5FD' : '#64748B';
+          const w = wasOf(n, d);
+          const wish = wishOf(n, d);
           return `<div class="bv-row av"${shopMode ? ` data-cn="${esc(n)}" data-cd="${d}"` : ''}>` +
                  `<span class="bv-name">${esc(n)}</span>` +
                  `<span class="bv-pos">${shopMode ? '<span style="color:#475569">＋</span>' : ''}</span>` +
+                 (w === undefined || w === '出勤なし' ? '' : `<span class="bv-was">元 ${esc(w)}</span>`) +
+                 (wish ? `<span class="bv-wish">希望 ${esc(wish)}</span>` : '') +
                  `<span class="bv-mark" style="color:${col}">${mk}</span></div>`;
         }).join('') + '</div>';
       }
@@ -1197,7 +1284,7 @@
                `</select></span>`
              : `<span class="v">${upv ? '+' + upv + '円' : 'なし'}</span>`) + `</div>`;
       if (cell(`fam_off_${d}`)) h += `<div class="bv-irow fam"><span class="l">休み</span><span class="v">${esc(cell(`fam_off_${d}`))}</span></div>`;
-      h += `<div class="bv-irow mkn"><span class="l">まかない</span><span class="v">${working.length - absN + App.FAMILY.length - offN + exN}</span></div>`;
+      h += `<div class="bv-irow mkn"><span class="l">まかない</span><span class="v">${Math.max(0, working.length - absN + App.FAMILY.length - offN + exN)}</span></div>`;
       if (cell(`memo_${d}`)) h += `<div class="bv-irow"><span class="l">メモ</span><span class="v">${esc(cell(`memo_${d}`))}</span></div>`;
       h += '</div>';
       return h;
@@ -1213,7 +1300,7 @@
       R1: 'レストラン1', W: '洗い場', T: 'テイクアウト'
     };
 
-    function buildLegend(usedPos, usedAvail, used0, used2, usedAbs, usedUp) {
+    function buildLegend(usedPos, usedAvail, used0, used2, usedAbs, usedUp, usedEdit) {
       const order = ['K', 'R2', 'R2d', 'R1', 'W', 'T'];
       let h = '';
 
@@ -1253,6 +1340,21 @@
         h += '<div class="leg-sec"><h3>欠（当日欠勤）</h3>' +
              '<div class="leg-note"><b style="color:#FCA5A5">欠</b> … その日、急にお休みになった人です。<br>' +
              '入っていたポジションは取り消し線で残してあります。出勤人数とまかないからは引いています。</div></div>';
+      }
+
+      if (usedEdit) {
+        h += '<div class="leg-sec"><h3>直近の修正</h3>' +
+             '<div class="leg-note"><b style="color:#FCA5A5;text-decoration:line-through">元 W 10-16</b> … ' +
+             '<b>一番最後にシフトを直したところ</b>です。直す前の内容を取り消し線で残しています。<br>' +
+             '<b style="color:#FDE68A">新しく追加</b> … その日、新しく入ってもらった人です。<br>' +
+             'また直すと、この表示は最新の修正のものに入れ替わります。</div></div>';
+      }
+
+      if (bvMode === 'day') {
+        h += '<div class="leg-sec"><h3>希望の時間</h3>' +
+             '<div class="leg-note"><b style="color:#C4B5FD">希望 930-17</b> … ' +
+             '本人が希望を出すときに書いた時間です。<br>' +
+             'ラストまで残ってもらえるか頼むときの目安にしてください。</div></div>';
       }
 
       if (usedUp) {

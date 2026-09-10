@@ -274,7 +274,8 @@ const App = {
   // メモ欄の「まか○○」= スタッフ・家族以外でその日まかないを食べる人
   //   「まかゆうま」→ 1名（ゆうま）
   //   「まかゆうま まかみき」→ 2名
-  //   「まか2」「まか2人」→ 2名
+  //   「まか2」「まか2人」「まか2名」→ 2名
+  //   「まか-2名」→ **2名減らす**（急に来なくなった等で数を減らしたいとき）
   //   「まかないゆうま」も同じ（「ない」はあってもなくてもよい）
   extraMakanai(txt) {
     const t = String(txt || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
@@ -283,18 +284,19 @@ const App = {
     let m;
     while ((m = re.exec(t)) !== null) {
       const rest = (m[1] || '').trim();
-      const num = rest.match(/^(\d+)人?$/);
+      // 数だけのときは人数として足し引きする。頭にマイナスが付いていれば減らす
+      const num = rest.match(/^([-−ー－]?)\s*(\d+)\s*[人名]?$/);
       if (num) {
-        const n = parseInt(num[1], 10) || 0;
+        const n = (parseInt(num[2], 10) || 0) * (num[1] ? -1 : 1);
         out.count += n;
-        if (n) out.names.push(n + '名');
+        if (n) out.names.push((n < 0 ? '−' : '') + Math.abs(n) + '名');
       } else {
         out.count += 1;
         out.names.push(rest || 'まかない');
       }
       if (re.lastIndex === m.index) re.lastIndex++;
     }
-    out.count = Math.max(0, Math.min(20, out.count));
+    out.count = Math.max(-20, Math.min(20, out.count));
     return out;
   },
 
@@ -1312,6 +1314,129 @@ const App = {
 
   // 新人かどうか
   isRookie(meta, name) { return !!((meta || {})[name] || {}).rookie; },
+
+  /* ===== 希望時間のパース =====
+   * スタッフが備考に書いた「9時半〜16時半」「16時まで」などを
+   * { start: 9.5, end: 16.5 } の形にする。
+   * シフト表の自動割り当てと、タブレットの希望時間表示で同じものを使う */
+
+  // 時刻1つ分のパターン: "9" "9:30" "9時" "9時半" "930" "9時30分"
+  // → 3つのキャプチャ（時 / 分パターンA / 分パターンB）を持つ
+  // 「1500まで」「1630まで」のようにコロンなしで分をつける書き方も読む
+  //（以前は 30分と半だけだったので「1500まで」が 0時 になっていた）
+  TIME_TOKEN: '(\\d{1,2})(?:[:：時]\\s*(\\d{1,2}|半)\\s*分?|時|([0-5]\\d|半))?',
+  SEP: '\\s*(?:[-−ー－〜～~]+|から)\\s*',
+
+  // 分を時間（小数）にする。「:00」は0分なので足さない
+  //（30分単位でない半端な分は、始業は遅い側・終業は早い側に丸めて安全側に寄せる）
+  _minOf(a, b, isStart) {
+    const v = (a === undefined || a === null || a === '') ? b : a;
+    if (v === undefined || v === null || v === '') return 0;
+    if (v === '半') return 0.5;
+    const mm = parseInt(v, 10);
+    if (isNaN(mm) || mm === 0) return 0;
+    if (mm === 30) return 0.5;
+    return isStart ? (mm < 30 ? 0.5 : 1) : (mm < 30 ? 0 : 0.5);
+  },
+
+  // 戻り値: { 0: {start: 9, end: 15}, ..., _default: {...} }
+  //   (day index → 制約。end=99 は「ラストまでOK」。
+  //    _default = 曜日指定なしの時間 → ○△をつけた全日に適用)
+  parseTimeConstraints(gnote) {
+    const T = App.TIME_TOKEN, SEP = App.SEP, minOf = App._minOf;
+    const result = {};
+    if (!gnote) return result;
+    // 全角数字を半角に正規化
+    gnote = String(gnote).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+    const dowMap = { '月': 0, '火': 1, '水': 2, '木': 3, '金': 4, '土': 5, '日': 6 };
+    // 文をスラッシュ・改行・読点で分割
+    const parts = gnote.split(/[\/\n、。]/);
+    for (const part of parts) {
+      // 曜日の抽出（複数曜日対応: 「火・木は…」）
+      const days = [];
+      // 「月:9:30-16」「土日は…」のような書き方も拾う
+      const dowMatches = part.match(/[月火水木金土日](?=[月火水木金土日]|曜|[はの・、:：]|$)/g) || part.match(/[月火水木金土日]曜/g);
+      if (dowMatches) dowMatches.forEach(m => { const d = dowMap[m[0]]; if (d !== undefined && !days.includes(d)) days.push(d); });
+
+      let start = null, end = null;
+      // "9-15" "9時-15時半" "9:30-16" "930-16" "11時から15時" パターン
+      let m = part.match(new RegExp(T + SEP + T));
+      if (m) {
+        start = parseFloat(m[1]) + minOf(m[2], m[3], true);
+        end = parseFloat(m[4]) + minOf(m[5], m[6], false);
+      } else if ((m = part.match(new RegExp(T + SEP + '(?:L|l|Ｌ|ラスト|ラストまで|最後)')))) {
+        // "9-L" "9時〜ラスト" → 終業はラストまで
+        start = parseFloat(m[1]) + minOf(m[2], m[3], true);
+        end = 99;
+      } else {
+        // "17時以降" "17時半から" パターン
+        m = part.match(new RegExp(T + '\\s*分?\\s*(?:以降|以後|から)'));
+        if (m) { start = parseFloat(m[1]) + minOf(m[2], m[3], true); end = 99; }
+        else {
+          // "15時まで" パターン
+          m = part.match(new RegExp(T + '\\s*分?\\s*(?:まで|迄)'));
+          if (m) { start = 0; end = parseFloat(m[1]) + minOf(m[2], m[3], false); }
+          else {
+            // 「-1630」「～16:30」のように **終わりだけ** 書かれた場合。
+            //   始業はスタッフマスタの「出勤可能時間」で埋める
+            m = part.match(new RegExp('(?:^|[^0-9])[-−ー－〜～~]\\s*' + T + '\\s*$'));
+            if (m) { start = 0; end = parseFloat(m[1]) + minOf(m[2], m[3], false); }
+          }
+        }
+      }
+      if (start === null && end === null) continue;
+      const cons = { start: start ?? 0, end: end ?? 99 };
+      if (days.length) {
+        days.forEach(d => { result[d] = cons; });
+      } else {
+        // 曜日指定なし → ○△をつけた全日のデフォルト制約
+        result._default = cons;
+      }
+    }
+    return result;
+  },
+
+  // 回答1件分の時間制約を組み立てる（曜日ごと備考 > 全体備考 の優先順）
+  buildTimeCons(reply, meta) {
+    const result = App.parseTimeConstraints(reply.gnote);
+    const dn = reply.dnotes || {};
+    Object.keys(dn).forEach(k => {
+      const i = Number(k);
+      if (isNaN(i) || !dn[k]) return;
+      const p = App.parseTimeConstraints(dn[k]);
+      // 曜日ごと欄は曜日名なしで書かれる想定（"9:30-16"）。曜日名が書かれていても拾う
+      const cons = p[i] || p._default || Object.values(p)[0] || null;
+      if (cons) result[i] = cons;
+    });
+    // 書いてない側を、スタッフマスタの「出勤可能時間」で埋める
+    //   例）駒原 930-1630 で、備考が「-1630」だけ → 930-1630 とする
+    const h = App.staffHours(meta || App.getStaffMeta(), reply.name);
+    if (h) {
+      Object.keys(result).forEach(k => {
+        const c = result[k];
+        // 書いてない側だけ埋める。その週の希望が書いてあればそちらを優先
+        if (!c.start) c.start = h.start;
+        if (c.end >= 99) c.end = h.end;
+      });
+    }
+    return result;
+  },
+
+  // その日の制約を取り出す（曜日指定 > 曜日なしデフォルト の順）
+  consOfDay(cons, day) {
+    if (!cons) return null;
+    return cons[day] || cons._default || null;
+  },
+
+  // 本人の希望時刻を文字にする（'930-17' / '-16' / ''）
+  //   曜日を書かずに「9時半〜17時でお願いします」とだけ書いた人は _default に入るので、
+  //   その日だけの指定がなければ _default を使う
+  wishTimeText(reply, day, meta) {
+    if (!reply || !reply.d) return '';
+    const s = reply.d[day];
+    if (s !== 't' && s !== 'o') return '';
+    return App.fmtRange(App.consOfDay(App.buildTimeCons(reply, meta), day));
+  },
 
   lineShareUrl(text) {
     return 'https://line.me/R/share?text=' + encodeURIComponent(text);
