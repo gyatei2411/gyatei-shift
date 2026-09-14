@@ -242,7 +242,7 @@
       <p class="card-sub">週1のリーダーミーティングの記録です。閲覧は全員できます。</p>
       <div id="mtgList"></div>
       <div class="btn-row" style="margin-top:12px">
-        <button class="btn btn-primary" id="btnNewMtg" onclick="newMeeting()">＋ 今週の議事録を作る</button>
+        <button class="btn btn-primary" id="btnNewMtg" onclick="newMeeting()">＋ 議事録を作る</button>
       </div>
     </div>
 
@@ -276,6 +276,8 @@ const Memo = {
   },
   // 議事録を書ける人の初期値（変更は画面の「⚙ リーダーの名前を登録・変更」から）
   LEADERS: ['店長', '若奥', '青木', '渡邉', '西川', '駒原', '大橋'],
+  // シフトのスタッフ名簿にはいないが、メモ帳では名前を選べるようにする人
+  EXTRA_NAMES: ['店長', '若奥'],
   STATUS: {
     new:   { label: '未検討',        cls: 'badge-new' },
     done:  { label: '会議で検討中',   cls: 'badge-done' },
@@ -420,7 +422,8 @@ function switchTab(t) {
    アイデア: 入力フォーム
    ========================================================================= */
 function renderNameBox() {
-  const staff = App.getStaff();
+  const roster = App.getStaff();
+  const staff = Memo.EXTRA_NAMES.filter(n => !roster.includes(n)).concat(roster);
   const box = document.getElementById('iNameBox');
   box.innerHTML = staff.map(n =>
     `<button type="button" class="name-pill ${n === Memo.iName ? 'selected' : ''}"
@@ -686,7 +689,7 @@ function renderMtgList() {
     return `
       <div class="mtg-list-item ${m.id === Memo.curMtg ? 'active' : ''}" onclick="openMtg('${m.id}')">
         <div>
-          <div class="m-date">${Memo.fmtDate(m.date)} の会議</div>
+          <div class="m-date">${Memo.fmtDate(m.date)} の会議 ${confirmBadge(m)}</div>
           <div class="m-sub">記録: ${Memo.esc(m.writer || '-')}　議題 ${(m.topics || []).length}件
             ${all ? `　TODO ${done}/${all}` : ''}</div>
         </div>
@@ -704,13 +707,24 @@ function openMtg(id) {
   if (el) window.scrollTo({ top: el.offsetTop - 70, behavior: 'smooth' });
 }
 
+/* 作る前に開催日を選ぶ（会議の翌日以降にまとめて書くこともあるので、今日とは限らない） */
 function newMeeting() {
   if (!canEdit()) { App.toast('先に記入者を選んでください', 'error'); return; }
+  openModal('議事録を作る',
+    `<label class="form-label">ミーティングの日付</label>
+     <input type="date" class="form-input" id="newMtgDate" value="${Memo.today()}" style="max-width:240px">
+     <p class="hint" style="margin-top:10px">あとから議事録の画面でも変えられます。</p>`,
+    `<button class="btn btn-outline" onclick="closeModal()">やめる</button>
+     <button class="btn btn-primary" onclick="createMeeting()">作る</button>`);
+}
+
+function createMeeting() {
+  const date = (document.getElementById('newMtgDate') || {}).value || Memo.today();
+  closeModal();
   const m = {
     id: Memo.newId('mtg'),
-    date: Memo.today(),
+    date: date,
     writer: curLeader(),
-    attendees: [],
     topics: [],
     todos: [],
     memo: '',
@@ -742,6 +756,7 @@ function pushMtgLater(m) {
   Memo.write(Memo.K.minutes, Memo.minutes);
   clearTimeout(Memo.saveTimer[m.id]);
   Memo.saveTimer[m.id] = setTimeout(() => pushMtg(m), 700);
+  refreshConfirmBar();   // 確定済みの議事録を書き換えたら、すぐ「修正あり」に変える
 }
 
 /* =========================================================================
@@ -754,10 +769,6 @@ function renderMtgDetail() {
 
   const ed = canEdit();
   const dis = ed ? '' : 'disabled';
-  // 出席者はスタッフ名簿＋リーダー（店長・若奥はシフトの名簿に載っていないので先頭に足す）
-  const roster = App.getStaff();
-  const staff = (Memo.leaders.length ? Memo.leaders : Memo.LEADERS)
-    .filter(n => !roster.includes(n)).concat(roster);
   const newIdeas = ideaArray().filter(i => (i.status || 'new') === 'new').length;
 
   host.innerHTML = `
@@ -769,6 +780,8 @@ function renderMtgDetail() {
         ${m.updatedBy ? '（' + Memo.esc(m.updatedBy) + '）' : ''}
       </p>
 
+      ${renderConfirmBar(m, ed)}
+
       <div class="form-group" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
         <div>
           <label class="form-label">開催日</label>
@@ -779,16 +792,6 @@ function renderMtgDetail() {
           <label class="form-label">記録者</label>
           <input type="text" class="form-input" value="${Memo.esc(m.writer || '')}" ${dis}
                  oninput="setMtgFieldLater('writer', this.value)">
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">出席者</label>
-        <div class="name-options name-box">
-          ${staff.map(n => `
-            <button type="button" class="name-pill ${(m.attendees || []).includes(n) ? 'selected' : ''}"
-              data-n="${Memo.esc(n)}"
-              ${ed ? 'onclick="toggleAttendee(this.dataset.n)"' : 'disabled'}>${Memo.esc(n)}</button>`).join('')}
         </div>
       </div>
 
@@ -846,6 +849,14 @@ function renderTopics(m, ed) {
         <label class="form-label">話したこと・決まったこと</label>
         <textarea rows="3" ${dis} placeholder="例）見積りを取って、7万円までなら夏前に入れる"
           oninput="setTopicLater('${t.id}', 'text', this.value)">${Memo.esc(t.text || '')}</textarea>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <label class="form-label" style="margin:0">決まった日</label>
+          <input type="date" class="form-input" style="width:180px" value="${t.date || ''}" ${dis}
+                 onchange="setTopic('${t.id}', 'date', this.value)">
+          <span class="hint">${t.date && t.date !== m.date
+            ? '会議とは別の日に決定'
+            : '空欄なら会議の日（' + Memo.fmtDate(m.date) + '）'}</span>
+        </div>
         <div class="result-row no-print">
           ${['adopt', 'hold', 'drop'].map(r => `
             <button class="result-btn ${t.result === r ? 'on' : ''}" data-r="${r}"
@@ -876,6 +887,164 @@ function renderTodos(m, ed) {
     </div>`).join('');
 }
 
+/* =========================================================================
+   議事録: 確定と、確定後の修正
+   m.confirmed = { version, at, by, snap, history:[{ v, at, by, changes:[] }] }
+   snap は確定した時点の中身。今の中身と比べて「確定後に修正あり」を出す。
+   やることのチェック（done）は会議後に進めるものなので、比べる対象に入れない
+   ========================================================================= */
+function mtgSnap(m) {
+  return {
+    date: m.date || '',
+    memo: (m.memo || '').trim(),
+    topics: (m.topics || []).map(t => ({
+      id: t.id, ideaId: t.ideaId || '', title: t.title || '',
+      text: (t.text || '').trim(), result: t.result || '', date: t.date || ''
+    })),
+    todos: (m.todos || []).map(t => ({
+      id: t.id, text: (t.text || '').trim(), who: (t.who || '').trim(), due: t.due || ''
+    }))
+  };
+}
+
+function mtgState(m) {
+  const c = m.confirmed;
+  if (!c || !c.version) return 'draft';
+  return JSON.stringify(mtgSnap(m)) === JSON.stringify(mtgSnap(c.snap || {})) ? 'confirmed' : 'dirty';
+}
+
+function confirmBadge(m) {
+  const st = mtgState(m);
+  if (st === 'draft') return '<span class="badge badge-hold">下書き</span>';
+  if (st === 'dirty') return `<span class="badge badge-new">⚠ 確定後に修正あり</span>`;
+  return `<span class="badge badge-adopt">✅ 確定 v${m.confirmed.version}</span>`;
+}
+
+function renderConfirmBar(m, ed) {
+  const st = mtgState(m);
+  const c = m.confirmed || {};
+  const when = c.at ? new Date(c.at).toLocaleString('ja-JP',
+    { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  const hist = (c.history || []).length;
+  const bg = st === 'confirmed' ? '#F0FDF4;border-color:#86EFAC'
+           : st === 'dirty' ? '#FFFBEB;border-color:#FCD34D' : 'var(--muted-bg);border-color:var(--border)';
+  const msg = st === 'confirmed'
+      ? `<b>✅ 確定済み（v${c.version}）</b>　${when} ${Memo.esc(c.by || '')}`
+    : st === 'dirty'
+      ? `<b>⚠ 確定したあとに修正があります</b>　（確定版 v${c.version}：${when} ${Memo.esc(c.by || '')}）`
+      : '<b>下書き</b>　会議が終わって内容が固まったら「確定」を押してください';
+  return `
+    <div id="confirmBar" class="no-print" style="border:1.5px solid;background:${bg};border-radius:12px;
+         padding:12px 14px;margin-bottom:18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px;font-size:0.9rem">${msg}</div>
+      ${ed && st === 'draft' ? `<button class="btn btn-success" onclick="confirmMtg()">✅ 議事録を確定</button>` : ''}
+      ${ed && st === 'dirty' ? `<button class="btn btn-success" onclick="confirmMtg()">🔄 修正を確定</button>` : ''}
+      ${hist ? `<button class="btn btn-outline btn-sm" onclick="openMtgHistory()">📜 履歴（${hist}）</button>` : ''}
+    </div>`;
+}
+
+/* 入力中は全体を描き直さないので、確定バーだけ差し替える */
+function refreshConfirmBar() {
+  const m = Memo.minutes[Memo.curMtg];
+  const bar = document.getElementById('confirmBar');
+  if (!m || !bar) return;
+  bar.outerHTML = renderConfirmBar(m, canEdit());
+}
+
+/* 確定版と今の中身の違いを、人が読める文にする */
+function diffMtg(a, b) {
+  const out = [];
+  const lbl = t => {
+    const src = t.ideaId && Memo.ideas[t.ideaId];
+    const s = src ? src.name + 'さんのアイデア' : (t.title || '議題');
+    return '「' + (s.length > 20 ? s.slice(0, 20) + '…' : s) + '」';
+  };
+  const RES = { adopt: 'やる', hold: '保留', drop: '見送り', '': '未定' };
+  const cut = s => (s.length > 30 ? s.slice(0, 30) + '…' : s) || '（空）';
+
+  if (a.date !== b.date) out.push(`開催日: ${Memo.fmtDate(a.date)} → ${Memo.fmtDate(b.date)}`);
+  if (a.memo !== b.memo) out.push('ミーティングメモを修正');
+
+  const at = Object.fromEntries(a.topics.map(t => [t.id, t]));
+  const bt = Object.fromEntries(b.topics.map(t => [t.id, t]));
+  b.topics.forEach(t => {
+    const o = at[t.id];
+    if (!o) { out.push(`議題を追加: ${lbl(t)}`); return; }
+    if (o.result !== t.result) out.push(`${lbl(t)} 結論: ${RES[o.result]} → ${RES[t.result]}`);
+    if (o.text !== t.text) out.push(`${lbl(t)} 決まったこと: ${cut(t.text)}`);
+    if (o.date !== t.date) out.push(`${lbl(t)} 決まった日: ${Memo.fmtDate(o.date) || '会議の日'} → ${Memo.fmtDate(t.date) || '会議の日'}`);
+    if (o.title !== t.title && !t.ideaId) out.push(`議題名: ${cut(o.title)} → ${cut(t.title)}`);
+  });
+  a.topics.forEach(t => { if (!bt[t.id]) out.push(`議題を削除: ${lbl(t)}`); });
+
+  const ad = Object.fromEntries(a.todos.map(t => [t.id, t]));
+  const bd = Object.fromEntries(b.todos.map(t => [t.id, t]));
+  b.todos.forEach(t => {
+    const o = ad[t.id];
+    if (!o) { if (t.text || t.who) out.push(`やることを追加: ${cut(t.text)}${t.who ? '（' + t.who + '）' : ''}`); return; }
+    if (o.text !== t.text || o.who !== t.who || o.due !== t.due) {
+      out.push(`やることを修正: ${cut(t.text)}${t.who ? '（' + t.who + '）' : ''}${t.due ? ' ' + Memo.fmtDate(t.due) + 'まで' : ''}`);
+    }
+  });
+  a.todos.forEach(t => { if (!bd[t.id] && (t.text || t.who)) out.push(`やることを削除: ${cut(t.text)}`); });
+
+  return out;
+}
+
+function confirmMtg() {
+  const m = Memo.minutes[Memo.curMtg];
+  if (!m || !canEdit()) return;
+
+  const snap = mtgSnap(m);
+  const c = m.confirmed || {};
+  const first = !c.version;
+  const changes = first ? ['はじめて確定'] : diffMtg(mtgSnap(c.snap || {}), snap);
+  if (!first && !changes.length) { App.toast('確定版から変わっていません', 'info'); return; }
+
+  const body = first
+    ? `<p>この内容で議事録を確定します。</p>
+       <p class="hint" style="margin-top:8px">確定したあとも修正できます。修正したら「🔄 修正を確定」を押すと、何を変えたかが履歴に残ります。</p>`
+    : `<p style="margin-bottom:8px"><b>v${c.version} → v${c.version + 1}</b> で次の修正を確定します。</p>
+       <div class="topic-src" style="font-size:0.88rem;color:var(--text)">${changes.map(Memo.esc).join('<br>')}</div>`;
+  openModal(first ? '議事録を確定しますか？' : '修正を確定しますか？', body,
+    `<button class="btn btn-outline" onclick="closeModal()">やめる</button>
+     <button class="btn btn-success" onclick="doConfirmMtg()">${first ? '✅ 確定する' : '🔄 修正を確定する'}</button>`);
+}
+
+function doConfirmMtg() {
+  const m = Memo.minutes[Memo.curMtg];
+  closeModal();
+  if (!m || !canEdit()) return;
+  const c = m.confirmed || {};
+  const snap = mtgSnap(m);
+  const changes = !c.version ? ['はじめて確定'] : diffMtg(mtgSnap(c.snap || {}), snap);
+  const v = (c.version || 0) + 1;
+  const now = Date.now();
+  m.confirmed = {
+    version: v,
+    at: now,
+    by: curLeader(),
+    snap: snap,
+    history: (c.history || []).concat([{ v: v, at: now, by: curLeader(), changes: changes }])
+  };
+  pushMtg(m);
+  renderMtg();
+  App.toast(v === 1 ? '議事録を確定しました' : `修正を確定しました（v${v}）`, 'success');
+}
+
+function openMtgHistory() {
+  const m = Memo.minutes[Memo.curMtg];
+  const hist = ((m && m.confirmed && m.confirmed.history) || []).slice().reverse();
+  const rows = hist.map(h => `
+    <div style="padding:10px 0;border-bottom:1px dashed var(--border)">
+      <div style="font-weight:800">v${h.v}　<span class="hint">${new Date(h.at).toLocaleString('ja-JP',
+        { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} ${Memo.esc(h.by || '')}</span></div>
+      <div style="font-size:0.88rem;margin-top:4px">${(h.changes || []).map(Memo.esc).join('<br>')}</div>
+    </div>`).join('');
+  openModal('確定の履歴', rows || '<div class="empty-state">履歴はありません。</div>',
+    '<button class="btn btn-outline" onclick="closeModal()">閉じる</button>');
+}
+
 /* ---------- 議事録の更新 ---------- */
 function withMtg(fn, later) {
   const m = Memo.minutes[Memo.curMtg];
@@ -887,14 +1056,6 @@ function withMtg(fn, later) {
 
 function setMtgField(k, v) { withMtg(m => { m[k] = v; }); }
 function setMtgFieldLater(k, v) { withMtg(m => { m[k] = v; }, true); }
-
-function toggleAttendee(n) {
-  withMtg(m => {
-    m.attendees = m.attendees || [];
-    const i = m.attendees.indexOf(n);
-    if (i >= 0) m.attendees.splice(i, 1); else m.attendees.push(n);
-  });
-}
 
 function addFreeTopic() {
   const title = prompt('議題を入力してください');
@@ -923,6 +1084,13 @@ function removeTopic(tid) {
         m.topics = (m.topics || []).filter(x => x.id !== tid);
       });
     });
+}
+
+function setTopic(tid, k, v) {
+  withMtg(m => {
+    const t = (m.topics || []).find(x => x.id === tid);
+    if (t) t[k] = v;
+  });
 }
 
 function setTopicLater(tid, k, v) {

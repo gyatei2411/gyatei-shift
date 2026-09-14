@@ -523,6 +523,29 @@
     let reqIds = [];      // 表示対象の依頼ID（週の古い順）
     let fbError = false;  // Firebaseの読み取り権限エラー
     let cursor = 0;       // reqIds 内の現在位置
+    let shownDay = App.todayLocal();   // 今「今日」として表示している日付
+
+    // 日付が変わっていたら、今日の表示に切り替える
+    function checkDayChange() {
+      const now = App.todayLocal();
+      if (now === shownDay) return;
+      shownDay = now;
+      bvDay = null;   // 1日ずつ表示も今日に合わせ直す
+      // URLで週を指定して開いていても、その週が終わっていれば今週に移る
+      const urlId = new URLSearchParams(location.search).get('id');
+      const ur = urlId && App.getRequest(urlId);
+      if (ur && App.isPastWeek(ur.ws, now)) history.replaceState(null, '', location.pathname);
+      pickWeeks();
+      render();
+    }
+
+    // 次の 0時0分1秒 に確認する。
+    //   画面OFFの間はタイマーが止まることがあるので、画面がついたときと1分ごとにも確認する
+    function scheduleMidnight() {
+      const n = new Date();
+      const next = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 0, 0, 1);
+      setTimeout(() => { checkDayChange(); scheduleMidnight(); }, next - n);
+    }
 
     /* ===== 店用モード =====
        普段は見るだけ。この端末（店のタブレット）でだけ ON にしておくと
@@ -696,7 +719,10 @@
       pickWeeks();   // 未確定の週を見ていたら、確定済みの週に戻る
       render();
     }
-    document.addEventListener('visibilitychange', () => { if (document.hidden) lockShopMode(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) lockShopMode();
+      else checkDayChange();   // 画面がついたら、日付が変わっていないか確かめる
+    });
     window.addEventListener('pagehide', lockShopMode);
 
     function updateShopUI() {
@@ -748,8 +774,11 @@
       pickWeeks();
       render();
       window.addEventListener('resize', fit);
-      // タブレット放置対策: 5分ごとに再描画（日付またぎ・同期漏れ対策）
+      // タブレット放置対策: 5分ごとに再描画（同期漏れ対策）
       setInterval(() => { pickWeeks(); render(); }, 5 * 60 * 1000);
+      // 日付またぎ: 0時ちょうどに切り替え。止まっていたときの保険で1分ごとにも確認
+      scheduleMidnight();
+      setInterval(checkDayChange, 60 * 1000);
     }
 
     // メモ帳の「まだ会議に上げていないアイデア」の件数をボタンに出す
@@ -906,7 +935,9 @@
       const cells = conf ? (conf.cells || {}) : App.getManual(reqId);
       const closed = new Set(req.closed || []);
       const dates = App.weekDates(req.ws);
-      const todayStr = new Date().toISOString().slice(0, 10);
+      // 端末の日付（日本時間）で決める。
+      //   以前は toISOString()（世界標準時）だったので、日本では朝9時まで前の日に色が付いていた
+      const todayStr = App.todayLocal();
 
       // 狭い画面では曜日を省いて 1行に収める
       document.getElementById('week-label').innerHTML =
