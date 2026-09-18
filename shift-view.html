@@ -199,7 +199,7 @@
       /* 紙にはシフト表だけ。他は全部消す */
       .sv-toolbar, .sv-stats, .sv-edit-hint, .save-indicator,
       .sv-hint-toggle, #sv-hints, #ce-back,
-      #import-dialog, #history-dialog, .day-view { display: none !important; }
+      #import-dialog, #history-dialog, .day-view, .row-kin { display: none !important; }
       .sv-container { margin: 0 !important; padding: 0 !important; overflow: visible; }
       #print-head {
         display: block; font-size: 11px; font-weight: 800; color: #000; margin: 0 0 3px;
@@ -232,6 +232,17 @@
     .shift-table td.upcell.u500  { background: #FEF3C7; color: #92400E; }
     .shift-table td.upcell.u1000 { background: #FDBA74; color: #7C2D12; }
     .shift-table td.upcell:hover { outline: 2px solid var(--primary); outline-offset: -2px; }
+    /* 勤怠（その日シフトどおりに出勤したかの確認。1日ワンクリック） */
+    .shift-table td.kincell {
+      cursor: pointer; font-weight: 800; color: #94A3B8; text-align: center; user-select: none;
+    }
+    .shift-table td.kincell.ok { background: #DCFCE7; color: #15803D; }
+    .shift-table td.kincell:hover { outline: 2px solid var(--primary); outline-offset: -2px; }
+    .dv-info .dv-kin {
+      flex: 1; border: 1.5px solid #CBD5E1; background: #fff; color: #64748B; border-radius: 8px;
+      padding: 7px 8px; font: inherit; font-weight: 800; cursor: pointer; text-align: left;
+    }
+    .dv-info .dv-kin.ok { background: #DCFCE7; border-color: #86EFAC; color: #15803D; }
     .shift-table thead .upbadge {
       display: inline-block; margin-left: 3px; padding: 0 4px; border-radius: 4px;
       font-size: 9px; font-weight: 800; background: #F59E0B; color: #fff; vertical-align: 1px;
@@ -386,10 +397,10 @@
       <button id="btn-confirm" onclick="confirmShift()" style="background:#059669">✅ シフトを確定</button>
       <button onclick="autoAssign()" style="background:#F59E0B">⚡ 自動割り当て</button>
       <a href="admin.html">← 管理画面</a>
+      <a id="link-board" href="board.html" target="_blank">📺 タブレット表示</a>
       <button class="sv-more-btn" onclick="toggleMore()">⋯ その他</button>
       <span class="sv-more" id="sv-more">
         <button id="btn-history" onclick="openHistory()" style="display:none">📜 履歴</button>
-        <a id="link-board" href="board.html" target="_blank">📺 タブレット表示</a>
         <a href="memo.html">📝 メモ帳</a>
         <button onclick="copyForClaude()">🤖 Claude用コピー</button>
         <button onclick="openImportDialog()">📥 結果取り込み</button>
@@ -669,6 +680,17 @@
         html += `<th colspan="3" class="${cls}">${label}</th>`;
       });
       html += '<th></th></tr></thead><tbody>';
+
+      // 勤怠（その日、シフトどおりに出勤したか確かめたら押す。押すたびに 済 ⇔ 未）
+      html += `<tr class="row-header row-kin"><td class="lbl" title="その日シフトどおりに出勤したか確かめたら押します">勤怠</td>`;
+      for (let i = 0; i < 7; i++) {
+        if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
+        const ok = App.isKinChecked(manual, i);
+        html += `<td colspan="3" class="kincell${ok ? ' ok' : ''}" onclick="toggleKin(${i})"` +
+                ` title="${ok ? '確認済み（押すと取り消し）' : 'シフトどおりに出勤したか確かめたら押す'}">` +
+                `${ok ? '✓ 済' : '未'}</td>`;
+      }
+      html += '<td></td></tr>';
 
       // 予想（手入力可）
       html += `<tr class="row-header"><td class="lbl">予想</td>`;
@@ -963,7 +985,11 @@
 
       const mk = makanaiOf(d, names, manual);
       const upv = App.upOf(manual, d);
+      const kinOk = App.isKinChecked(manual, d);
       h += '<div class="dv-info">' +
+        `<div class="dv-irow"><span class="dv-ilbl">勤怠</span>` +
+        `<button class="dv-kin${kinOk ? ' ok' : ''}" onclick="toggleKin(${d})">` +
+        `${kinOk ? '✓ シフトどおり出勤を確認済み' : '未（確かめたら押す）'}</button></div>` +
         `<div class="dv-irow"><span class="dv-ilbl">UP</span>` +
         `<span class="dv-ival ro${upv ? ' dv-up u' + upv : ''}" style="padding:0">` +
         `<select class="up-select dv-upsel" data-upsel="${d}" onchange="saveUp(this)">` +
@@ -997,6 +1023,20 @@
         reqId: currentReqId, name, day, ws: req.ws,
         onSave: () => { showSaved(); render(); }
       });
+    }
+
+    // UPの日（プルダウン。誤タップで変わらないように）
+    function saveUp(sel) {
+      App.setUp(currentReqId, +sel.dataset.upsel, sel.value);
+      showSaved();
+      render();
+    }
+
+    // 勤怠（ワンクリックで 済 ⇔ 未）
+    function toggleKin(d) {
+      App.setKin(currentReqId, d, !App.isKinChecked(App.getManual(currentReqId), d));
+      showSaved();
+      render();
     }
 
     /* ===== 手入力ハンドラ ===== */
@@ -1674,7 +1714,7 @@
       const cells = {};
       Object.keys(manual).forEach(k => {
         if (k === 'assign_note') return;
-        if (/_abs$/.test(k) || /^up_\d$/.test(k)) return;
+        if (/_abs$/.test(k) || /^up_\d$/.test(k) || /^kin_\d$/.test(k)) return;
         cells[k] = manual[k];
       });
       return cells;

@@ -95,6 +95,14 @@
     .bv-days button.u1000 { background: #9A3412; border-color: #C2410C; color: #FED7AA; }
     .bv-days button.u500 .d, .bv-days button.u1000 .d { color: #FDE68A; }
     .bv-irow.up .v { color: #FDE68A; font-weight: 900; }
+    /* 勤怠（店用モードだけ。その日シフトどおりに出勤したか確かめたら押す） */
+    tr.info.kin td.v { cursor: pointer; color: #64748B; box-shadow: inset 0 0 0 1px #334155; border-radius: 6px; }
+    tr.info.kin td.v.ok { background: #14532D; color: #BBF7D0; font-weight: 900; box-shadow: none; }
+    .bv-irow .kin-btn {
+      flex: 1; text-align: left; font: inherit; font-weight: 800; cursor: pointer;
+      background: #1E293B; color: #94A3B8; border: 1px solid #334155; border-radius: 8px; padding: 6px 10px;
+    }
+    .bv-irow .kin-btn.ok { background: #14532D; color: #BBF7D0; border-color: #166534; }
     .hist-ver .board-tag {
       background: #7F1D1D; color: #FEE2E2; font-size: 11px; font-weight: 800;
       padding: 1px 8px; border-radius: 999px; margin-left: 8px;
@@ -740,6 +748,15 @@
         const reqId = reqIds[cursor];
         if (!reqId) return;
 
+        // 勤怠（ワンタップで 済 ⇔ 未）
+        const kin = e.target.closest('[data-kin]');
+        if (kin) {
+          const d = +kin.dataset.kin;
+          App.setKin(reqId, d, !App.isKinChecked(App.getManual(reqId), d));
+          render();
+          return;
+        }
+
         // メモ・休み（家族）
         const info = e.target.closest('[data-editkey]');
         if (info) { editInfoCell(info.dataset.editkey, +info.dataset.editday); return; }
@@ -1139,6 +1156,16 @@
       };
       const anyFam = [0,1,2,3,4,5,6].some(d => !closed.has(d) && cell(`fam_off_${d}`));
       const anyMemo = [0,1,2,3,4,5,6].some(d => !closed.has(d) && cell(`memo_${d}`));
+      // 勤怠（店用モードだけ出す。スタッフが見る画面には要らないため）
+      if (shopMode) {
+        let r = '<tr class="info kin"><td class="name">勤怠</td>';
+        for (let d = 0; d < 7; d++) {
+          if (closed.has(d)) { r += '<td class="cell closedday"></td>'; continue; }
+          const ok = App.isKinChecked(live, d);
+          r += `<td class="v${ok ? ' ok' : ''}" data-kin="${d}"><span class="iv">${ok ? '✓ 済' : '未'}</span></td>`;
+        }
+        html += r + '</tr>';
+      }
       if (usedUp || shopMode) {
         let r = '<tr class="info up"><td class="name">UP</td>';
         for (let d = 0; d < 7; d++) {
@@ -1307,6 +1334,12 @@
       const exN = App.extraMakanai(cell(`memo_${d}`)).count;
       const upv = upOfDay(d);
       h += '<div class="bv-info">';
+      if (shopMode) {
+        const ok = App.isKinChecked(live, d);
+        h += `<div class="bv-irow"><span class="l">勤怠</span>` +
+             `<button class="kin-btn${ok ? ' ok' : ''}" data-kin="${d}">` +
+             `${ok ? '✓ シフトどおり出勤を確認済み' : '未（確かめたら押す）'}</button></div>`;
+      }
       h += `<div class="bv-irow up"><span class="l">UP</span>` +
            (shopMode
              ? `<span class="v"><select class="up-select" data-upsel="${d}" onchange="saveUpBoard(this)">` +

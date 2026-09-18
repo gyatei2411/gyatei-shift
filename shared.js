@@ -253,6 +253,18 @@ const App = {
     App.setManualCell(reqId, App.absKey(name, d), on ? '1' : '');
   },
 
+  /* ===== 勤怠チェック =====
+     その日、シフトどおりに出勤したかを確かめたら付ける印（1日に1つ）。
+     当日の確認なので、確定シフトのスナップショットには入れない（欠勤・UPと同じ） */
+  OPEN_HOUR: 9,   // 店が始まる時刻（入りの時刻が書いていない希望は ここから とみなす）
+  kinKey(d) { return `kin_${d}`; },
+  isKinChecked(cells, d) {
+    return (cells || {})[App._safeCellKey(App.kinKey(d))] === '1';
+  },
+  setKin(reqId, d, on) {
+    App.setManualCell(reqId, App.kinKey(d), on ? '1' : '');
+  },
+
   /* ===== UPの日 =====
      忙しかった日の売上に応じて時給を上げる日。500円 / 1000円の2種類 */
   UP_LEVELS: ['500', '1000'],
@@ -1381,6 +1393,17 @@ const App = {
             //   始業はスタッフマスタの「出勤可能時間」で埋める
             m = part.match(new RegExp('(?:^|[^0-9])[-−ー－〜～~]\\s*' + T + '\\s*$'));
             if (m) { start = 0; end = parseFloat(m[1]) + minOf(m[2], m[3], false); }
+            else {
+              // 「1600」「16時」のように **時刻だけ** 書かれた場合。
+              //   12時以降なら上がりの時刻（朝は9時から）、それより前なら入りの時刻とみなす
+              //   △や「でお願いします」は外して、残りが時刻だけのときに限る（「週2」などを拾わない）
+              const bare = part.replace(/[\s　△▲○◯]/g, '')
+                .replace(/(?:で)?(?:お願い(?:します|いたします)?)?[。!！]*$/, '');
+              m = bare.match(new RegExp('^' + T + '$'));
+              const hh = m ? parseInt(m[1], 10) : NaN;
+              if (m && hh >= 12 && hh <= 23) { start = 0; end = hh + minOf(m[2], m[3], false); }
+              else if (m && hh >= 7 && hh < 12) { start = hh + minOf(m[2], m[3], true); end = 99; }
+            }
           }
         }
       }
@@ -1419,6 +1442,9 @@ const App = {
         if (c.end >= 99) c.end = h.end;
       });
     }
+    // それでも入りの時刻がなければ、店が始まる 朝9時から とみなす
+    //   「1600」「16時まで」だけの人 → 9-16
+    Object.keys(result).forEach(k => { if (!result[k].start) result[k].start = App.OPEN_HOUR; });
     return result;
   },
 
