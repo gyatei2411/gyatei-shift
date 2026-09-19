@@ -12,6 +12,35 @@
   <script src="shared.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
   <script src="xlsx-export.js"></script>
+  <style>
+    /* 勤怠集計の印刷。body.print-kintai が付いているときだけ、集計表だけを紙に出す */
+    #kintai-print-head { display: none; }
+    @media print {
+      body.print-kintai { background: #fff; }
+      body.print-kintai .header,
+      body.print-kintai .tabs,
+      body.print-kintai .tab-pane:not(#tab-kintai),
+      body.print-kintai #tab-kintai h2,
+      body.print-kintai #tab-kintai .card-sub,
+      body.print-kintai #tab-kintai .form-group,
+      body.print-kintai #toast-container, body.print-kintai .toast { display: none !important; }
+      body.print-kintai .container { max-width: none; margin: 0; padding: 0; }
+      body.print-kintai #tab-kintai .card { box-shadow: none; border: none; margin: 0; padding: 0; }
+      body.print-kintai #kintai-print-head {
+        display: block; font-size: 13px; font-weight: 800; color: #000; margin: 0 0 6px;
+      }
+      body.print-kintai #kintai-print-head .sub { font-weight: 600; font-size: 11px; margin-left: 10px; }
+      body.print-kintai #kintai-area {
+        width: var(--kintai-w, auto);
+        zoom: var(--kintai-zoom, 1);
+      }
+      body.print-kintai #kintai-area > div { overflow: visible !important; }
+      body.print-kintai #kintai-area table td,
+      body.print-kintai #kintai-area table th { border-color: #000 !important; }
+      body.print-kintai #kintai-area tr { break-inside: avoid; page-break-inside: avoid; }
+      body.print-kintai * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
 </head>
 <body>
   <div class="header">
@@ -133,8 +162,10 @@
           </div>
           <div style="flex:1"></div>
           <button class="btn btn-outline btn-sm" onclick="copyKintai()">📋 表をコピー</button>
+          <button class="btn btn-primary btn-sm" onclick="printKintai()" title="A4 1枚に収めて印刷します">🖨 印刷</button>
         </div>
 
+        <div id="kintai-print-head"></div>
         <div id="kintai-area"></div>
       </div>
     </div>
@@ -464,6 +495,10 @@
       const md = ds => `${+ds.slice(5, 7)}/${+ds.slice(8, 10)}`;
       document.getElementById('kintai-month').textContent =
         `${kintaiY}年 ${kintaiM}月締め（${md(r.from)} 〜 ${md(r.to)}）`;
+      const now = new Date();
+      document.getElementById('kintai-print-head').innerHTML =
+        `ぎゃあてい　勤怠集計　${kintaiY}年${kintaiM}月締め（${md(r.from)}〜${md(r.to)}）` +
+        `<span class="sub">印刷 ${now.getMonth() + 1}/${now.getDate()}</span>`;
 
       const rows = App.countAttendance(r.from, r.to);
       const ups = App.upDaysIn(r.from, r.to);
@@ -550,6 +585,64 @@
       lines.push(['合計', tot.days, tot.up500, tot.up1000, tot.bonus, tot.absent].join('\t'));
       kintaiText = `【${kintaiY}年${kintaiM}月締め ${md(r.from)}〜${md(r.to)}】\n` + lines.join('\n');
     }
+
+    /* ===== 勤怠集計の印刷（A4 1枚） =====
+       表の幅は紙の幅に合わせて折り返しが変わるので、画面の上で
+       「その幅で並べたときの高さ」を実際に測って、1枚に入る倍率を探す。
+       縦・横は大きく印刷できる方を選ぶ */
+    let kintaiPageEl = null;
+    function printKintai() {
+      if (!document.getElementById('kintai-area').innerHTML.trim()) {
+        App.toast('印刷するデータがありません', 'error'); return;
+      }
+      window.print();   // あとは beforeprint がやる
+    }
+
+    function fitKintaiPrint() {
+      const area = document.getElementById('kintai-area');
+      const head = document.getElementById('kintai-print-head');
+      const root = document.documentElement;
+      const MM = 3.7795;                      // 96dpi で 1mm
+      const HEAD = 26;                        // 見出しの高さ
+      const heightAt = (w) => {               // 幅 w で並べたときの高さ
+        area.style.width = w + 'px';
+        const h = area.getBoundingClientRect().height;
+        return h;
+      };
+      const best = (pw, ph) => {              // その向きで入る一番大きい倍率
+        let lo = 0.3, hi = 1;
+        if (heightAt(pw) <= ph - HEAD) return 1;
+        for (let i = 0; i < 14; i++) {
+          const z = (lo + hi) / 2;
+          if (heightAt(pw / z) * z <= ph - HEAD) lo = z; else hi = z;
+        }
+        return lo;
+      };
+      const port = { o: 'portrait',  w: 198 * MM, h: 285 * MM };
+      const land = { o: 'landscape', w: 285 * MM, h: 198 * MM };
+      const zp = best(port.w, port.h), zl = best(land.w, land.h);
+      area.style.width = '';
+      const pick = zp >= zl ? { p: port, z: zp } : { p: land, z: zl };
+      // 0.97 は保険（プリンタの余白や丸めで 2枚目にこぼれないように）
+      const z = pick.z * 0.97;
+      root.style.setProperty('--kintai-zoom', z.toFixed(3));
+      root.style.setProperty('--kintai-w', (pick.p.w / z).toFixed(1) + 'px');
+      if (!kintaiPageEl) { kintaiPageEl = document.createElement('style'); document.head.appendChild(kintaiPageEl); }
+      kintaiPageEl.textContent = `@media print { @page { size: A4 ${pick.p.o}; margin: 6mm; } }`;
+      return { orient: pick.p.o, zoom: z };
+    }
+
+    // 勤怠集計タブを開いているときだけ、印刷を勤怠集計の形にする（ほかのタブはいつもどおり）
+    window.addEventListener('beforeprint', () => {
+      const pane = document.getElementById('tab-kintai');
+      if (!pane || pane.style.display === 'none') return;
+      document.body.classList.add('print-kintai');
+      fitKintaiPrint();
+    });
+    window.addEventListener('afterprint', () => {
+      document.body.classList.remove('print-kintai');
+      if (kintaiPageEl) kintaiPageEl.textContent = '';
+    });
 
     function copyKintai() {
       if (!kintaiText) { App.toast('コピーするデータがありません', 'error'); return; }
