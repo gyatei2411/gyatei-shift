@@ -199,7 +199,7 @@
       /* 紙にはシフト表だけ。他は全部消す */
       .sv-toolbar, .sv-stats, .sv-edit-hint, .save-indicator,
       .sv-hint-toggle, #sv-hints, #ce-back,
-      #import-dialog, #history-dialog, .day-view, .row-kin { display: none !important; }
+      #import-dialog, #history-dialog, .day-view, .row-kin, .row-noprint { display: none !important; }
       .sv-container { margin: 0 !important; padding: 0 !important; overflow: visible; }
       #print-head {
         display: block; font-size: 11px; font-weight: 800; color: #000; margin: 0 0 3px;
@@ -209,8 +209,6 @@
       .shift-table {
         box-shadow: none;
         zoom: var(--print-zoom, 1);
-        page-break-inside: avoid;
-        break-inside: avoid;
       }
       .shift-table th, .shift-table td { border-color: #000; }
       .shift-table .sym-select {
@@ -336,7 +334,8 @@
     .sv-toolbar .sv-more { display: contents; }
 
     /* ===== スマホ ===== */
-    @media (max-width: 760px) {
+    /* screen を付けておく。付けないと縦向きA4の印刷（幅 約748px）にもこれが効いてしまう */
+    @media screen and (max-width: 760px) {
       .sv-toolbar .sv-more-btn { display: block; }
       .sv-toolbar .sv-more { display: none; }
       .sv-toolbar .sv-more.open {
@@ -815,7 +814,8 @@
 
       // ポジション別（手入力可）
       ['K','R','W','T','G1','G2','G','LT'].forEach(p => {
-        html += `<tr class="row-pos"><td class="lbl">${p}</td>`;
+        // G1・G2・G は印刷しない（紙を1枚に収めるため）
+        html += `<tr class="row-pos${/^G/.test(p) ? ' row-noprint' : ''}"><td class="lbl">${p}</td>`;
         for (let i = 0; i < 7; i++) {
           if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
           html += edCell(`p_${p}_${i}`, 'cnt', manual, 'colspan="3"');
@@ -2102,8 +2102,12 @@ ${head}${rest}
       root.style.setProperty('--print-zoom', '1');   // 先に等倍に戻してから測る
       const t = document.querySelector('.shift-table');
       if (!t) return 1;
-      const r = t.getBoundingClientRect();
-      if (!r.width || !r.height) return 1;
+      const rect = t.getBoundingClientRect();
+      if (!rect.width || !rect.height) return 1;
+      // 印刷しない行（勤怠・G1・G2・G）の分は差し引く
+      let hidden = 0;
+      t.querySelectorAll('.row-kin, .row-noprint').forEach(tr => { hidden += tr.getBoundingClientRect().height; });
+      const r = { width: rect.width, height: rect.height - hidden };
 
       // A4 = 297×210mm。余白6mm×2 を引いたのが印刷できる幅（96dpiで 1mm = 3.7795px）
       const MM = 3.7795;
