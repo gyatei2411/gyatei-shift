@@ -123,10 +123,12 @@
     body.shop td.cell.off { box-shadow: inset 0 0 0 1px #334155; }
     td.cell .plus { font-size: 22px; font-weight: 900; color: #475569; line-height: 1; }
     .board.compact td.cell .plus { font-size: 17px; }
-    .badge-draft {
+    .badge-draft, .badge-past {
       background: #B45309; color: #FFF7ED; padding: 3px 10px; border-radius: 999px;
       font-size: 12px; font-weight: 800;
     }
+    /* 終わった週（店用モードだけ見られる）。下書きと間違えないように灰色 */
+    .badge-past { background: #334155; color: #CBD5E1; }
 
     /* 表を画面いっぱいに拡大する領域 */
     .fit-wrap { flex: 1 1 auto; position: relative; overflow: hidden; }
@@ -354,6 +356,9 @@
     .bv-irow.fam .l, .bv-irow.fam .v { color: #FCD34D; }
     .bv-irow.mkn .l, .bv-irow.mkn .v { color: #6EE7B7; }
     .bv-irow.mkn .v { font-size: 22px; font-weight: 900; }
+    /* 店用モードでタップして直せる行（休み・メモ） */
+    .bv-irow.editable { cursor: pointer; box-shadow: inset 0 0 0 1px #B91C1C; }
+    .bv-irow.editable .v .ph { color: #B91C1C; font-weight: 800; }
 
     /* 記号の説明は普段は出さない（「❔ 記号」で開く） */
     .legend { display: none !important; }
@@ -403,7 +408,7 @@
       .topbar .lbl { display: none; }   /* アイコン・日付だけにして1行に収める */
       .topbar button { padding: 4px 8px; font-size: 14px; line-height: 1.1; }
       .topbar .stamp { flex: 1 1 100%; order: 9; margin-top: -2px; }
-      .badge-draft { font-size: 10px; padding: 2px 7px; }
+      .badge-draft, .badge-past { font-size: 10px; padding: 2px 7px; }
       .lastfix { display: none; }          /* 内容は「📜 変更履歴」から見られる */
       .resting { font-size: 11px; padding: 4px 8px 0; line-height: 1.5; gap: 5px; }
       .resting .rt-person { padding: 1px 6px; }
@@ -442,7 +447,7 @@
       .topbar .week { font-size: 15px; }
       .topbar .stamp { display: none; }
       .topbar button { padding: 3px 8px; font-size: 11px; }
-      .badge-draft { font-size: 11px; padding: 2px 8px; }
+      .badge-draft, .badge-past { font-size: 11px; padding: 2px 8px; }
       .lastfix { display: none; }
       .resting { font-size: 12px; padding: 3px 10px 0; line-height: 1.4; max-height: 42px; overflow: hidden; }
       .resting .rt-person { padding: 1px 7px; }
@@ -479,6 +484,7 @@
     <div class="topbar">
       <span class="week" id="week-label">読み込み中…</span>
       <span class="badge-draft" id="draft-badge" style="display:none">未確定（下書き）</span>
+      <span class="badge-past" id="past-badge" style="display:none">終わった週</span>
       <span class="stamp" id="stamp"></span>
       <span class="spacer"></span>
       <button id="btn-memo" class="memo" onclick="location.href='memo.html'" title="アイデアとリーダー会議の議事録">📝<span class="lbl"> メモ帳</span><span class="cnt" id="memo-cnt"></span></button>
@@ -490,7 +496,7 @@
       <button id="btn-shop" onclick="toggleShopMode()" title="店用モード（欠勤・UPをこの端末で設定する。暗証番号がいります）">🔧</button>
       <button onclick="App.forceUpdate ? App.forceUpdate() : location.reload()" title="最新に更新">🔄<span class="lbl"> 更新</span></button>
     </div>
-    <div class="shopbar" id="shopbar" style="display:none">店用モード　空のマスも含めてタップで編集　未確定の週も見えます</div>
+    <div class="shopbar" id="shopbar" style="display:none">店用モード　空のマスも含めてタップで編集　未確定の週・過ぎた週も見えます</div>
 
     <div class="fit-wrap" id="fit-wrap">
       <div class="fit-inner" id="fit-inner"></div>
@@ -724,7 +730,7 @@
       shopMode = false;
       if (App.closeCellEditor) App.closeCellEditor();
       updateShopUI();
-      pickWeeks();   // 未確定の週を見ていたら、確定済みの週に戻る
+      pickWeeks();   // 未確定の週・過ぎた週を見ていたら、今の週に戻る
       render();
     }
     document.addEventListener('visibilitychange', () => {
@@ -816,9 +822,10 @@
       const prevId = reqIds[cursor];
       // 週ごとに1件だけ（同じ週に依頼が2つあれば中身のある方）
       const every = App.weekList();
-      // 終わった週（日曜日を過ぎた週）はタブレットには出さない
+      // 終わった週（日曜日を過ぎた週）はタブレットには出さない。
+      //   ただし **店用モードのときだけ** は、あとから勤怠や欠勤を見返せるように過ぎた週も出す
       const today = App.todayLocal();
-      let all = every.filter(r => !App.isPastWeek(r.ws, today));
+      let all = shopMode ? every.slice() : every.filter(r => !App.isPastWeek(r.ws, today));
       if (!all.length) all = every.slice(-1);   // 全部過去なら一番新しい週だけ残す
       // スタッフに見せるのは 確定した週だけ。
       //   以前は「確定済みが1つでもあれば確定済みだけ」という全か無かの判定だったため、
@@ -838,10 +845,10 @@
       if (urlId && reqIds.includes(urlId)) idx = reqIds.indexOf(urlId);
       else if (prevId && reqIds.includes(prevId)) idx = reqIds.indexOf(prevId);
       else {
-        // 今日を含む週 → 無ければ一番新しい週
-        const today = App.toDateStr ? App.toDateStr(new Date()) : null;
+        // 今日を含む週 → 無ければ一番近い先の週 → それも無ければ一番新しい週
         const thisWs = App.weekStart();
         idx = reqIds.findIndex(id => (App.getRequest(id) || {}).ws === thisWs);
+        if (idx < 0) idx = reqIds.findIndex(id => ((App.getRequest(id) || {}).ws || '') > thisWs);
         if (idx < 0) idx = reqIds.length - 1;
       }
       cursor = Math.max(0, idx);
@@ -961,6 +968,7 @@
         `${App.fmtMD(dates[0])}<span class="lbl">(${App.DOW_LABELS[0]})</span>` +
         `〜${App.fmtMD(dates[6])}<span class="lbl">(${App.DOW_LABELS[6]})</span>`;
       document.getElementById('draft-badge').style.display = conf ? 'none' : '';
+      document.getElementById('past-badge').style.display = App.isPastWeek(req.ws, todayStr) ? '' : 'none';
       document.getElementById('stamp').textContent = conf
         ? `確定 v${conf.version}・${fmtStamp(conf.at)}${(conf.history || []).length > 1 ? `（修正${conf.history.length - 1}回）` : ''}`
         : '管理画面で確定するとスタッフ向けの正式版になります';
@@ -1347,9 +1355,19 @@
                  `<option value="${v}" ${v === upv ? 'selected' : ''}>${v ? '+' + v + '円' : 'なし'}</option>`).join('') +
                `</select></span>`
              : `<span class="v">${upv ? '+' + upv + '円' : 'なし'}</span>`) + `</div>`;
-      if (cell(`fam_off_${d}`)) h += `<div class="bv-irow fam"><span class="l">休み</span><span class="v">${esc(cell(`fam_off_${d}`))}</span></div>`;
+      // 休み（家族）とメモ。店用モードなら空のときも出して、タップで直せるようにする
+      //   （1週間の表と同じく data-editkey を付けておけば、タップは wireShopTaps が拾う）
+      const infoLine = (cls, label, key) => {
+        const v = cell(key + d);
+        if (!v && !shopMode) return '';
+        return `<div class="bv-irow ${cls}${shopMode ? ' editable' : ''}"` +
+               (shopMode ? ` data-editkey="${key}" data-editday="${d}"` : '') + '>' +
+               `<span class="l">${label}</span>` +
+               `<span class="v">${v ? esc(v) : '<span class="ph">✏ タップで入力</span>'}</span></div>`;
+      };
+      h += infoLine('fam', '休み', 'fam_off_');
       h += `<div class="bv-irow mkn"><span class="l">まかない</span><span class="v">${Math.max(0, working.length - absN + App.FAMILY.length - offN + exN)}</span></div>`;
-      if (cell(`memo_${d}`)) h += `<div class="bv-irow"><span class="l">メモ</span><span class="v">${esc(cell(`memo_${d}`))}</span></div>`;
+      h += infoLine('', 'メモ', 'memo_');
       h += '</div>';
       return h;
     }
