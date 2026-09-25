@@ -45,6 +45,23 @@
     .idea-head .who { font-weight: 800; color: var(--text); font-size: 0.92rem; }
     .idea-text { font-size: 1rem; white-space: pre-wrap; word-break: break-word; }
     .idea-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    /* 会議で結論が出たアイデアは、結論を上に大きく／もとの議題を下に小さく出す */
+    .idea-decision {
+      background: #F5F3FF; border-left: 4px solid var(--purple);
+      border-radius: 0 8px 8px 0; padding: 10px 14px; margin-bottom: 10px;
+    }
+    .idea-decision .lbl {
+      font-size: 0.74rem; font-weight: 800; color: var(--purple); margin-bottom: 4px;
+    }
+    .idea-decision .txt {
+      font-size: 1.05rem; font-weight: 700; color: var(--text); line-height: 1.65;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .idea-text.sub { font-size: 0.82rem; color: var(--muted); line-height: 1.6; }
+    .idea-text.sub .lbl {
+      font-size: 0.7rem; font-weight: 800; color: var(--muted);
+      background: var(--muted-bg); border-radius: 4px; padding: 1px 6px; margin-right: 6px;
+    }
 
     .badge {
       display: inline-block; padding: 3px 9px; border-radius: 999px;
@@ -542,10 +559,13 @@ function renderIdeas() {
           <span>${Memo.fmtDate(i.date)}</span>
           <span class="badge ${st.cls}">${st.label}</span>
         </div>
-        <div class="idea-text">${Memo.esc(i.text)}</div>
-        ${i.decision ? `<div class="topic-src" style="margin-top:10px;border-left-color:var(--purple)">
-            <b>会議での結論</b>${mtg ? '（' + Memo.fmtDate(mtg.date) + 'の会議）' : ''}<br>${Memo.esc(i.decision)}
-          </div>` : ''}
+        ${i.decision
+          ? `<div class="idea-decision">
+               <div class="lbl">会議での結論${mtg ? '（' + Memo.fmtDate(mtg.date) + 'の会議）' : ''}</div>
+               <div class="txt">${Memo.esc(i.decision)}</div>
+             </div>
+             <div class="idea-text sub"><span class="lbl">議題</span>${Memo.esc(i.text)}</div>`
+          : `<div class="idea-text">${Memo.esc(i.text)}</div>`}
         <div class="idea-foot">
           <button class="like-btn ${liked ? 'on' : ''}" onclick="toggleLike('${i.id}')">
             👍 いいね${likes ? ' ' + likes : ''}
