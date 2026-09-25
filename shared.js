@@ -238,7 +238,42 @@ const App = {
   },
 
   // 1部(9-16)のポジション
-  POSITIONS: ['K', 'R2', 'R2d', 'R1', 'W', 'T'],
+  POSITIONS: ['K', 'R2', 'R1', 'W', 'T'],
+
+  /* d（デシャップ）
+     以前は「R2d」という1部のポジションとして表に出していたが、表記はやめて
+     **その人ができるかどうかの印**（staffmeta.desh）にした。
+     仕事そのものは残っているので、シフトを組むときは
+     **1日1人以上、d ができる人を 1部R2 に入れる**（shift-view.html の第4パス） */
+  canDesh(meta, name) {
+    const m = (meta || {})[name] || {};
+    // 古い設定（できるポジションに R2d が残っている人）も d ができる人として扱う
+    return !!(m.desh || (m.positions || []).indexOf('R2d') >= 0);
+  },
+
+  // 表示用。古い週に残っている「R2d」は「R2」として見せる（データは書き換えない）
+  normPos(v) { return String(v == null ? '' : v).replace(/R2d/g, 'R2'); },
+
+  /* 1部（「→」の左）のポジションの頭文字。K / R / W / T のどれか。
+     「R2→（T」なら R、「（T」なら T。当てはまらなければ空 */
+  posHead(main) {
+    const h = App.normPos(main).split('\u2192')[0].replace(/[\uff08(\uff09)\s]/g, '').charAt(0).toUpperCase();
+    return (h && 'KRWT'.indexOf(h) >= 0) ? h : '';
+  },
+
+  // 1日の基本人数。これを下回るとシフト表で色が付く
+  POS_BASE: { K: 3, R: 3, W: 2, T: 1 },
+
+  // その日の1部の人数を数える（欠勤の人は数えない）
+  posCounts(cells, names, day) {
+    const out = { K: 0, R: 0, W: 0, T: 0 };
+    (names || []).forEach(n => {
+      if (App.isAbsent(cells, n, day)) return;
+      const h = App.posHead(cells[App._safeCellKey(`s_${n}_${day}_main`)] || '');
+      if (h) out[h]++;
+    });
+    return out;
+  },
   // 2部(16-L)のポジション
   POSITIONS2: ['W', 'T'],
 
@@ -1004,7 +1039,7 @@ const App = {
        1部（その日の一番大きな役割）→ 2部（何時まで）→ 出勤時間 → 決定
        そのあとで 0部（微調整）と、本人の希望（参考） */
 
-  CE_P1: ['K', 'R2', 'R2d', 'R1', 'W', 'T'],
+  CE_P1: ['K', 'R2', 'R1', 'W', 'T'],
   CE_P2: ['W', 'T', 'K'],
   CE_P0: ['C', '1F', 'Rj', 'Tj', 'm', 'C\u30fbm', '1F\u30fbm', 'Rj\u30fbm', 'Tj\u30fbm'],
 
@@ -1215,7 +1250,7 @@ const App = {
 
     const cells = App.getManual(opts.reqId);
     const g = (f) => cells[App._safeCellKey(`s_${opts.name}_${opts.day}_${f}`)] || '';
-    const m = App.parseMain(g('main'));
+    const m = App.parseMain(App.normPos(g('main')));
     const dates = App.weekDates(opts.ws);
 
     document.getElementById('ce-name').textContent = opts.name;
@@ -1225,7 +1260,8 @@ const App = {
     const rep = App.getReplies(opts.reqId).find(r => r.name === opts.name);
     const meta = App.getStaffMeta()[opts.name] || {};
     const can = [];
-    if ((meta.positions || []).length) can.push(`1\u90e8: ${meta.positions.join(',')}`);
+    if ((meta.positions || []).length) can.push(`1\u90e8: ${meta.positions.filter(p => p !== 'R2d').join(',')}`);
+    if (App.canDesh(App.getStaffMeta(), opts.name)) can.push('d\uff08\u30c7\u30b7\u30e3\u30c3\u30d7\uff09\u3067\u304d\u308b');
     if ((meta.positions2 || []).length) can.push(`2\u90e8: ${meta.positions2.join(',')}`);
     if ((meta.positions0 || []).length) can.push(`0\u90e8: ${meta.positions0.join(',')}`);
     if (meta.hours) can.push(`\u51fa\u52e4\u53ef\u80fd: ${meta.hours}`);

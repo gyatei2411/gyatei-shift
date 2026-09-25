@@ -174,7 +174,7 @@
     <div class="tab-pane" id="tab-staff" style="display:none">
       <div class="card">
         <h2>スタッフ名マスタ</h2>
-        <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R2d / R1 / W / T）の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。<br>名前の横の <strong>★優先 / 主婦 / 学生</strong> で区分を選べます（もう一度押すと無印）。<br>
+        <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R1 / W / T）と <strong>d（デシャップ）</strong> の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。<br>名前の横の <strong>★優先 / 主婦 / 学生</strong> で区分を選べます（もう一度押すと無印）。<br>
         シフトに入れる優先順位は <strong>★優先 ＞ 主婦 ＞ 無印 ＞ 学生</strong> です。<br>
         <strong>週□〜□回</strong>：<strong>左＝基本の回数 / 右＝人が足りない日だけ伸ばす上限</strong>。<br>
         例「週2〜3回」… <strong>基本は週2回</strong>。他の人で枚が埋まらない日にだけ3回目がつきます（上限は絶対に超えません）。空欄なら制限なし。<br>
@@ -943,8 +943,9 @@
       el.innerHTML = staff.map((n, i) => {
         const m = Object.assign({ positions0: [], positions: [], positions2: [], t2always: false, t2extra: false,
                                   rank: '', daysMin: null, daysMax: null, note: '', priority: false,
-                                  rookie: false, hours: '' }, meta[n] || {});
+                                  rookie: false, hours: '', desh: false }, meta[n] || {});
         const rk = App.rankKey(m);
+        const dOn = App.canDesh(meta, n);   // d（デシャップ）ができる人
         const RC = { priority: '#B45309', housewife: '#0369A1', student: '#7E22CE' };
         const RBG = { priority: '#FFF7ED', housewife: '#F0F9FF', student: '#FAF5FF' };
         const esc = n.replace(/'/g, "\\'");
@@ -988,6 +989,12 @@
                 ${p}
               </label>
             `).join('')}
+            <span style="width:1px;height:22px;background:var(--border);margin:0 3px"></span>
+            <label title="d（デシャップ）ができる人。&#10;自動割り当てで、その日の 1部R2 に必ず1人は d のできる人を入れます。&#10;※ シフト表やタブレットには「d」とは出しません（R2 と出ます）&#10;※ 1部で R2 ができる人に付けてください"
+              style="display:inline-flex;align-items:center;gap:3px;font-size:0.8rem;background:${dOn ? '#FDF2F8' : '#fff'};border:1.5px solid ${dOn ? '#BE185D' : 'var(--border)'};color:${dOn ? '#BE185D' : 'inherit'};padding:3px 9px;border-radius:6px;cursor:pointer;font-weight:700">
+              <input type="checkbox" ${dOn ? 'checked' : ''} onchange="toggleDesh('${esc}')">
+              d
+            </label>
           </div>
           <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:2px 0 4px">
             <span style="font-size:0.72rem;color:#B45309;font-weight:700;min-width:92px">2部 16-L:</span>
@@ -1082,6 +1089,15 @@
     }
 
     // 2部（16時〜L）でできるポジション
+    // d（デシャップ）。昔の「R2d」ポジションはここで消しておく
+    function toggleDesh(name) {
+      const m = staffMetaOf(name);
+      const on = !App.canDesh(App.getStaffMeta(), name);
+      m.desh = on;
+      m.positions = (m.positions || []).filter(p => p !== 'R2d');
+      App.setStaffMeta(name, m);
+      renderStaffMaster();
+    }
     function togglePosition2(name, pos, checked) {
       const m = staffMetaOf(name);
       if (checked) { if (!m.positions2.includes(pos)) m.positions2.push(pos); }
@@ -1108,7 +1124,7 @@
       return Object.assign(
         { positions0: [], positions: [], positions2: [], t2always: false, t2extra: false,
           rank: '', daysMin: null, daysMax: null, note: '', priority: false,
-          rookie: false, hours: '' },
+          rookie: false, hours: '', desh: false },
         App.getStaffMeta()[name] || {});
     }
 

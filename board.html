@@ -240,7 +240,6 @@
     /* ポジション別の色分け */
     .p-K   { background: #7F1D1D; color: #FEE2E2; }
     .p-R2  { background: #1E3A8A; color: #DBEAFE; }
-    .p-R2d { background: #1E40AF; color: #DBEAFE; }
     .p-R1  { background: #334155; color: #E2E8F0; }
     .p-W   { background: #14532D; color: #DCFCE7; }
     .p-T   { background: #581C87; color: #F3E8FF; }
@@ -533,7 +532,7 @@
   </div>
 
   <script>
-    const POS_CLASS = { K: 'p-K', R2: 'p-R2', R2d: 'p-R2d', R1: 'p-R1', W: 'p-W', T: 'p-T' };
+    const POS_CLASS = { K: 'p-K', R2: 'p-R2', R1: 'p-R1', W: 'p-W', T: 'p-T' };
     let reqIds = [];      // 表示対象の依頼ID（週の古い順）
     let fbError = false;  // Firebaseの読み取り権限エラー
     let cursor = 0;       // reqIds 内の現在位置
@@ -975,7 +974,11 @@
 
       renderHistory(req, conf);
 
-      const get = (name, d, f) => cells[App._safeCellKey(`s_${name}_${d}_${f}`)] || '';
+      const get = (name, d, f) => {
+        const v = cells[App._safeCellKey(`s_${name}_${d}_${f}`)] || '';
+        // 「R2d」という表記はやめた。古い週に残っていても R2 と出す
+        return f === 'main' ? App.normPos(v) : v;
+      };
       const worksOn = (n, d) => !!(get(n, d, 'main') || get(n, d, 'start') || get(n, d, 'end'));
 
       // 当日欠勤とUPの日は、確定後でも変わるのでいつも最新の入力を見る
@@ -1021,7 +1024,10 @@
       ((lastHist && lastHist.edits) || []).forEach(e => {
         if (e && e.n) editMap[e.n + '@' + e.d] = e.was || '';
       });
-      wasOf = (n, d) => editMap[n + '@' + d];
+      wasOf = (n, d) => {
+        const v = editMap[n + '@' + d];
+        return v === undefined ? undefined : App.normPos(v);
+      };
 
       const all = (req.staff || []).slice();
       const working = all.filter(n => { for (let d = 0; d < 7; d++) if (!closed.has(d) && worksOn(n, d)) return true; return false; });
@@ -1378,12 +1384,12 @@
 
     /* ===== 記号の見方（普段は出さない。「❔ 記号」で開く） ===== */
     const POS_FULL = {
-      K: '調理場', R2: 'レストラン', R2d: 'レストラン（ドリンク）',
+      K: '調理場', R2: 'レストラン',
       R1: 'レストラン1', W: '洗い場', T: 'テイクアウト'
     };
 
     function buildLegend(usedPos, usedAvail, used0, used2, usedAbs, usedUp, usedEdit) {
-      const order = ['K', 'R2', 'R2d', 'R1', 'W', 'T'];
+      const order = ['K', 'R2', 'R1', 'W', 'T'];
       let h = '';
 
       const posItems = order.filter(p => usedPos[p])
