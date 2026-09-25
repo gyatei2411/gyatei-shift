@@ -132,6 +132,12 @@
     .todo-row .t-who { width: 110px; flex: 0 0 auto; }
     .todo-row .t-due { width: 148px; flex: 0 0 auto; }
     .todo-row.done .t-text { text-decoration: line-through; color: var(--muted); }
+    /* 前の会議から繰り越したもの */
+    .todo-row .t-from {
+      flex: 0 0 auto; font-size: 0.68rem; font-weight: 800; color: #B45309;
+      background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 999px;
+      padding: 2px 8px; white-space: nowrap;
+    }
 
     .mtg-list-item {
       display: flex; align-items: center; gap: 10px; padding: 12px 14px;
@@ -172,6 +178,7 @@
     @media (max-width: 700px) {
       .container { padding: 0 12px 60px; margin-top: 14px; }
       .todo-row { flex-wrap: wrap; }
+      .todo-row .t-text { flex: 1 0 100%; }
       .todo-row .t-who, .todo-row .t-due { width: calc(50% - 4px); }
     }
 
@@ -733,9 +740,28 @@ function newMeeting() {
   openModal('議事録を作る',
     `<label class="form-label">ミーティングの日付</label>
      <input type="date" class="form-input" id="newMtgDate" value="${Memo.today()}" style="max-width:240px">
-     <p class="hint" style="margin-top:10px">あとから議事録の画面でも変えられます。</p>`,
+     <p class="hint" style="margin-top:10px">あとから議事録の画面でも変えられます。<br>
+        前回の「次回すること」のうち<b>チェックが付いていないもの</b>は、この議事録に繰り越されます。</p>`,
     `<button class="btn btn-outline" onclick="closeModal()">やめる</button>
      <button class="btn btn-primary" onclick="createMeeting()">作る</button>`);
+}
+
+/* 前の会議の「次回すること」のうち、**チェックが付いていないもの**を新しい議事録へ持ってくる。
+   チェック済みは持ってこない＝終わったものは次の会議に出てこない。
+   from には「最初に出てきた会議の日」を残すので、何回繰り越したかが分かる */
+function carryOverTodos(newDate) {
+  // mtgArray() は日付の新しい順。その日以前で「することが書かれている」一番新しい会議を見る。
+  //   空の会議を飛ばすのは、この仕組みを入れる前に作った議事録があるため。
+  //   （全部チェック済みの会議は、チェック済みの行が残っているので空にはならず、ここで止まる）
+  const prev = mtgArray().find(m => (m.date || '') <= newDate && (m.todos || []).length);
+  if (!prev) return [];
+  return (prev.todos || [])
+    .filter(t => !t.done && (t.text || '').trim())
+    .map(t => ({
+      id: Memo.newId('td'),
+      text: t.text || '', who: t.who || '', due: t.due || '', done: false,
+      from: t.from || prev.date || ''
+    }));
 }
 
 function createMeeting() {
@@ -746,7 +772,7 @@ function createMeeting() {
     date: date,
     writer: curLeader(),
     topics: [],
-    todos: [],
+    todos: carryOverTodos(date),
     memo: '',
     at: Date.now(),
     updatedAt: Date.now(),
@@ -756,7 +782,10 @@ function createMeeting() {
   Memo.curMtg = m.id;
   pushMtg(m);
   renderMtg();
-  App.toast('議事録を作成しました', 'success');
+  const carried = (m.todos || []).length;
+  App.toast(carried
+    ? `議事録を作成しました（前回の残り ${carried}件を繰り越し）`
+    : '議事録を作成しました', 'success');
 }
 
 function pushMtg(m) {
@@ -833,10 +862,10 @@ function renderMtgDetail() {
 
       <div id="topicHost">${renderTopics(m, ed)}</div>
 
-      <div class="sec-title">③ 次回までにやること</div>
+      <div class="sec-title">③ 次回すること</div>
       <div id="todoHost">${renderTodos(m, ed)}</div>
       ${ed ? `<div class="btn-row no-print" style="margin-top:10px">
-                <button class="btn btn-outline btn-sm" onclick="addTodo()">＋ やることを足す</button>
+                <button class="btn btn-outline btn-sm" onclick="addTodo()">＋ することを足す</button>
               </div>` : ''}
 
       <div class="btn-row no-print" style="margin-top:20px">
@@ -892,12 +921,14 @@ function renderTopics(m, ed) {
 
 function renderTodos(m, ed) {
   const todos = m.todos || [];
-  if (!todos.length) return '<div class="empty-state">やることはまだ登録されていません。</div>';
+  if (!todos.length) return '<div class="empty-state">次回することはまだ登録されていません。<br>'
+    + '<span style="font-size:0.85rem">チェックを付けずに残したものは、次の議事録を作ったときに繰り越されます。</span></div>';
   const dis = ed ? '' : 'disabled';
   return todos.map(t => `
     <div class="todo-row ${t.done ? 'done' : ''}">
       <input type="checkbox" ${t.done ? 'checked' : ''} ${dis} onchange="setTodo('${t.id}', 'done', this.checked)">
-      <input type="text" class="form-input t-text" value="${Memo.esc(t.text || '')}" placeholder="やること" ${dis}
+      ${t.from ? `<span class="t-from" title="${Memo.fmtDate(t.from)}の会議から続いています">繰越 ${Memo.fmtDate(t.from)}</span>` : ''}
+      <input type="text" class="form-input t-text" value="${Memo.esc(t.text || '')}" placeholder="次回すること" ${dis}
              oninput="setTodoLater('${t.id}', 'text', this.value)">
       <input type="text" class="form-input t-who" value="${Memo.esc(t.who || '')}" placeholder="担当" ${dis}
              oninput="setTodoLater('${t.id}', 'who', this.value)">
@@ -1001,12 +1032,12 @@ function diffMtg(a, b) {
   const bd = Object.fromEntries(b.todos.map(t => [t.id, t]));
   b.todos.forEach(t => {
     const o = ad[t.id];
-    if (!o) { if (t.text || t.who) out.push(`やることを追加: ${cut(t.text)}${t.who ? '（' + t.who + '）' : ''}`); return; }
+    if (!o) { if (t.text || t.who) out.push(`次回することを追加: ${cut(t.text)}${t.who ? '（' + t.who + '）' : ''}`); return; }
     if (o.text !== t.text || o.who !== t.who || o.due !== t.due) {
-      out.push(`やることを修正: ${cut(t.text)}${t.who ? '（' + t.who + '）' : ''}${t.due ? ' ' + Memo.fmtDate(t.due) + 'まで' : ''}`);
+      out.push(`次回することを修正: ${cut(t.text)}${t.who ? '（' + t.who + '）' : ''}${t.due ? ' ' + Memo.fmtDate(t.due) + 'まで' : ''}`);
     }
   });
-  a.todos.forEach(t => { if (!bd[t.id] && (t.text || t.who)) out.push(`やることを削除: ${cut(t.text)}`); });
+  a.todos.forEach(t => { if (!bd[t.id] && (t.text || t.who)) out.push(`次回することを削除: ${cut(t.text)}`); });
 
   return out;
 }
@@ -1164,7 +1195,7 @@ function removeTodo(tid) {
   const doIt = () => withMtg(m => { m.todos = (m.todos || []).filter(x => x.id !== tid); });
   // まだ何も書いていない行は、いちいち聞かずに消す
   if (!(t0.text || '').trim() && !(t0.who || '').trim()) { doIt(); return; }
-  confirmDelete('この「やること」を消します',
+  confirmDelete('この「次回すること」を消します',
     `${Memo.esc(t0.text || '(内容なし)')}
      ${t0.who ? '<br>担当: ' + Memo.esc(t0.who) : ''}`, doIt);
 }
