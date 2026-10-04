@@ -194,7 +194,7 @@ const App = {
   },
 
   // アプリのバージョン（更新したらここを書き換える）
-  VERSION: '2026.09.14',
+  VERSION: '2026.10.05',
   lastSyncAt: null,   // Firebase から最後に受け取った時刻
 
   KEYS: {
@@ -572,8 +572,8 @@ const App = {
   // positions2 … 2部(16-L)でできるポジション（W / T）
   // t2always   … 出勤日は必ず2部T
   // t2extra    … 仕事が終わり次第2部Tに合流（3人の枠外）
-  // rank       … '' (無印) / 'priority'(★優先) / 'housewife'(主婦) / 'student'(学生)
-  //              優先順位: ★優先 > 主婦 > 無印 > 学生
+  // rank       … 'top'(★★最優先) / 'priority'(★優先) / 'housewife'(主婦) / ''(無印) / 'student'(学生)
+  //              優先順位: ★★最優先 > ★優先 > 主婦 > 無印 > 学生
   // daysMin/Max … 週の希望出勤回数（例: 2〜3回）。Max が自動割り当ての上限
   // priority   … 旧データ互換（rank が無ければ priority=true を ★優先 とみなす）
   getStaffMeta() {
@@ -810,13 +810,18 @@ const App = {
 
   // { reqId: { version, at, cells:{...}, history:[{v, at, changes:[...]}] } }
   // スタッフの区分を数値にする（小さいほど優先）
-  //   0=★優先  1=主婦  2=無印  3=学生
-  RANK_ORDER: { priority: 0, housewife: 1, '': 2, student: 3 },
-  RANK_LABEL: { priority: '\u2605\u512a\u5148', housewife: '\u4e3b\u5a66', student: '\u5b66\u751f' },
+  //   0=★★最優先  1=★優先  2=主婦  3=無印  4=学生
+  //   最優先は 2026/10/5 に追加。優先の中でも先に決めたい人を分けるため
+  //   （同じ★優先どうしだと、どちらが16:30上がりになるか決められなかった）
+  RANK_ORDER: { top: 0, priority: 1, housewife: 2, '': 3, student: 4 },
+  // 「押し込んででも入れる」区分（autoAssign の第3パスの対象）＝ 最優先 と ★優先
+  RANK_PUSH_MAX: 1,
+  RANK_LABEL: { top: '\u2605\u2605\u6700\u512a\u5148', priority: '\u2605\u512a\u5148', housewife: '\u4e3b\u5a66', student: '\u5b66\u751f' },
   rankOf(meta) {
     const m = meta || {};
     const r = m.rank || (m.priority ? 'priority' : '');
-    return App.RANK_ORDER[r] !== undefined ? App.RANK_ORDER[r] : 2;
+    // 知らない区分は「無印」と同じ扱い
+    return App.RANK_ORDER[r] !== undefined ? App.RANK_ORDER[r] : App.RANK_ORDER[''];
   },
   rankKey(meta) {
     const m = meta || {};

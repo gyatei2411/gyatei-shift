@@ -441,7 +441,7 @@
     <b>C・1F・Rj・Tj がついた人は9時出勤</b>になります（mは時間不問なので変わりません）。
     <b>K・T の人には0部はつけません</b>（もともと始業9時なので、つくのは R2・R1・W の人）。
     <b>C・1F・Rj・Tj のどれかと m は兼任できます</b>（表記は「<b>C・m</b>」。9時からC、10時からm）。
-    つける順番は <b>★優先 ＞ 主婦 ＞ 無印 ＞ 学生</b>。
+    つける順番は <b>★★最優先 ＞ ★優先 ＞ 主婦 ＞ 無印 ＞ 学生</b>。
     <span style="opacity:0.85">（つけられる人がいないときは無理につけず、備考に「⚠ 0部未配置」と出します）</span>
   </div>
 
@@ -1240,7 +1240,7 @@
         if (v !== undefined) { maxDays[r.name] = v; memoLimits.push(`${r.name}: 週${v}日まで`); }
       });
 
-      // 区分（★優先 > 主婦 > 無印 > 学生）と、均等化の分母となる希望回数
+      // 区分（★★最優先 > ★優先 > 主婦 > 無印 > 学生）と、均等化の分母となる希望回数
       const rankOf = (name) => App.rankOf(meta[name] || {});
 
       // 週の「目安の回数」= 週□〜□回の左側。例「週2〜3回」なら基本2回
@@ -1320,7 +1320,7 @@
         openSlots.forEach(p => { needs[p] = (needs[p] || 0) + 1; });
 
         // 配置する順番
-        //  ① 区分：★優先 > 主婦 > 無印 > 学生
+        //  ① 区分：★★最優先 > ★優先 > 主婦 > 無印 > 学生
         //  ② 希望回数に対する充足度が低い人（削るときは1人に集中させない）
         //  ③ できるポジションが少ない人（多能な人は調整役として後回し）
         const sorted = available.slice().sort((a, b) => {
@@ -1443,11 +1443,12 @@
           if (!moved) break;
         }
 
-        // ── 第3パス: ★優先メンバーが未配置なら、非優先の人と入れ替える ──
+        // ── 第3パス: 最優先・★優先のメンバーが未配置なら、区分の低い人と入れ替える ──
         //     （定員（K3 / R2系3 / W2 / T1）は絶対に超えない）
+        //     最優先の人から順に見るので、最優先と★優先が競合したら最優先が残る
         const dLabel = `${App.fmtMD(App.weekDates(req.ws)[day])}(${App.DOW_LABELS[day]})`;
         for (const person of sorted) {
-          if (rankOf(person.name) !== 0 || assignedToday.has(person.name)) continue;
+          if (rankOf(person.name) > App.RANK_PUSH_MAX || assignedToday.has(person.name)) continue;
           if (isBack(person.name, day)) continue;   // 後回しの日は押し込まない
           const cands = (meta[person.name].positions || []).filter(p => p !== 'R1' && rookieOk(person.name, p));
           if (!cands.length) continue;
@@ -1456,7 +1457,7 @@
           const victims = results
             .map((r, i) => ({ r, i }))
             .filter(x => x.r.day === day && cands.indexOf(x.r.pos) >= 0 &&
-                         (rankOf(x.r.name) > 0 || isBack(x.r.name, day)))
+                         (rankOf(x.r.name) > rankOf(person.name) || isBack(x.r.name, day)))
             .sort((a, b) => (isBack(b.r.name, day) ? 1 : 0) - (isBack(a.r.name, day) ? 1 : 0)
                          || rankOf(b.r.name) - rankOf(a.r.name)
                          || fillRate(b.r.name) - fillRate(a.r.name));
@@ -1600,9 +1601,12 @@
           for (let k = tPicked.length; k < PART2_T; k++) shortages2.push(`${dayName} 2部T`);
         } else if (helper) {
           // ⑤ 応援Tが来る日は、入れ替わりで3名のうち1人が16:30で上がる
-          //    R2 からTに入った人を優先。必ずTの人は除く
+          //    **区分が低い人から**上がってもらう（優先度の高い人はラストまで残す）。
+          //    同じ区分なら R2 からTに入った人 → 2部の回数が多い人。必ずTの人は除く
           const cands = tPicked.filter(x => !mustT(x.name));
           cands.sort((a, b) => {
+            const rk = rankOf(b.name) - rankOf(a.name);   // rankOf が大きい＝区分が低い
+            if (rk !== 0) return rk;
             const ar = isR2(a) ? 0 : 1, br = isR2(b) ? 0 : 1;
             if (ar !== br) return ar - br;
             return second[b.name] - second[a.name];
@@ -1633,7 +1637,7 @@
       //  ・**1部が K または T の人には0部をつけない**（もともと始業9時で自分の準備があるため）
       //    → 0部がつくのは R2 / R1 / W の人
       //  ・Rj / Tj は「9時から出られる人数」が基準人数に満たない日だけ発生する
-      //  ・【優先】★優先 > 主婦 > 無印 > 学生 の順につける（同じ区分なら週の回数が少ない人）
+      //  ・【優先】★★最優先 > ★優先 > 主婦 > 無印 > 学生 の順につける（同じ区分なら週の回数が少ない人）
       //  ・つけられないときは無理につけず、備考に注意書きを残す
       const MORNING_BASE = App.getMorningBase();
       const zeroCount = {};      // name → 週の0部回数（均等化用）
@@ -1671,7 +1675,7 @@
             : morning.filter(r => zeroOk(r) && !used.has(r.name) && can0(r, p));
           if (!pool.length) { (zeroShort[day] = zeroShort[day] || []).push(p); return; }
           pool.sort((a, b) => {
-            const ra = rankOf(a.name), rb = rankOf(b.name);   // ★優先 > 主婦 > 無印 > 学生
+            const ra = rankOf(a.name), rb = rankOf(b.name);   // ★★最優先 > ★優先 > 主婦 > 無印 > 学生
             if (ra !== rb) return ra - rb;
             return zeroCount[a.name] - zeroCount[b.name] || assignedCount[b.name] - assignedCount[a.name];
           });
@@ -2016,7 +2020,7 @@ ${head}${rest}
       txt += `- K: 3人\n- R2: 3人（**うち1人は必ず《 d 》が付いている人**）\n- W: 2人\n- T: 1人\n- R1: 0人（使わない）\n`;
       txt += `- 《 d 》はデシャップができる人の印。**表記はしない**（ポジションは R2 と書く）。1日1人以上必要\n`;
       txt += `- 人数不足の場合の優先順位: ①K3人 ②R2 2人（《 d 》の人を優先） ③W1人 ④残り\n`;
-      txt += `- シフトに入れる優先順位は **【★優先】> 【主婦】> 無印 > 【学生】**。ただし**定員（計9名）は絶対に超えない**\n`;
+      txt += `- シフトに入れる優先順位は **【★★最優先】> 【★優先】> 【主婦】> 無印 > 【学生】**。ただし**定員（計9名）は絶対に超えない**\n`;
       txt += `- 各人の「週□回まで」が書いてあれば、その回数を**上限**とする\n`;
       txt += `- 「週□〜□回」のように幅で書いてある人は **左の数字を基本**とし、\n`;
       txt += `  他の人で枚が埋まらない日にだけ右の数字まで伸ばす（例「週2〜3回」= 基本2回、足りない日だけ3回）\n`;
@@ -2039,6 +2043,7 @@ ${head}${rest}
       txt += `- 《応援T》の人は2部Tへヘルプに行くが、**pos に T は書かない**（1部のポジションのまま）。\n`;
       txt += `  ただし終業は L まで（例: \"K\" で 9-L）。3名には数えない。1部がWなら普通にWを続ける\n`;
       txt += `  《応援T》が出勤する日だけ、3名のうち1人を \"R2→（T\" -1630 にして入れ替わりで上がらせる\n`;
+      txt += `  **先に上がる1人は、区分（優先順位）が一番低い人から選ぶ**（順位が高い人はラストまで残す）。《必ずT》の人は選ばない\n`;
       txt += `- 2部W = 1部Wのうち16時で上がる人がいれば、その人数分だけ別の人をつける\n`;
       txt += `- 《必ずT》以外は、2部に入る回数が週でできるだけ均等になるように選ぶ\n\n`;
       txt += `## 0部（9:00〜9:30 朝の準備）\n`;
@@ -2052,7 +2057,7 @@ ${head}${rest}
       txt += `- C/1F/Rj/Tj は **1人1役**だが、**そのうちの1つと m の両方を同じ人につけてもよい**\n`;
       txt += `  その場合 pos0 は \"C・m\" のように・でつなぐ（9時からCで掃除 → 10時からmで盛り付け、start は \"9\"）\n`;
       txt += `- Rj（レストラン準備ヘルプ）・Tj（テイクアウト準備）は **9時から出られる人が${App.getMorningBase()}人未満の日だけ**発生する（1人ずつ）\n`;
-      txt += `- **つける順番は 【★優先】> 【主婦】> 無印 > 【学生】**。同じ区分なら週の0部回数が少ない人から\n`;
+      txt += `- **つける順番は 【★★最優先】> 【★優先】> 【主婦】> 無印 > 【学生】**。同じ区分なら週の0部回数が少ない人から\n`;
       txt += `- 0部は **1人1役**。できる人がいなければ**無理につけず、その日は空欄のまま**にして理由を書く\n\n`;
       txt += `## 出勤時間のルール\n`;
 
@@ -2064,7 +2069,7 @@ ${head}${rest}
       txt += `## スタッフの回答（○=終日可 / △=条件付き / ✕=不可 / 未=未定（割り当てない）/ -=定休日）\n`;
       for (const r of replies) {
         const m = meta[r.name] || { positions: [] };
-        const rkLabel = { priority: '【★優先】', housewife: '【主婦】', student: '【学生】' }[App.rankKey(m)] || '';
+        const rkLabel = { top: '【★★最優先】', priority: '【★優先】', housewife: '【主婦】', student: '【学生】' }[App.rankKey(m)] || '';
         const dLim = (m.daysMax != null && m.daysMax !== '')
           ? `【週${(m.daysMin != null && m.daysMin !== '') ? m.daysMin + '〜' : ''}${m.daysMax}回】` : '';
         txt += `- ${r.name}${rkLabel}${dLim}: [${r.d.split('').map((c, i) => `${App.DOW_LABELS[i]}=${c === 'o' ? '○' : c === 't' ? '△' : c === 'x' ? '✕' : c === 'm' ? '未' : '-'}`).join(' ')}]`;

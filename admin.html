@@ -175,7 +175,8 @@
       <div class="card">
         <h2>スタッフ名マスタ</h2>
         <p class="card-sub">スタッフの追加・削除と、各スタッフが<strong>できるポジション</strong>（K / R2 / R1 / W / T）と <strong>d（デシャップ）</strong> の設定を行えます。<br>ここで設定したポジションは、シフト表の「⚡自動割り当て」で使われます。<br>名前の横の <strong>★優先 / 主婦 / 学生</strong> で区分を選べます（もう一度押すと無印）。<br>
-        シフトに入れる優先順位は <strong>★優先 ＞ 主婦 ＞ 無印 ＞ 学生</strong> です。<br>
+        シフトに入れる優先順位は <strong>★★最優先 ＞ ★優先 ＞ 主婦 ＞ 無印 ＞ 学生</strong> です。<br>
+        この順位は <strong>応援Tの日の16:30上がりを誰にするか</strong> にも使います（<strong>順位が低い人から先に上がる</strong>＝順位が高い人はラストまで残る）。<br>
         <strong>週□〜□回</strong>：<strong>左＝基本の回数 / 右＝人が足りない日だけ伸ばす上限</strong>。<br>
         例「週2〜3回」… <strong>基本は週2回</strong>。他の人で枚が埋まらない日にだけ3回目がつきます（上限は絶対に超えません）。空欄なら制限なし。<br>
         <strong>新人</strong>：自動割り当てで <strong>同じ日の同じポジションに新人は1名まで</strong>になります（新人同士を並べない）。<br>
@@ -946,14 +947,14 @@
                                   rookie: false, hours: '', desh: false }, meta[n] || {});
         const rk = App.rankKey(m);
         const dOn = App.canDesh(meta, n);   // d（デシャップ）ができる人
-        const RC = { priority: '#B45309', housewife: '#0369A1', student: '#7E22CE' };
-        const RBG = { priority: '#FFF7ED', housewife: '#F0F9FF', student: '#FAF5FF' };
+        const RC = { top: '#BE123C', priority: '#B45309', housewife: '#0369A1', student: '#7E22CE' };
+        const RBG = { top: '#FFF1F2', priority: '#FFF7ED', housewife: '#F0F9FF', student: '#FAF5FF' };
         const esc = n.replace(/'/g, "\\'");
         return `
         <div class="staff-master-row" style="flex-wrap:wrap;${rk ? `background:${RBG[rk]};border-color:${RC[rk]}` : ''}">
           <span class="name">${n}${rk ? ` <span style="font-size:0.68rem;color:${RC[rk]};font-weight:700">${App.RANK_LABEL[rk]}</span>` : ''}${m.rookie ? ` <span style="font-size:0.68rem;background:#DC2626;color:#fff;font-weight:800;padding:1px 7px;border-radius:999px">新人</span>` : ''}</span>
-          <span style="display:inline-flex;gap:4px" title="シフトに入れる優先順位：★優先 ＞ 主婦 ＞ 無印 ＞ 学生">
-            ${['priority','housewife','student'].map(k => `
+          <span style="display:inline-flex;gap:4px;flex-wrap:wrap" title="シフトに入れる優先順位：★★最優先 ＞ ★優先 ＞ 主婦 ＞ 無印 ＞ 学生&#10;16:30上がり（応援Tの日）は、この順位が低い人から先に上がります">
+            ${['top','priority','housewife','student'].map(k => `
               <button class="btn btn-sm" onclick="setRank('${esc}', '${k}')"
                 style="padding:3px 10px;font-size:0.76rem;font-weight:700;border-radius:6px;cursor:pointer;
                        border:1.5px solid ${rk === k ? RC[k] : 'var(--border)'};
@@ -1128,12 +1129,13 @@
         App.getStaffMeta()[name] || {});
     }
 
-    // 区分（★優先 / 主婦 / 学生）。同じボタンをもう一度押すと無印に戻る
+    // 区分（★★最優先 / ★優先 / 主婦 / 学生）。同じボタンをもう一度押すと無印に戻る
     function setRank(name, key) {
       const m = staffMetaOf(name);
       const cur = App.rankKey(m);
       m.rank = (cur === key) ? '' : key;
-      m.priority = (m.rank === 'priority');   // 旧フィールドも合わせておく
+      // 旧フィールドも合わせておく（最優先も「優先」のひとつとして扱う）
+      m.priority = (m.rank === 'priority' || m.rank === 'top');
       App.setStaffMeta(name, m);
       renderStaffMaster();
     }
