@@ -734,11 +734,15 @@
           const abs = App.isAbsent(manual, name, i);
           html += tapCell(`s_${name}_${i}_start`, abs ? 'abs' : '', manual);
           html += tapCell(`s_${name}_${i}_end`, abs ? 'abs' : '', manual);
-          // 希望時刻：手入力がなければ本人の申告から自動で出す
+          // 希望時刻：手入力がなければ本人の申告から自動で出す。
+          //   手入力が「なし」なら手で空にしたので何も出さない。
+          //   出勤可否を手で ✕・未 にした日も出さない
           {
             const tk = App._safeCellKey(`s_${name}_${i}_time`);
-            const tv = manual[tk] || wishTime(name, i, replyMap);
-            html += `<td class="tapcell cell-time${manual[tk] ? '' : ' auto'}" data-mkey="s_${name}_${i}_time">${escapeHtml(tv)}</td>`;
+            const tm = manual[tk] || '';
+            const tsym = manual[App._safeCellKey(`s_${name}_${i}_sym`)] || '';
+            const tv = App.timeCellText(tm, wishTime(name, i, replyMap), tsym);
+            html += `<td class="tapcell cell-time${tm ? '' : ' auto'}" data-mkey="s_${name}_${i}_time">${escapeHtml(tv)}</td>`;
           }
         }
         html += `<td class="name-cell" rowspan="2">${escapeHtml(name)}</td></tr>`;
@@ -1034,11 +1038,11 @@
 
     /* ===== セル編集パネル =====
        中身は shared.js 側にある（タブレットと共用） */
-    function openCellEditor(name, day) {
+    function openCellEditor(name, day, focus) {
       const req = App.getRequest(currentReqId);
       if (!req) return;
       App.openCellEditor({
-        reqId: currentReqId, name, day, ws: req.ws,
+        reqId: currentReqId, name, day, ws: req.ws, focus,
         onSave: () => { showSaved(); render(); }
       });
     }
@@ -1096,8 +1100,8 @@
         if (row) { openCellEditor(row.dataset.name, +row.dataset.day); return; }
         const td = e.target.closest('td.tapcell[data-mkey]');
         if (!td) return;
-        const m = td.dataset.mkey.match(/^s_(.+)_(\d)_(?:main|sub|start|end|time)$/);
-        if (m) openCellEditor(m[1], +m[2]);
+        const m = td.dataset.mkey.match(/^s_(.+)_(\d)_(main|sub|start|end|time)$/);
+        if (m) openCellEditor(m[1], +m[2], m[3] === 'time' ? 'time' : '');
       });
     }
 

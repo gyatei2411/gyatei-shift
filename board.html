@@ -1010,7 +1010,12 @@
       wishOf = (n, d) => {
         const k = n + '@' + d;
         if (!(k in _wish)) {
-          const w = App.wishTimeText(repMap[n], d, meta);
+          // シフト表で手入力した（手で消した）希望時刻を優先する。
+          //   欠勤・UP と同じく、確定版ではなく今の入力を見る。
+          //   出勤可否を手で ✕・未 にした日も出さない
+          const w = App.timeCellText(live[App._safeCellKey(`s_${n}_${d}_time`)] || '',
+                                     App.wishTimeText(repMap[n], d, meta),
+                                     live[App._safeCellKey(`s_${n}_${d}_sym`)] || '');
           // 終わりだけ書いた人は '-16' になる。そのままだと読みにくいので言い換える
           _wish[k] = (w && w.indexOf('-') === 0) ? w.slice(1) + 'まで' : w;
         }

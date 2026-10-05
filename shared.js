@@ -194,7 +194,7 @@ const App = {
   },
 
   // アプリのバージョン（更新したらここを書き換える）
-  VERSION: '2026.10.05',
+  VERSION: '2026.10.05b',
   lastSyncAt: null,   // Firebase から最後に受け取った時刻
 
   KEYS: {
@@ -1202,6 +1202,9 @@ const App = {
             <div>
               <label>\u5e0c\u671b\u6642\u523b\u3000<span class="sub">\u672c\u4eba\u306e\u7533\u544a</span></label>
               <input id="ce-time" placeholder="\u4f8b: 930-16" autocomplete="off">
+              <label class="ce-check">
+                <input type="checkbox" id="ce-time-none">\u7a7a\u306b\u3059\u308b
+              </label>
             </div>
           </div>
 
@@ -1212,6 +1215,12 @@ const App = {
 
     back.addEventListener('click', (e) => { if (e.target === back) App.closeCellEditor(); });
     back.querySelector('#ce-close').onclick = () => App.closeCellEditor();
+    // 「空にする」を押したら入力欄は使わない（手で空にした、という意思表示）
+    back.querySelector('#ce-time-none').onchange = (e) => {
+      const i = document.getElementById('ce-time');
+      if (e.target.checked) i.value = '';
+      i.disabled = e.target.checked;
+    };
     back.querySelector('#ce-ok').onclick = () => App._ceApply();
     back.querySelector('#ce-clear').onclick = () => App._ceClear();
     back.querySelector('#ce-abs').onclick = () => { App._ce.abs = !App._ce.abs; App._ceRenderAbs(); };
@@ -1281,7 +1290,14 @@ const App = {
     document.getElementById('ce-start').value = g('start');
     document.getElementById('ce-end').value = g('end');
     document.getElementById('ce-p0').value = g('sub');
-    document.getElementById('ce-time').value = g('time');
+    // 希望時刻は手入力がなければ本人の申告を自動で出している（紫の斜体）。
+    //   出勤できなくなったときに自動の値を消す手段がなかったので、
+    //   App.TIME_NONE（'なし'）を入れて「手で空にした」を表せるようにした
+    const tnBox = document.getElementById('ce-time-none');
+    const tnInp = document.getElementById('ce-time');
+    tnBox.checked = (g('time') === App.TIME_NONE);
+    tnInp.value = tnBox.checked ? '' : g('time');
+    tnInp.disabled = tnBox.checked;
 
     const ms = cells[App._safeCellKey(`s_${opts.name}_${opts.day}_sym`)];
     const auto = rep ? (rep.d[opts.day] || '') : '';
@@ -1297,6 +1313,16 @@ const App = {
 
     ce.el.classList.add('open');
     ce.el.querySelector('.ce-sheet').scrollTop = 0;
+    // 希望時刻のマスから開いたときは、その欄まで送る
+    //（下の「あとでよいもの」にあるので、開いた位置からでは見えない）
+    if (opts.focus === 'time') {
+      setTimeout(() => {
+        const f = document.getElementById('ce-time');
+        if (!f) return;
+        (f.closest('.ce-field') || f).scrollIntoView({ block: 'center' });
+        if (!f.disabled) f.focus();
+      }, 60);
+    }
   },
 
   closeCellEditor() {
@@ -1322,7 +1348,7 @@ const App = {
     set('sub', v('ce-p0'));
     set('start', v('ce-start'));
     set('end', v('ce-end'));
-    set('time', v('ce-time'));
+    set('time', document.getElementById('ce-time-none').checked ? App.TIME_NONE : v('ce-time'));
     set('sym', v('ce-sym'));
     set('abs', ce.abs ? '1' : '');
     const cb = ce.onSave;
@@ -1503,6 +1529,23 @@ const App = {
     const s = reply.d[day];
     if (s !== 't' && s !== 'o') return '';
     return App.fmtRange(App.consOfDay(App.buildTimeCons(reply, meta), day));
+  },
+
+  // 希望時刻の欄に出す文字を決める。
+  //   手入力があればそれ、無ければ本人の申告（自動）。
+  //   手入力が TIME_NONE なら「手で空にした」ので何も出さない
+  //   （出勤できなくなった人の申告時間を消すため。2026/10/5 に追加）
+  TIME_NONE: 'なし',
+  // 出勤可否を手でこれにした日は、自動の希望時刻を出さない
+  //   （出られないと決まった人の申告時間が残っていても意味がないため）
+  NO_WISH_SYM: ['✕', '×', '未'],
+  timeCellText(manualVal, autoVal, manualSym) {
+    const mv = String(manualVal == null ? '' : manualVal).trim();
+    if (mv === App.TIME_NONE) return '';
+    if (mv) return mv;                       // 手で書いた時間はいつでも出す
+    const sy = String(manualSym == null ? '' : manualSym).trim();
+    if (sy && App.NO_WISH_SYM.indexOf(sy) >= 0) return '';
+    return String(autoVal || '');
   },
 
   lineShareUrl(text) {
