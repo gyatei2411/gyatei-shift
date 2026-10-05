@@ -1126,8 +1126,25 @@
       App.setManualCell(currentReqId, sel.dataset.mkey, sel.value);
       td.dataset.sym = sel.value === '○' ? 'o' : sel.value === '△' ? 't'
         : sel.value === '✕' ? 'x' : sel.value === '未' ? 'm' : '';
+      // ✕・未 にすると自動の希望時刻を出さなくなるので、同じ行を引き直す
+      const m = sel.dataset.mkey.match(/^s_(.+)_(\d)_sym$/);
+      if (m) refreshWishCell(m[1], +m[2]);
       showSaved();
       renderConfirmStatus();
+    }
+
+    // 希望時刻の欄だけ引き直す（全体再描画はしない）
+    function refreshWishCell(name, day) {
+      const key = `s_${name}_${day}_time`;
+      const td = [...document.querySelectorAll('td.cell-time')].find(t => t.dataset.mkey === key);
+      if (!td) return;
+      const manual = App.getManual(currentReqId);
+      const replyMap = {};
+      App.getReplies(currentReqId).forEach(r => { replyMap[r.name] = r; });
+      const tm = manual[App._safeCellKey(key)] || '';
+      const sy = manual[App._safeCellKey(`s_${name}_${day}_sym`)] || '';
+      td.textContent = App.timeCellText(tm, wishTime(name, day, replyMap), sy);
+      td.classList.toggle('auto', !tm);
     }
 
     // 休み欄を直したら、その日のまかないを引き直す（全体再描画はしない）

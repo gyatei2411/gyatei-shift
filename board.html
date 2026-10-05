@@ -986,19 +986,23 @@
       const isAbs = (n, d) => App.isAbsent(live, n, d);
       const upOfDay = (d) => App.upOf(live, d);
 
-      // 出勤可否（○△✕）: 確定時のスナップショット優先、無ければ手元の回答
+      // 出勤可否（○△✕未）は次の順で決める
+      //   ① 手入力（シフト表でもタブレットでも、人が選んだもの）
+      //   ② 確定時のスナップショット、無ければ手元の回答
+      //   ①は確定版ではなく「今の入力」（live）を見る。欠勤・UP・希望時刻と同じ扱いで、
+      //   確定し直さなくても両方の画面にすぐ出るようにするため（2026/10/5）
       const availMap = {};
       const availSrc = (conf && conf.avail) ? conf.avail
         : App.getReplies(reqId).map(r => ({ n: r.name, d: r.d }));
       (availSrc || []).forEach(a => { if (a && a.n) availMap[a.n] = a.d || ''; });
-      // 回答データがないときは、シフト表に直接入力された ○△✕未 を使う
-      //（紙のシフト表から転記した週は回答がないため）
+      const symChar = (c) => c === '○' ? 'o' : c === '△' ? 't' : c === '未' ? 'm'
+                           : (c === '✕' || c === '×') ? 'x' : '';
       const symOf = (n, d) => {
-        const s = (availMap[n] || '')[d];
-        if (s) return s;
-        const c = get(n, d, 'sym');
-        return c === '○' ? 'o' : c === '△' ? 't' : c === '未' ? 'm'
-             : (c === '✕' || c === '×') ? 'x' : '';
+        const man = symChar(live[App._safeCellKey(`s_${n}_${d}_sym`)] || '');
+        if (man) return man;
+        // 回答データがないときは、確定版に転記された ○△✕未 を使う
+        //（紙のシフト表から取り込んだ週は回答がないため）
+        return (availMap[n] || '')[d] || symChar(get(n, d, 'sym'));
       };
 
       // 本人が出した希望時間。確定したあとも見たいので、確定版の avail ではなく
