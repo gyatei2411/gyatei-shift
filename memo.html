@@ -627,7 +627,6 @@ function renderIdeas() {
     const st = Memo.STATUS[i.status || 'new'] || Memo.STATUS.new;
     const likes = Object.keys(i.likes || {}).length;
     const liked = !!(i.likes || {})[Memo.deviceId];
-    const mine = i.device === Memo.deviceId;
     const mtg = i.mtgId && Memo.minutes[i.mtgId];
     return `
       <div class="idea-card">
@@ -650,11 +649,8 @@ function renderIdeas() {
           <button class="cmt-btn ${Memo.openCmt[i.id] ? 'on' : ''}" onclick="toggleCmtForm('${i.id}')">
             ${Memo.openCmt[i.id] ? '✕ やめる' : '💬 コメントする'}
           </button>
-          ${mine
-            ? `<button class="btn btn-outline btn-sm" onclick="deleteIdea('${i.id}')">🗑 取り消す</button>`
-            : canEdit()
-              ? `<button class="btn btn-outline btn-sm" title="リーダーとして記入中なので消せます"
-                   onclick="deleteIdea('${i.id}')">🗑 削除</button>` : ''}
+          <button class="btn btn-outline btn-sm" title="消すときは暗証番号が要ります"
+                  onclick="deleteIdea('${i.id}')">🗑 削除</button>
         </div>
         ${cmtBlock(i)}
       </div>`;
@@ -686,15 +682,13 @@ function cmtBlock(i) {
   const open = !!Memo.openCmt[i.id];
   if (!cs.length && !open) return '';   // 何もないカードは今までどおりの見た目
   const rows = cs.map(c => {
-    // 書いた端末か、リーダーとして記入中の人なら消せる（アイデアと同じ考え方）
-    const canDel = c.device === Memo.deviceId || canEdit();
     return `<div class="cmt">
         <div class="c-body">
           <div class="c-head"><span class="who">${Memo.esc(c.name)}</span>${Memo.fmtAt(c.at)}</div>
           <div class="c-text">${Memo.esc(c.text)}</div>
         </div>
-        ${canDel ? `<button class="c-del" title="このコメントを消す"
-          onclick="deleteComment('${i.id}', '${c.id}')">🗑</button>` : ''}
+        <button class="c-del" title="このコメントを消す（暗証番号が要ります）"
+          onclick="deleteComment('${i.id}', '${c.id}')">🗑</button>
       </div>`;
   }).join('');
   const form = open ? `
@@ -752,7 +746,7 @@ function deleteComment(ideaId, cid) {
     renderIdeas();
     if (Memo.tab === 'mtg') safeRenderMtg();
     App.toast('消しました', 'info');
-  });
+  }, true);
 }
 
 function toggleLike(id) {
@@ -777,7 +771,7 @@ function deleteIdea(id) {
       if (App.fbReady) App.fbDB.ref('memos/ideas/' + id + '/deleted').set(true).catch(() => {});
       renderIdeas();
       App.toast('消しました', 'info');
-    });
+    }, true);
 }
 
 /* =========================================================================
@@ -1481,21 +1475,46 @@ function applyPicker() {
    ========================================================================= */
 /* 削除は必ずこのモーダルを通す。
    「やめる」と「はい、消します」を離して並べ、押し間違いを減らす */
-function confirmDelete(what, detailHtml, fn) {
+/* アイデア・コメントを消すときの暗証番号。シフトのタブレット（店用モード）と同じ 1529。
+   数字そのものではなく pinHash() の値を持っている。
+   ソースを見てもすぐには分からないというだけで、暗号ではない。
+   誰でも消せる画面なので、誤タップといたずらを止めるためのもの。
+   番号を変えるときはコンソールで pinHash('新しい番号') を出して DEL_PIN に入れる */
+const DEL_PIN = 976925;   // = pinHash('1529')
+
+function pinHash(t) {
+  let v = 7;
+  for (let i = 0; i < t.length; i++) v = (v * 31 + t.charCodeAt(i)) % 1000003;
+  return v;
+}
+
+function askDelPin() {
+  const v = window.prompt('暗証番号（4桁）を入れてください');
+  if (v === null) return false;                       // やめた
+  if (pinHash(String(v).trim()) === DEL_PIN) return true;
+  App.toast('暗証番号が違います', 'error');
+  return false;
+}
+
+function confirmDelete(what, detailHtml, fn, needPin) {
   Memo._del = fn;
+  Memo._delPin = !!needPin;
   openModal('本当に消していいですか？',
     `<p style="font-weight:800;margin-bottom:10px">${what}</p>
      <div class="topic-src" style="font-size:0.92rem;color:var(--text);margin-bottom:0">${detailHtml}</div>
      <p class="hint" style="margin-top:14px;color:var(--danger);font-weight:700">
-       一度消すと、この画面からは元に戻せません。</p>`,
+       一度消すと、この画面からは元に戻せません。${needPin ? '<br>このあと暗証番号（4桁）を入れてもらいます。' : ''}</p>`,
     `<button class="btn btn-outline" onclick="closeModal()">やめる</button>
      <span style="width:40px"></span>
      <button class="btn" style="background:var(--danger);color:#fff" onclick="runDelete()">はい、消します</button>`);
 }
 
 function runDelete() {
+  // 番号が違ったらモーダルは開いたままにする（入れ直せるように）
+  if (Memo._delPin && !askDelPin()) return;
   const f = Memo._del;
   Memo._del = null;
+  Memo._delPin = false;
   closeModal();
   if (f) f();
 }
