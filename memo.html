@@ -80,6 +80,37 @@
     }
     .like-btn.on { background: #FEF3C7; border-color: var(--warning); color: #92400E; }
 
+    /* アイデアへのコメント（会議までに話を深めるため。2026/10/6 に追加） */
+    .cmt-wrap { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px; }
+    .cmt { display: flex; gap: 8px; padding: 6px 0; }
+    .cmt + .cmt { border-top: 1px solid var(--muted-bg); }
+    .cmt .c-body { flex: 1; min-width: 0; }
+    .cmt .c-head { font-size: 0.72rem; color: var(--muted); margin-bottom: 2px; }
+    .cmt .c-head .who { font-weight: 800; color: var(--text); font-size: 0.82rem; margin-right: 6px; }
+    .cmt .c-text { font-size: 0.92rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .cmt .c-del {
+      background: none; border: none; color: var(--muted); font-size: 0.85rem;
+      cursor: pointer; font-family: inherit; padding: 0 2px; align-self: flex-start;
+    }
+    .cmt-form { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
+    .cmt-form select { flex: 0 0 104px; padding: 8px 10px; font-size: 0.88rem; }
+    .cmt-form textarea { flex: 1; min-width: 150px; min-height: 52px; padding: 8px 10px; font-size: 0.92rem; }
+    .cmt-btn {
+      background: #fff; border: 1.5px solid var(--border-strong); border-radius: 999px;
+      padding: 6px 14px; font-size: 0.85rem; font-weight: 700; color: var(--muted);
+      cursor: pointer; font-family: inherit;
+    }
+    .cmt-btn.on { background: #EEF2FF; border-color: var(--primary); color: var(--primary); }
+    /* スマホでは本文を1行まるごと使い、名前と送信を下の段にまとめる */
+    @media (max-width: 520px) {
+      .cmt-form textarea { flex: 1 0 100%; order: -1; }
+      .cmt-form select { flex: 0 0 100px; }
+    }
+    /* 議事録の議題に出す「会議までに出たコメント」 */
+    .topic-cmt { margin-top: 8px; background: var(--muted-bg); border-radius: 8px; padding: 8px 12px; }
+    .topic-cmt .lbl { font-size: 0.72rem; font-weight: 800; color: var(--muted); margin-bottom: 4px; }
+    .topic-cmt .one { font-size: 0.86rem; line-height: 1.6; padding: 2px 0; word-break: break-word; }
+
     .filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
     .filter-btn {
       background: #fff; border: 1.5px solid var(--border); border-radius: 999px;
@@ -308,7 +339,8 @@ const Memo = {
     ideas:   'gy_memo_ideas',
     minutes: 'gy_memo_minutes',
     leader:  'gy_memo_leader',    // この端末で選ばれている記録者
-    draft:   'gy_memo_draft'
+    draft:   'gy_memo_draft',
+    cname:   'gy_memo_cname'      // コメントするとき前回選んだ名前
   },
   // 議事録を書ける人の初期値（変更は画面の「⚙ リーダーの名前を登録・変更」から）
   LEADERS: ['店長', '若奥', '青木', '渡邉', '西川', '駒原', '大橋'],
@@ -331,6 +363,8 @@ const Memo = {
   curMtg: null,   // 開いている議事録 id
   iName: '',
   saveTimer: {},
+  openCmt: {},    // アイデアid -> コメント入力欄を開いているか
+  cmtDraft: {},   // アイデアid -> 書きかけのコメント（再描画で消えないように）
 
   /* ---------- localStorage ---------- */
   read(k, def) {
@@ -352,6 +386,14 @@ const Memo = {
     if (isNaN(d)) return ds;
     const w = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
     return (d.getMonth() + 1) + '/' + d.getDate() + '(' + w + ')';
+  },
+
+  // コメントの時刻（10/6 14:23）
+  fmtAt(ms) {
+    const d = new Date(ms || 0);
+    if (!ms || isNaN(d)) return '';
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' +
+           String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
   },
 
   esc(s) {
@@ -398,7 +440,7 @@ function subscribeAll() {
   App.fbDB.ref('memos/ideas').on('value', snap => {
     Memo.ideas = snap.val() || {};
     Memo.write(Memo.K.ideas, Memo.ideas);
-    renderIdeas();
+    safeRenderIdeas();
     if (Memo.tab === 'mtg') safeRenderMtg();
   }, err => console.warn('ideas read failed:', err && err.message));
 
@@ -418,6 +460,19 @@ function subscribeAll() {
   }, () => {});
 }
 
+/* アイデア一覧も同じ。コメントを書いている最中に他の端末の更新が来ても描き直さない。
+   （書きかけ自体は Memo.cmtDraft にも入れてあるので、描き直されても文字は残る） */
+function safeRenderIdeas() {
+  const ae = document.activeElement;
+  const host = document.getElementById('ideaList');
+  if (ae && host && host.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) {
+    Memo.pendingIdeaRender = true;
+    return;
+  }
+  Memo.pendingIdeaRender = false;
+  renderIdeas();
+}
+
 /* 他の端末の更新が届いても、いま誰かが入力している最中なら描き直さない。
    （書いている途中でカーソルが飛ぶのを防ぐ。入力欄から離れた時点で反映する） */
 function safeRenderMtg() {
@@ -432,10 +487,11 @@ function safeRenderMtg() {
 }
 
 document.addEventListener('focusout', () => {
-  if (!Memo.pendingMtgRender) return;
+  if (!Memo.pendingMtgRender && !Memo.pendingIdeaRender) return;
   setTimeout(() => {
     const ae = document.activeElement;
-    if (ae && /^(INPUT|TEXTAREA)$/.test(ae.tagName)) return;  // 別の入力欄へ移っただけ
+    if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;  // 別の入力欄へ移っただけ
+    if (Memo.pendingIdeaRender) { Memo.pendingIdeaRender = false; renderIdeas(); }
     Memo.pendingMtgRender = false;
     if (Memo.tab === 'mtg') renderMtg();
   }, 150);
@@ -553,7 +609,9 @@ function renderIdeas() {
   if (Memo.filter === 'new')   list = list.filter(i => (i.status || 'new') === 'new');
   if (Memo.filter === 'adopt') list = list.filter(i => i.status === 'adopt');
   if (Memo.filter === 'mine')  list = list.filter(i => i.device === Memo.deviceId);
-  if (q) list = list.filter(i => (i.text + ' ' + i.name).includes(q));
+  // コメントの中身でも探せる（会議前のやり取りを見つけやすくするため）
+  if (q) list = list.filter(i => (i.text + ' ' + i.name + ' ' +
+      cmtArray(i).map(c => c.name + ' ' + c.text).join(' ')).includes(q));
 
   const newCount = ideaArray().filter(i => (i.status || 'new') === 'new').length;
   document.getElementById('iCount').textContent =
@@ -589,14 +647,112 @@ function renderIdeas() {
           <button class="like-btn ${liked ? 'on' : ''}" onclick="toggleLike('${i.id}')">
             👍 いいね${likes ? ' ' + likes : ''}
           </button>
+          <button class="cmt-btn ${Memo.openCmt[i.id] ? 'on' : ''}" onclick="toggleCmtForm('${i.id}')">
+            ${Memo.openCmt[i.id] ? '✕ やめる' : '💬 コメントする'}
+          </button>
           ${mine
             ? `<button class="btn btn-outline btn-sm" onclick="deleteIdea('${i.id}')">🗑 取り消す</button>`
             : canEdit()
               ? `<button class="btn btn-outline btn-sm" title="リーダーとして記入中なので消せます"
                    onclick="deleteIdea('${i.id}')">🗑 削除</button>` : ''}
         </div>
+        ${cmtBlock(i)}
       </div>`;
   }).join('');
+}
+
+/* -------------------------------------------------------------------------
+   アイデアへのコメント
+   memos/ideas/{id}/comments/{cid} = { id, name, text, at, device, deleted }
+   リーダーミーティングまでに、その場にいない人も話を足せるようにするため。
+   いいねと同じく「名前をキーにした入れ物」にしてあるので、同時に書いてもぶつからない
+   ------------------------------------------------------------------------- */
+function cmtArray(i) {
+  return Object.values((i && i.comments) || {})
+    .filter(c => c && !c.deleted)
+    .sort((a, b) => (a.at || 0) - (b.at || 0));   // 古い順＝話の流れの順
+}
+
+// 名前のプルダウン（アイデア投稿の名前ボタンと同じ顔ぶれ）
+function cmtNameOptions(sel) {
+  const roster = App.getStaff();
+  const list = Memo.EXTRA_NAMES.filter(n => !roster.includes(n)).concat(roster);
+  return '<option value="">名前</option>' + list.map(n =>
+    `<option value="${Memo.esc(n)}"${n === sel ? ' selected' : ''}>${Memo.esc(n)}</option>`).join('');
+}
+
+function cmtBlock(i) {
+  const cs = cmtArray(i);
+  const open = !!Memo.openCmt[i.id];
+  if (!cs.length && !open) return '';   // 何もないカードは今までどおりの見た目
+  const rows = cs.map(c => {
+    // 書いた端末か、リーダーとして記入中の人なら消せる（アイデアと同じ考え方）
+    const canDel = c.device === Memo.deviceId || canEdit();
+    return `<div class="cmt">
+        <div class="c-body">
+          <div class="c-head"><span class="who">${Memo.esc(c.name)}</span>${Memo.fmtAt(c.at)}</div>
+          <div class="c-text">${Memo.esc(c.text)}</div>
+        </div>
+        ${canDel ? `<button class="c-del" title="このコメントを消す"
+          onclick="deleteComment('${i.id}', '${c.id}')">🗑</button>` : ''}
+      </div>`;
+  }).join('');
+  const form = open ? `
+      <div class="cmt-form">
+        <select id="cmtName_${i.id}">${cmtNameOptions(Memo.read(Memo.K.cname, ''))}</select>
+        <textarea id="cmtText_${i.id}" rows="2" placeholder="例）うちの階段でも同じことが起きてます"
+          oninput="Memo.cmtDraft['${i.id}'] = this.value">${Memo.esc(Memo.cmtDraft[i.id] || '')}</textarea>
+        <button class="btn btn-primary btn-sm" onclick="submitComment('${i.id}')">送信</button>
+      </div>` : '';
+  return `<div class="cmt-wrap">${rows}${form}</div>`;
+}
+
+function toggleCmtForm(id) {
+  Memo.openCmt[id] = !Memo.openCmt[id];
+  renderIdeas();
+  const t = document.getElementById('cmtText_' + id);
+  if (t) t.focus();
+}
+
+function submitComment(id) {
+  const i = Memo.ideas[id];
+  if (!i) return;
+  const name = (document.getElementById('cmtName_' + id).value || '').trim();
+  const text = (document.getElementById('cmtText_' + id).value || '').trim();
+  if (!name) { App.toast('名前を選んでください', 'error'); return; }
+  if (!text) { App.toast('コメントを書いてください', 'error'); return; }
+
+  const c = { id: Memo.newId('cmt'), name: name, text: text, at: Date.now(), device: Memo.deviceId };
+  i.comments = i.comments || {};
+  i.comments[c.id] = c;
+  Memo.write(Memo.K.ideas, Memo.ideas);
+  if (App.fbReady) {
+    App.fbDB.ref('memos/ideas/' + id + '/comments/' + c.id).set(c)
+      .catch(e => App.toast('保存できませんでした: ' + e.message, 'error'));
+  }
+
+  Memo.write(Memo.K.cname, name);   // 次に書くときの初期値にする
+  Memo.cmtDraft[id] = '';
+  Memo.openCmt[id] = false;
+  renderIdeas();
+  if (Memo.tab === 'mtg') safeRenderMtg();
+  App.toast('コメントしました', 'success');
+}
+
+function deleteComment(ideaId, cid) {
+  const i = Memo.ideas[ideaId];
+  const c = i && (i.comments || {})[cid];
+  if (!c) return;
+  confirmDelete(`${Memo.esc(c.name)}さんのコメント`, Memo.esc(c.text), () => {
+    c.deleted = true;   // アイデアと同じく、消しても DB には残す
+    Memo.write(Memo.K.ideas, Memo.ideas);
+    if (App.fbReady) {
+      App.fbDB.ref('memos/ideas/' + ideaId + '/comments/' + cid + '/deleted').set(true).catch(() => {});
+    }
+    renderIdeas();
+    if (Memo.tab === 'mtg') safeRenderMtg();
+    App.toast('消しました', 'info');
+  });
 }
 
 function toggleLike(id) {
@@ -910,6 +1066,7 @@ function renderTopics(m, ed) {
           ${ed ? `<button class="btn btn-outline btn-sm no-print" onclick="removeTopic('${t.id}')">×</button>` : ''}
         </div>
         ${src ? `<div class="topic-src" style="font-size:0.95rem;color:var(--text)">${Memo.esc(src.text)}</div>` : ''}
+        ${src ? topicComments(src) : ''}
         ${!src && t.ideaId ? '<div class="topic-src">（元のアイデアは取り消されました）</div>' : ''}
         <label class="form-label">話したこと・決まったこと</label>
         <textarea rows="3" ${dis} placeholder="例）見積りを取って、7万円までなら夏前に入れる"
@@ -925,6 +1082,16 @@ function renderTopics(m, ed) {
           結論: ${t.result === 'adopt' ? 'やることに決定' : t.result === 'hold' ? '保留' : '今回は見送り'}</span></div>` : ''}
       </div>`;
   }).join('');
+}
+
+// 会議までにアイデアに付いたコメント。話すときに読めるよう議題の下に出す
+function topicComments(src) {
+  const cs = cmtArray(src);
+  if (!cs.length) return '';
+  return `<div class="topic-cmt">
+      <div class="lbl">会議までに出たコメント（${cs.length}件）</div>
+      ${cs.map(c => `<div class="one"><b>${Memo.esc(c.name)}</b>：${Memo.esc(c.text)}</div>`).join('')}
+    </div>`;
 }
 
 function renderTodos(m, ed) {
