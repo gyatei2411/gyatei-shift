@@ -88,6 +88,12 @@
     .cmt .c-head { font-size: 0.72rem; color: var(--muted); margin-bottom: 2px; }
     .cmt .c-head .who { font-weight: 800; color: var(--text); font-size: 0.82rem; margin-right: 6px; }
     .cmt .c-text { font-size: 0.92rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .cmt .c-like {
+      background: #fff; border: 1.5px solid var(--border); border-radius: 999px;
+      padding: 2px 9px; font-size: 0.78rem; font-weight: 700; color: var(--muted);
+      cursor: pointer; font-family: inherit; align-self: flex-start; white-space: nowrap;
+    }
+    .cmt .c-like.on { background: #FEF3C7; border-color: var(--warning); color: #92400E; }
     .cmt .c-del {
       background: none; border: none; color: var(--muted); font-size: 0.85rem;
       cursor: pointer; font-family: inherit; padding: 0 2px; align-self: flex-start;
@@ -682,11 +688,15 @@ function cmtBlock(i) {
   const open = !!Memo.openCmt[i.id];
   if (!cs.length && !open) return '';   // 何もないカードは今までどおりの見た目
   const rows = cs.map(c => {
+    const ln = Object.keys(c.likes || {}).length;
+    const liked = !!(c.likes || {})[Memo.deviceId];
     return `<div class="cmt">
         <div class="c-body">
           <div class="c-head"><span class="who">${Memo.esc(c.name)}</span>${Memo.fmtAt(c.at)}</div>
           <div class="c-text">${Memo.esc(c.text)}</div>
         </div>
+        <button class="c-like ${liked ? 'on' : ''}" title="このコメントにいいね"
+          onclick="toggleCmtLike('${i.id}', '${c.id}')">👍${ln ? ' ' + ln : ''}</button>
         <button class="c-del" title="このコメントを消す（暗証番号が要ります）"
           onclick="deleteComment('${i.id}', '${c.id}')">🗑</button>
       </div>`;
@@ -731,6 +741,22 @@ function submitComment(id) {
   renderIdeas();
   if (Memo.tab === 'mtg') safeRenderMtg();
   App.toast('コメントしました', 'success');
+}
+
+// コメントのいいね。アイデアのいいねと同じく端末IDで二重を防ぐ
+function toggleCmtLike(ideaId, cid) {
+  const i = Memo.ideas[ideaId];
+  const c = i && (i.comments || {})[cid];
+  if (!c) return;
+  c.likes = c.likes || {};
+  if (c.likes[Memo.deviceId]) delete c.likes[Memo.deviceId];
+  else c.likes[Memo.deviceId] = true;
+  Memo.write(Memo.K.ideas, Memo.ideas);
+  if (App.fbReady) {
+    App.fbDB.ref('memos/ideas/' + ideaId + '/comments/' + cid + '/likes').set(c.likes).catch(() => {});
+  }
+  renderIdeas();
+  if (Memo.tab === 'mtg') safeRenderMtg();
 }
 
 function deleteComment(ideaId, cid) {
@@ -1084,7 +1110,11 @@ function topicComments(src) {
   if (!cs.length) return '';
   return `<div class="topic-cmt">
       <div class="lbl">会議までに出たコメント（${cs.length}件）</div>
-      ${cs.map(c => `<div class="one"><b>${Memo.esc(c.name)}</b>：${Memo.esc(c.text)}</div>`).join('')}
+      ${cs.map(c => {
+        const ln = Object.keys(c.likes || {}).length;
+        return `<div class="one"><b>${Memo.esc(c.name)}</b>：${Memo.esc(c.text)}` +
+               (ln ? ` <span style="color:#92400E;font-weight:700">👍${ln}</span>` : '') + `</div>`;
+      }).join('')}
     </div>`;
 }
 
