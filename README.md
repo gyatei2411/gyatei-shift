@@ -84,6 +84,10 @@
        "memos": {
          ".read": true,
          ".write": true
+       },
+       "zaiko": {
+         ".read": true,
+         ".write": true
        }
      }
    }

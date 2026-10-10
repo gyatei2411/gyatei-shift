@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ぎゃあてい在庫">
+  <title>在庫入力 - ぎゃあてい</title>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="shared.js"></script>
+  <style>
+    /* この画面は style.css を使わない（立ったまま片手で押す前提で、ボタンを大きくしてある） */
+    :root {
+      --bg: #f4f2ec; --card: #fff; --ink: #22261f; --sub: #6d7166; --line: #dedbd0;
+      --green: #2f6b3c; --green-bg: #e6f1e4; --red: #c0392b; --red-bg: #fbe9e6; --blue: #1d4ed8;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; }
+    body {
+      background: var(--bg); color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+      font-size: 16px; line-height: 1.4; padding-bottom: 104px;
+      touch-action: manipulation; -webkit-text-size-adjust: 100%;
+    }
+    button { font: inherit; color: inherit; cursor: pointer; }
+
+    .sticky { position: sticky; top: 0; z-index: 5; }
+    header {
+      background: var(--green); color: #fff; padding: 8px 14px;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    header h1 { font-size: 18px; margin: 0; }
+    header .today { font-size: 12px; opacity: .85; }
+    header .right { display: flex; align-items: center; gap: 8px; }
+    header a { color: #fff; font-size: 13px; font-weight: 700; padding: 8px 10px; border: 1px solid rgba(255,255,255,.5); border-radius: 8px; text-decoration: none; white-space: nowrap; }
+    #conn { font-size: 11px; white-space: nowrap; opacity: .9; }
+
+    .tabs { display: flex; background: #fff; border-bottom: 1px solid var(--line); }
+    .tab {
+      flex: 1; min-width: 0; height: 52px; border: 0; background: #fff;
+      border-bottom: 4px solid transparent; color: var(--sub); font-weight: 700; font-size: 15px;
+    }
+    .tab.active { color: var(--green); border-bottom-color: var(--green); }
+    .tab .n {
+      display: inline-block; margin-left: 4px; min-width: 20px; padding: 0 5px;
+      border-radius: 999px; background: #e7e5dc; color: var(--sub); font-size: 12px; line-height: 20px;
+    }
+    .tab .n.done { background: var(--green); color: #fff; }
+    .tab .n:empty { display: none; }
+
+    main { max-width: 560px; margin: 0 auto; padding: 12px 12px 0; }
+    .note { font-size: 13px; color: var(--sub); margin: 0 4px 10px; }
+    #banner {
+      display: none; background: var(--green-bg); border: 2px solid var(--green); color: var(--green);
+      border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-weight: 700; font-size: 14px;
+    }
+    #banner small { display: block; font-weight: 400; color: var(--ink); }
+    #error { display: none; background: var(--red-bg); border: 2px solid var(--red); color: var(--red); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-size: 14px; }
+
+    .item { background: var(--card); border: 2px solid var(--line); border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; }
+    .item.ok { border-color: var(--green); background: var(--green-bg); }
+    .item.low { border-color: var(--red); background: var(--red-bg); }
+    .name { font-size: 18px; font-weight: 700; }
+    .line { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+    .line { gap: 6px; }
+    .lab { flex: 0 0 62px; font-size: 15px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+    /* 定数は数量のすぐ右に置く（数えた数と見比べるため） */
+    .teisu { flex: 0 0 auto; min-width: 32px; text-align: center; font-size: 19px; font-weight: 700; line-height: 1.1; }
+    .teisu small { display: block; font-size: 12px; font-weight: 700; color: var(--sub); }
+    .col.ho .lab { color: var(--blue); }
+    .status { font-size: 13px; font-weight: 700; margin-top: 6px; }
+    .status:empty { display: none; }
+    .item.ok .status { color: var(--green); }
+    .item.low .status { color: var(--red); }
+
+    .btn-ok, .btn-ret {
+      flex: 1 1 0; min-width: 0; height: 50px; border-radius: 12px; background: #fff; padding: 0;
+      font-weight: 700; font-size: 15px; white-space: nowrap;
+    }
+    .btn-ok { margin-left: auto; max-width: 140px; letter-spacing: -0.5px; }
+    .note { white-space: pre-line; }
+    .btn-ok { border: 2px solid var(--green); color: var(--green); }
+    .btn-ok.on { background: var(--green); color: #fff; }
+    .btn-ret { border: 2px solid var(--blue); color: var(--blue); }
+    .btn-ret.on { background: var(--blue); color: #fff; }
+    .stepper { display: flex; flex: 0 0 auto; }
+    .stepper button { width: 42px; height: 50px; padding: 0; border: 2px solid var(--ink); background: #fff; font-size: 26px; font-weight: 700; line-height: 1; }
+    .stepper button:active, .btn-ok:active, .btn-ret:active { transform: scale(.96); }
+    .stepper .minus { border-radius: 12px 0 0 12px; }
+    .stepper .plus { border-radius: 0 12px 12px 0; }
+    .stepper input {
+      width: 50px; height: 50px; padding: 0; border: 2px solid var(--ink); border-left: 0; border-right: 0; border-radius: 0;
+      text-align: center; font-size: 22px; font-weight: 700; background: #fff; color: var(--ink);
+      -moz-appearance: textfield; appearance: textfield;
+    }
+    .stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .col.ho .stepper button, .col.ho .stepper input { border-color: var(--blue); }
+    .col.ho .stepper input { color: var(--blue); }
+
+    footer {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+      background: rgba(244,242,236,.96); border-top: 1px solid var(--line);
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    }
+    #submit { display: block; width: 100%; max-width: 536px; margin: 0 auto; height: 60px; border: 0; border-radius: 14px; background: var(--green); color: #fff; font-size: 19px; font-weight: 700; }
+
+    .overlay { position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.5); display: none; align-items: flex-end; justify-content: center; }
+    .overlay.show { display: flex; }
+    .sheet { background: #fff; width: 100%; max-width: 560px; max-height: 85vh; overflow: auto; border-radius: 18px 18px 0 0; padding: 20px 16px calc(16px + env(safe-area-inset-bottom)); }
+    .sheet h3 { margin: 0 0 12px; font-size: 19px; }
+    .sheet h4 { margin: 14px 0 4px; font-size: 14px; color: var(--sub); }
+    .sheet p { margin: 0 0 12px; }
+    .sheet ul { margin: 0 0 12px; padding: 0; list-style: none; }
+    .sheet li { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+    .sheet li b { white-space: nowrap; }
+    .sheet li b.red { color: var(--red); }
+    .sheet li b.blue { color: var(--blue); }
+    .warn { background: #fff6d6; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+    .sheet .actions { display: flex; gap: 10px; margin-top: 16px; }
+    .sheet .actions button { flex: 1; height: 56px; border-radius: 12px; font-weight: 700; font-size: 17px; }
+    .back { background: #fff; border: 2px solid var(--line); }
+    .go { background: var(--green); color: #fff; border: 0; }
+
+    /* 数字の欄を押している間だけ出す自前のテンキー（スマホのキーボードは出さない） */
+    #kbar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; display: none;
+      background: #d9d6cc; border-top: 1px solid #b9b6aa;
+      padding: 6px 8px calc(8px + env(safe-area-inset-bottom));
+    }
+    body.typing #kbar { display: block; }
+    body.typing footer { display: none; }
+    body.typing { padding-bottom: 330px; }
+    .kb-in { max-width: 520px; margin: 0 auto; }
+    #kb-title { font-size: 14px; padding: 2px 4px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #kb-title b { font-size: 16px; }
+    .keys { display: grid; grid-template-columns: repeat(3, 1fr) 1.1fr; gap: 6px; }
+    .keys button {
+      height: 54px; padding: 0; border: 0; border-radius: 10px; background: #fff;
+      font-size: 26px; font-weight: 700; box-shadow: 0 1px 0 #a9a69a; line-height: 1.1;
+    }
+    .keys button:active { background: #eceae2; }
+    .keys .fn { background: #bfbcb0; font-size: 16px; }
+    .keys .next { grid-column: 4; grid-row: 3 / span 2; height: auto; background: var(--green); color: #fff; font-size: 20px; }
+    .item { scroll-margin-top: 118px; }
+    /* いま打っている欄 */
+    .stepper input:focus { outline: none; background: #fff3b0; }
+
+    #toast {
+      position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 20;
+      background: #22261f; color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 14px; font-weight: 700;
+      opacity: 0; pointer-events: none; transition: opacity .2s; white-space: nowrap;
+    }
+    #toast.show { opacity: 1; }
+
+    /* 左の列＝補充メモ／右の列＝総在庫（＋足りてる）。同じ欄が縦に並ぶ（2026/10/10 社長の手書き案） */
+    .cols { display: flex; gap: 10px; margin-top: 6px; }
+    .col { min-width: 0; }
+    .col.ho { flex: 0 0 auto; }
+    .col.z { flex: 1 1 0; }
+    .col .lab { display: flex; align-items: baseline; gap: 6px; flex: none; margin-bottom: 4px; font-size: 14px; }
+    .col .teisu { min-width: 0; font-size: 15px; font-weight: 700; color: var(--ink); line-height: inherit; }
+    .ctl { display: flex; gap: 6px; }
+    .stepper button { width: 38px; }
+    .stepper input { width: 44px; }
+    .btn-ok { font-size: 14px; }
+    .btn-ok.on { font-size: 12px; }
+    .btn-ret { flex: 0 0 120px; }
+    @media (max-width: 370px) {
+      .stepper button { width: 36px; }
+      .stepper input { width: 40px; }
+      .btn-ret { flex-basis: 112px; }
+      .tab { font-size: 13px; white-space: nowrap; }
+    }
+    @media (min-width: 420px) {
+      .stepper button { width: 46px; }
+      .stepper input { width: 56px; }
+      .btn-ret { flex-basis: 148px; }
+      .btn-ok, .btn-ok.on { font-size: 15px; }
+    }
+
+    /* タブレット・パソコンは2列に並べる */
+    @media (min-width: 820px) {
+      main { max-width: 1000px; }
+      #list { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; align-items: start; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="sticky">
+  <header>
+    <div>
+      <h1>📦 在庫入力</h1>
+      <div class="today" id="today"></div>
+    </div>
+    <div class="right">
+      <span id="conn">⚪ この端末だけ</span>
+      <a href="board.html">シフト表</a>
+    </div>
+  </header>
+  <div class="tabs" id="tabs"></div>
+</div>
+
+<main>
+  <div id="error"></div>
+  <div id="banner"></div>
+  <p class="note" id="note"></p>
+  <div id="list"></div>
+</main>
+
+<footer><button id="submit" type="button">入力完了</button></footer>
+
+<div class="overlay" id="confirm">
+  <div class="sheet">
+    <h3 id="confirm-title"></h3>
+    <div id="confirm-body"></div>
+    <div class="actions">
+      <button class="back" id="confirm-back" type="button">戻る</button>
+      <button class="go" id="confirm-go" type="button">入力完了にする</button>
+    </div>
+  </div>
+</div>
+<div id="kbar">
+  <div class="kb-in">
+    <div id="kb-title"></div>
+    <div class="keys">
+      <button type="button" data-k="1">1</button>
+      <button type="button" data-k="2">2</button>
+      <button type="button" data-k="3">3</button>
+      <button type="button" data-k="bs" class="fn" aria-label="1文字消す">⌫</button>
+      <button type="button" data-k="4">4</button>
+      <button type="button" data-k="5">5</button>
+      <button type="button" data-k="6">6</button>
+      <button type="button" data-act="prev" class="fn">▲ 前</button>
+      <button type="button" data-k="7">7</button>
+      <button type="button" data-k="8">8</button>
+      <button type="button" data-k="9">9</button>
+      <button type="button" data-act="next" class="next">次<br>▼</button>
+      <button type="button" data-act="close" class="fn">閉じる</button>
+      <button type="button" data-k="0">0</button>
+      <button type="button" data-k="clr" class="fn">空欄</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+/* ===== 商品の一覧 =====
+   id は保存先のキーになるので、名前を変えても id は変えないこと（その日の入力が迷子になる）。
+   par   … 2階・1階の冷蔵庫の定数。補充メモの下に出す（1階だけ違うときは par1）
+   teisu … 総在庫の定数。総在庫の下に出す。これを下回ると要注文。無い商品は補充メモだけ
+   ret   … 数ではなく「Tへ返却」のチェックだけの商品 */
+const DRINKS = [
+  { id: 'kolsch',     name: 'ケルシュ（青）',       par: '10',  teisu: 20 },
+  { id: 'alt',        name: 'アルト（赤）',         par: '10',  teisu: 20 },
+  { id: 'matcha',     name: '抹茶ビール',           par: '5',   teisu: 20 },
+  { id: 'junmai',     name: '純米酒',               par: '5',   teisu: 10 },
+  { id: 'asahi',      name: 'アサヒスーパードライ', par: '10',  teisu: 20 },
+  { id: 'yuzuchu',   name: 'ゆずチューハイ',       par: '5',   teisu: 10 },
+  { id: 'umechu',     name: '梅チューハイ',         par: '5',   teisu: 10 },
+  { id: 'gyokuro',    name: '玉露梅酒',             par: '5',   teisu: 5 },
+  { id: 'hannari',    name: 'はんなり梅酒',         par: '5',   teisu: 5 },
+  { id: 'yuzucider',  name: 'ゆずサイダー',         par: '10',  teisu: 20 },
+  { id: 'cola',       name: 'コーラ',               par: '10',  teisu: 20 },
+  { id: 'allfree',    name: 'オールフリー',         par: '8',   teisu: 10 },
+  { id: 'jurakudai',  name: '聚楽第',               par: '1',   teisu: 1 },
+  { id: 'kinshi',     name: 'キンシ政宗',           par: '1',   teisu: 1 },
+  { id: 'ine',        name: '伊根満開',             par: '1',   teisu: 1 },
+  { id: 'gessho',     name: 'げっしょう',           par: '1',   teisu: 1 },
+  { id: 'orange',     name: 'オレンジジュース',     par: '2/3', teisu: 2 },
+  { id: 'tansan',     name: '炭酸',                 par: '3' },
+  { id: 'arashicola', name: '嵐山コーラ',           par: '1' },
+  { id: 'shiso',      name: 'しそジュース',         ret: true },
+];
+const BIHIN = [
+  { id: 'alcohol',   name: 'アルコールペーパー', teisu: 10 },
+  { id: 'obutsu',    name: '汚物袋(黒)',         teisu: 1 },
+  { id: 'kowari',    name: '子割り箸',           teisu: 1 },
+  { id: 'hashi',     name: '箸',                 teisu: 8 },
+  { id: 'hashibuk',  name: '箸袋',               teisu: 10 },
+  { id: 'furikake',  name: 'ふりかけ',           teisu: 1 },
+  { id: 'ittoko',    name: 'イットコ',           teisu: 10 },
+  { id: 'straw',     name: 'ストロー',           teisu: 5 },
+  { id: 'toilet',    name: 'トイレットペーパー', teisu: 3 },
+  { id: 'quickle',   name: 'トイレクイックル',   teisu: 5 },
+  { id: 'youji',     name: 'つまようじ',         teisu: 1 },
+  { id: 'oshibori',  name: 'おしぼり',           teisu: 2 },
+];
+
+/* ho＝補充メモの欄を出す / z＝総在庫の欄を出す */
+const TABS = [
+  { key: 'f2',    label: '２F＆総在庫', items: DRINKS, ho: true, z: true, zLabel: '総在庫',
+    note: '①補充メモに2階へ持っていく数を書く → ②大元の冷蔵庫から出す → ③残った数を総在庫に入れる\n※総在庫が定数と同じ数か、それより少ないときは数字を入れる（定数より多いときだけ「足りてる」）' },
+  { key: 'f1',    label: '１F',         items: DRINKS.filter(d => !d.ret), ho: true, z: false,
+    note: '1階へ持っていく数だけ書く（総在庫は２Fのタブで数える）' },
+  { key: 'bihin', label: '備品',        items: BIHIN, ho: false, z: true, zLabel: '在庫',
+    note: '※在庫が定数と同じ数か、それより少ないときは数字を入れる（定数より多いときだけ「足りてる」）' },
+];
+
+/* ===== 保存 =====
+   zaiko/days/{YYYY-MM-DD} = {
+     f2:    { id: { ho: 補充メモ, z: 総在庫（数 または 'ok'＝足りてる）, ret: true } },
+     f1:    { id: { ho } },
+     bihin: { id: { z } },
+     done:  { f2|f1|bihin: { at: 'HH:MM' } },      // 入力完了を押した時刻
+     summary: { at, shortage: [ { tab, name, teisu, zaiko, fusoku } ] }   // 15:30のルーティンが読む
+   }
+   日付ごとに別の場所へ書くので、次の日に開くと空欄から始まる。 */
+let tabKey = 'f2';
+let dayKey = '';
+let data = {};
+let online = false;
+let dayRef = null;
+let summaryTimer = null;
+
+const $ = id => document.getElementById(id);
+const tabOf = k => TABS.find(t => t.key === k);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const LOCAL = d => 'gy_zaiko_' + d;
+
+function val(tk, id, f) {
+  const r = data[tk] && data[tk][id];
+  return r ? r[f] : undefined;
+}
+
+function setField(tk, id, f, v) {
+  const t = data[tk] = data[tk] || {};
+  const r = t[id] = t[id] || {};
+  if (v === undefined) delete r[f]; else r[f] = v;
+  if (online) {
+    dayRef.child(tk + '/' + id + '/' + f).set(v === undefined ? null : v).then(showSaved).catch(showError);
+    clearTimeout(summaryTimer);
+    summaryTimer = setTimeout(writeSummary, 1000);
+  } else {
+    saveLocal();
+    showSaved();
+  }
+  paintAll();
+}
+
+// 打つたびに保存しているのが見て分かるように、最後に保存できた時刻を上に出す
+function showSaved() {
+  const d = new Date();
+  $('conn').textContent = (online ? '🟢 保存ずみ ' : '⚪ この端末に保存 ') + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+function saveLocal() {
+  try { localStorage.setItem(LOCAL(dayKey), JSON.stringify(data)); } catch (e) {}
+}
+
+function shortage() {
+  const out = [];
+  TABS.filter(t => t.z).forEach(t => t.items.forEach(it => {
+    const z = val(t.key, it.id, 'z');
+    // 定数と同じ数になったら注文する（定数より多いときだけ足りている）
+    if (it.teisu != null && typeof z === 'number' && z <= it.teisu) {
+      out.push({ tab: t.label, name: it.name, teisu: it.teisu, zaiko: z, fusoku: it.teisu - z });
+    }
+  }));
+  return out;
+}
+function writeSummary() {
+  clearTimeout(summaryTimer);
+  if (!online) return;
+  dayRef.child('summary').set({ at: new Date().toISOString(), shortage: shortage() }).catch(showError);
+}
+
+function remainOf(t) {
+  if (!t.z) return 0;
+  return t.items.filter(it => it.teisu != null && val(t.key, it.id, 'z') === undefined).length;
+}
+function doneAt(tk) { return data.done && data.done[tk] ? data.done[tk].at : ''; }
+
+/* ===== 描画 ===== */
+function stepperHtml(f, label) {
+  return '<div class="stepper" data-f="' + f + '">' +
+    '<button type="button" class="minus" aria-label="1減らす">−</button>' +
+    '<input type="text" inputmode="none" autocomplete="off" aria-label="' + esc(label) + '">' +
+    '<button type="button" class="plus" aria-label="1増やす">＋</button></div>';
+}
+
+function teisuHtml(n) {
+  return n == null ? '' : '<span class="teisu">定数 ' + esc(n) + '</span>';
+}
+
+function render() {
+  const t = tabOf(tabKey);
+  $('note').textContent = t.note;
+  $('note').style.display = t.note ? '' : 'none';
+  $('list').innerHTML = t.items.map(it => {
+    const hasZ = t.z && it.teisu != null;
+    const par = t.key === 'f1' && it.par1 ? it.par1 : it.par;
+    let h = '<div class="item" data-id="' + it.id + '"><div class="name">' + esc(it.name) + '</div>';
+    // 左の列＝補充メモ、右の列＝総在庫。商品が変わっても同じ欄が縦に並ぶので、上から順に打てる
+    h += '<div class="cols">';
+    if (t.ho) {
+      h += '<div class="col ho"><div class="lab"><span class="lt">補充メモ</span>' + teisuHtml(it.ret ? null : par) + '</div><div class="ctl">' +
+        (it.ret ? '<button type="button" class="btn-ret">Tへ返却</button>' : stepperHtml('ho', it.name + 'の補充メモ')) + '</div></div>';
+    }
+    if (hasZ) {
+      h += '<div class="col z"><div class="lab"><span class="lt">' + t.zLabel + '</span>' + teisuHtml(it.teisu) + '</div><div class="ctl">' +
+        stepperHtml('z', it.name + 'の' + t.zLabel) + '<button type="button" class="btn-ok">足りてる</button></div></div>';
+    }
+    return h + '</div></div>';
+  }).join('');
+  paintAll();
+}
+
+function paintAll() {
+  const t = tabOf(tabKey);
+  $('tabs').innerHTML = TABS.map(x => {
+    const done = doneAt(x.key), n = remainOf(x);
+    const badge = done ? '<span class="n done">✓</span>' : '<span class="n">' + (n || '') + '</span>';
+    return '<button type="button" class="tab' + (x.key === tabKey ? ' active' : '') + '" data-tab="' + x.key + '">' + x.label + badge + '</button>';
+  }).join('');
+
+  document.querySelectorAll('#list .item').forEach(el => {
+    const it = t.items.find(i => i.id === el.dataset.id);
+    if (!it) return;
+    const ho = val(t.key, it.id, 'ho'), z = val(t.key, it.id, 'z');
+    el.querySelectorAll('.stepper').forEach(s => {
+      const input = s.querySelector('input');
+      const v = s.dataset.f === 'ho' ? ho : z;
+      if (document.activeElement !== input) input.value = typeof v === 'number' ? v : '';
+    });
+    const ret = el.querySelector('.btn-ret');
+    if (ret) {
+      const on = val(t.key, it.id, 'ret') === true;
+      ret.classList.toggle('on', on);
+      ret.textContent = on ? '✓ Tへ返却' : 'Tへ返却';
+    }
+    const ok = el.querySelector('.btn-ok');
+    if (!ok) return;
+    el.classList.remove('ok', 'low');
+    ok.classList.toggle('on', z === 'ok');
+    ok.textContent = z === 'ok' ? '✓ 足りてる' : '足りてる';
+    // 注文が要るかどうかはスタッフには関係ないので、画面には出さない（入れたかどうかだけ色で分かる）
+    if (z === 'ok' || typeof z === 'number') el.classList.add('ok');
+  });
+
+  const done = doneAt(tabKey), b = $('banner');
+  if (done) {
+    b.style.display = 'block';
+    b.innerHTML = '✓ ' + esc(done) + ' に入力完了<small>納品などで数が変わったら、そのまま直せます（今日のうちは残ります）</small>';
+    $('submit').textContent = '直した内容でもう一度 入力完了';
+  } else {
+    b.style.display = 'none';
+    $('submit').textContent = t.label + ' を入力完了';
+  }
+}
+
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => el.classList.remove('show'), 2500);
+}
+function showError(err) {
+  const el = $('error');
+  el.style.display = 'block';
+  el.textContent = '保存できませんでした。電波を確かめて、もう一度入れ直してください。（' + (err && err.message ? err.message : err) + '）';
+}
+
+/* ===== 操作 ===== */
+$('tabs').addEventListener('click', e => {
+  const b = e.target.closest('.tab');
+  if (!b || b.dataset.tab === tabKey) return;
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  tabKey = b.dataset.tab;
+  try { localStorage.setItem('gy_zaiko_tab', tabKey); } catch (err) {}
+  render();
+  window.scrollTo(0, 0);
+});
+
+$('list').addEventListener('click', e => {
+  const el = e.target.closest('.item');
+  if (!el) return;
+  const id = el.dataset.id;
+  if (e.target.closest('.btn-ok')) {
+    setField(tabKey, id, 'z', val(tabKey, id, 'z') === 'ok' ? undefined : 'ok');
+  } else if (e.target.closest('.btn-ret')) {
+    setField(tabKey, id, 'ret', val(tabKey, id, 'ret') === true ? undefined : true);
+  } else if (e.target.closest('.minus') || e.target.closest('.plus')) {
+    const s = e.target.closest('.stepper'), f = s.dataset.f;
+    s.querySelector('input').blur();
+    const cur = val(tabKey, id, f), n = typeof cur === 'number' ? cur : 0;
+    let next = e.target.closest('.plus') ? n + 1 : Math.max(0, n - 1);
+    // 補充メモの 0 は「持っていかない」なので空欄に戻す。総在庫の 0 は「在庫なし」として残す
+    if (f === 'ho' && next === 0) next = undefined;
+    setField(tabKey, id, f, next);
+  }
+});
+$('list').addEventListener('input', e => {
+  if (e.target.tagName !== 'INPUT') return;
+  const el = e.target.closest('.item'), f = e.target.closest('.stepper').dataset.f;
+  const raw = e.target.value.replace(/\D/g, '').slice(0, 3);
+  if (e.target.value !== raw) e.target.value = raw;
+  if (raw === '') { setField(tabKey, el.dataset.id, f, undefined); return; }
+  const n = Math.floor(Number(raw));
+  if (!isNaN(n) && n >= 0) setField(tabKey, el.dataset.id, f, n);
+});
+$('list').addEventListener('focusin', e => {
+  if (e.target.tagName !== 'INPUT') return;
+  fresh = true;
+  const it = tabOf(tabKey).items.find(i => i.id === e.target.closest('.item').dataset.id);
+  const col = e.target.closest('.col'), tei = col.querySelector('.teisu');
+  $('kb-title').innerHTML = '<b>' + esc(it.name) + '</b>　' + esc(col.querySelector('.lt').textContent) + (tei ? '（' + esc(tei.textContent) + '）' : '');
+  document.body.classList.add('typing');
+  showActive(e.target);
+});
+$('list').addEventListener('focusout', e => {
+  if (e.target.tagName !== 'INPUT') return;
+  paintAll();
+  // 「次」「前」で隣の欄へ移っただけなら、バーは出したままにする
+  setTimeout(() => {
+    const a = document.activeElement;
+    if (!(a && a.tagName === 'INPUT' && a.closest('#list'))) document.body.classList.remove('typing');
+  }, 0);
+});
+$('list').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); moveInput(e.shiftKey ? -1 : 1); }
+});
+
+/* ===== 自前のテンキー（数字・前・次・閉じる） =====
+   スマホのキーボードは出さない（inputmode="none"）。iPhone のキーボードは上に
+   パスワードやカードの帯が付き、そこへ「前・次」を足すと画面がごちゃつくため。
+   「次」は同じ種類の欄（補充メモなら次の商品の補充メモ）へ進む。
+   手順が「補充メモを全部 → 総在庫を全部」と縦に進むため。 */
+function moveInput(step) {
+  const cur = document.activeElement;
+  if (!cur || cur.tagName !== 'INPUT') return;
+  const f = cur.closest('.stepper').dataset.f;
+  const all = [...document.querySelectorAll('#list .stepper[data-f="' + f + '"] input')];
+  const next = all[all.indexOf(cur) + step];
+  if (!next) { cur.blur(); return; }
+  next.focus({ preventScroll: true });
+}
+// 打っている商品を、見えている範囲（上の見出しとテンキーの間）の真ん中へ送る。
+// 「次」を押すたびに1商品ぶん画面が動くので、進んだことが目で分かる
+function showActive(input) {
+  const r = input.closest('.item').getBoundingClientRect();
+  const top = document.querySelector('.sticky').getBoundingClientRect().bottom;
+  const bottom = $('kbar').getBoundingClientRect().top;
+  window.scrollBy({ top: (r.top + r.bottom) / 2 - (top + bottom) / 2, behavior: 'smooth' });
+}
+// 最初の1打は、入っている数字を置き換える（打ち直しが多いため）。2打目からは後ろに足す
+let fresh = false;
+function keyIn(k) {
+  const cur = document.activeElement;
+  if (!cur || cur.tagName !== 'INPUT' || !cur.closest('#list')) return;
+  let v = cur.value;
+  if (k === 'bs') v = v.slice(0, -1);
+  else if (k === 'clr') v = '';
+  else v = ((fresh ? '' : v) + k).replace(/^0+(?=\d)/, '').slice(0, 3);
+  fresh = false;
+  cur.value = v;
+  cur.dispatchEvent(new Event('input', { bubbles: true }));
+}
+// 押しても入力欄から指が離れた扱いにしない（テンキーを閉じさせない）
+['mousedown', 'touchstart'].forEach(ev => $('kbar').addEventListener(ev, e => e.preventDefault(), { passive: false }));
+$('kbar').addEventListener('pointerdown', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  e.preventDefault();
+  if (b.dataset.k) keyIn(b.dataset.k);
+  else if (b.dataset.act === 'prev') moveInput(-1);
+  else if (b.dataset.act === 'next') moveInput(1);
+  else if (document.activeElement) document.activeElement.blur();
+});
+
+$('submit').addEventListener('click', () => {
+  const t = tabOf(tabKey);
+  let html = '';
+  const remain = remainOf(t);
+  if (remain > 0) {
+    html += '<p class="warn">' + t.zLabel + 'をまだ入れていない商品が <b>' + remain + ' 品</b> あります。空欄のまま残ります（あとから入れられます）。</p>';
+  }
+  if (t.ho) {
+    const ho = t.items.filter(it => typeof val(t.key, it.id, 'ho') === 'number');
+    const ret = t.items.filter(it => val(t.key, it.id, 'ret') === true);
+    html += '<h4>補充するもの（' + ho.length + ' 品）</h4>';
+    html += ho.length || ret.length
+      ? '<ul>' + ho.map(it => '<li><span>' + esc(it.name) + '</span><b class="blue">' + val(t.key, it.id, 'ho') + '</b></li>').join('') +
+        ret.map(it => '<li><span>' + esc(it.name) + '</span><b class="blue">Tへ返却</b></li>').join('') + '</ul>'
+      : '<p>補充メモは入っていません。</p>';
+  }
+  $('confirm-title').textContent = t.label + ' を入力完了にしますか？';
+  $('confirm-body').innerHTML = html;
+  $('confirm').classList.add('show');
+});
+$('confirm-back').addEventListener('click', () => $('confirm').classList.remove('show'));
+$('confirm').addEventListener('click', e => { if (e.target === $('confirm')) $('confirm').classList.remove('show'); });
+
+$('confirm-go').addEventListener('click', () => {
+  const t = tabOf(tabKey);
+  const d = new Date(), at = d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+  // 補充メモだけ入れて完了にする日があるので、空欄の総在庫には何も入れない
+  (data.done = data.done || {})[t.key] = { at: at };
+  if (online) {
+    dayRef.child('done/' + t.key).set({ at: at }).then(writeSummary).catch(showError);
+  } else {
+    saveLocal();
+  }
+  $('confirm').classList.remove('show');
+  paintAll();
+  window.scrollTo(0, 0);
+  toast('✓ ' + t.label + ' を入力完了にしました');
+});
+
+/* ===== その日のデータにつなぐ（日付が変わったらつなぎ直す＝空欄に戻る） ===== */
+function attach() {
+  dayKey = App.todayLocal();
+  const d = new Date();
+  $('today').textContent = d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate() + '（' + '日月火水木金土'.charAt(d.getDay()) + '）';
+  data = {};
+  if (online) {
+    if (dayRef) dayRef.off();
+    dayRef = App.fbDB.ref('zaiko/days/' + dayKey);
+    dayRef.on('value', snap => { data = snap.val() || {}; $('error').style.display = 'none'; paintAll(); }, showError);
+  } else {
+    try {
+      data = JSON.parse(localStorage.getItem(LOCAL(dayKey)) || '{}');
+      // 前の日までの分はこの端末から消す
+      Object.keys(localStorage).filter(k => k.indexOf('gy_zaiko_2') === 0 && k !== LOCAL(dayKey)).forEach(k => localStorage.removeItem(k));
+    } catch (e) {}
+  }
+  render();
+}
+
+function init() {
+  try { const t = localStorage.getItem('gy_zaiko_tab'); if (tabOf(t)) tabKey = t; } catch (e) {}
+  online = App.initFirebase();
+  if (online) $('conn').textContent = '🟢 同期中';
+  attach();
+  setInterval(() => { if (App.todayLocal() !== dayKey) attach(); }, 30 * 1000);
+}
+init();
+</script>
+</body>
+</html>

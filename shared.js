@@ -194,7 +194,7 @@ const App = {
   },
 
   // アプリのバージョン（更新したらここを書き換える）
-  VERSION: '2026.10.08',
+  VERSION: '2026.10.10',
   lastSyncAt: null,   // Firebase から最後に受け取った時刻
 
   KEYS: {
@@ -780,7 +780,7 @@ const App = {
   //（スマホは古い HTML/JS を抛え込むことがあるため）
   forceUpdate() {
     const files = ['shared.js', 'xlsx-export.js', 'firebase-config.js', 'style.css',
-                   'admin.html', 'shift-view.html', 'board.html', 'reply.html', 'memo.html'];
+                   'admin.html', 'shift-view.html', 'board.html', 'reply.html', 'memo.html', 'zaiko.html'];
     return Promise.all(files.map(f => fetch(f, { cache: 'reload' }).catch(() => {})))
       .then(() => { location.reload(); });
   },
