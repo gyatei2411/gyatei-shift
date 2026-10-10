@@ -448,12 +448,16 @@ function subscribeAll() {
     Memo.write(Memo.K.ideas, Memo.ideas);
     safeRenderIdeas();
     if (Memo.tab === 'mtg') safeRenderMtg();
+    Memo.gotIdeas = true;
+    healDecisions();
   }, err => console.warn('ideas read failed:', err && err.message));
 
   App.fbDB.ref('memos/minutes').on('value', snap => {
     Memo.minutes = snap.val() || {};
     Memo.write(Memo.K.minutes, Memo.minutes);
     if (Memo.tab === 'mtg') safeRenderMtg();
+    Memo.gotMinutes = true;
+    healDecisions();
   }, err => console.warn('minutes read failed:', err && err.message));
 
   App.fbDB.ref('settings/leaders').on('value', snap => {
@@ -1339,8 +1343,43 @@ function setTopic(tid, k, v) {
 function setTopicLater(tid, k, v) {
   withMtg(m => {
     const t = (m.topics || []).find(x => x.id === tid);
-    if (t) t[k] = v;
+    if (!t) return;
+    t[k] = v;
+    if (k === 'text') syncDecisionLater(t, m);
   }, true);
+}
+
+/* 結論を押した「あと」で話した内容を書き直しても、アイデア側の「会議での結論」に届ける。
+   以前は結論ボタンを押した瞬間の文章だけを写していたので、あとから直すと
+   アイデアのページと議事録のページで食い違っていた（2026/10/10 に発覚） */
+function syncDecisionLater(t, m) {
+  if (!t.ideaId || !t.result) return;
+  Memo.decTimer = Memo.decTimer || {};
+  clearTimeout(Memo.decTimer[t.ideaId]);
+  Memo.decTimer[t.ideaId] = setTimeout(() => {
+    const i = Memo.ideas[t.ideaId];
+    if (i && (i.decision || '') !== (t.text || '')) {
+      updateIdeaStatus(t.ideaId, i.status, t.text || '', m.id);
+      safeRenderIdeas();
+    }
+  }, 700);
+}
+
+/* すでに食い違っている分を直す（開いたときに1回だけ）。議事録に書いてある方を正とする。
+   そのアイデアを最後に扱った議事録（mtgId）だけを見るので、古い会議の文章で上書きはしない */
+function healDecisions() {
+  if (Memo.healed || !Memo.gotIdeas || !Memo.gotMinutes) return;
+  Memo.healed = true;
+  Object.values(Memo.minutes).forEach(m => {
+    if (!m || m.deleted) return;
+    (m.topics || []).forEach(t => {
+      const i = t && t.ideaId && Memo.ideas[t.ideaId];
+      if (i && t.result && i.mtgId === m.id && (i.decision || '') !== (t.text || '')) {
+        updateIdeaStatus(t.ideaId, i.status, t.text || '', m.id);
+      }
+    });
+  });
+  safeRenderIdeas();
 }
 
 /* 議題の結論を出す → 元のアイデアのステータスにも反映する */
