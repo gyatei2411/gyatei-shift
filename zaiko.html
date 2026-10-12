@@ -155,6 +155,15 @@
     /* いま打っている欄 */
     .stepper input:focus { outline: none; background: #fff3b0; }
 
+    /* 一覧のいちばん下（しそジュースの下）に置く「補充するもの」ボタンと、その一覧 */
+    .holist-btn {
+      grid-column: 1 / -1; width: 100%; height: 58px; margin: 4px 0 10px;
+      border: 2px solid var(--blue); border-radius: 14px; background: #fff; color: var(--blue); font-size: 18px; font-weight: 700;
+    }
+    .holist-btn:active { background: var(--blue); color: #fff; }
+    .sheet ul.big li { font-size: 19px; padding: 12px 0; font-weight: 700; }
+    .sheet ul.big li b { font-size: 24px; }
+
     /* 入力完了を押した瞬間に、真ん中へ大きく出す印 */
     #donepop { position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.35); pointer-events: none; }
     #donepop.show { display: flex; }
@@ -241,6 +250,13 @@
       <button class="back" id="confirm-back" type="button">戻る</button>
       <button class="go" id="confirm-go" type="button">入力完了にする</button>
     </div>
+  </div>
+</div>
+<div class="overlay" id="holist">
+  <div class="sheet">
+    <h3 id="holist-title"></h3>
+    <div id="holist-body"></div>
+    <div class="actions"><button class="back" id="holist-close" type="button">閉じる</button></div>
   </div>
 </div>
 <div id="kbar">
@@ -398,7 +414,7 @@ function render() {
         stepperHtml('z', it.name + 'の' + t.zLabel) + '<button type="button" class="btn-ok">足りてる</button></div></div>';
     }
     return h + '</div></div>';
-  }).join('');
+  }).join('') + (t.ho ? '<button type="button" class="holist-btn">📋 補充するもの を見る</button>' : '');
   paintAll();
 }
 
@@ -476,6 +492,7 @@ $('tabs').addEventListener('click', e => {
 });
 
 $('list').addEventListener('click', e => {
+  if (e.target.closest('.holist-btn')) { openHoList(); return; }
   const el = e.target.closest('.item');
   if (!el) return;
   const id = el.dataset.id;
@@ -591,19 +608,36 @@ $('submit').addEventListener('click', () => {
   if (remain > 0) {
     html += '<p class="warn">' + t.zLabel + 'をまだ入れていない商品が <b>' + remain + ' 品</b> あります。空欄のまま残ります（あとから入れられます）。</p>';
   }
-  if (t.ho) {
-    const ho = t.items.filter(it => typeof val(t.key, it.id, 'ho') === 'number');
-    const ret = t.items.filter(it => val(t.key, it.id, 'ret') === true);
-    html += '<h4>補充するもの（' + ho.length + ' 品）</h4>';
-    html += ho.length || ret.length
-      ? '<ul>' + ho.map(it => '<li><span>' + esc(it.name) + '</span><b class="blue">' + val(t.key, it.id, 'ho') + '</b></li>').join('') +
-        ret.map(it => '<li><span>' + esc(it.name) + '</span><b class="blue">Tへ返却</b></li>').join('') + '</ul>'
-      : '<p>補充メモは入っていません。</p>';
+  // 入力完了のときは「注文が必要なもの」を見せる（総在庫は補充のあとで数えるので、補充するものはここでは出さない。
+  // 補充するものは、一覧のいちばん下の「補充するもの」ボタンで見る）
+  if (t.z) {
+    const low = t.items.filter(it => { const z = val(t.key, it.id, 'z'); return it.teisu != null && typeof z === 'number' && z <= it.teisu; });
+    html += '<h4>注文が必要なもの（' + low.length + ' 品）</h4>';
+    html += low.length
+      ? '<ul>' + low.map(it => '<li><span>' + esc(it.name) + '</span><b class="red">在庫 ' + val(t.key, it.id, 'z') + '（定数 ' + it.teisu + '）</b></li>').join('') + '</ul>'
+      : '<p>注文が必要なものはありません。</p>';
+  } else {
+    html += '<p>補充メモを入力完了にします。</p>';
   }
   $('confirm-title').textContent = t.label + ' を入力完了にしますか？';
   $('confirm-body').innerHTML = html;
   $('confirm').classList.add('show');
 });
+/* 補充するもの（補充メモを入れた商品だけの一覧）。入力完了の前でも開ける。これを見ながら冷蔵庫から出す */
+function openHoList() {
+  const t = tabOf(tabKey);
+  const ho = t.items.filter(it => typeof val(t.key, it.id, 'ho') === 'number');
+  const ret = t.items.filter(it => val(t.key, it.id, 'ret') === true);
+  $('holist-title').textContent = '補充するもの（' + (t.key === 'f1' ? '１F' : '２F') + '）';
+  $('holist-body').innerHTML = ho.length || ret.length
+    ? '<ul class="big">' + ho.map(it => '<li><span>' + esc(it.name) + '</span><b class="blue">' + val(t.key, it.id, 'ho') + '</b></li>').join('') +
+      ret.map(it => '<li><span>' + esc(it.name) + '</span><b class="blue">Tへ返却</b></li>').join('') + '</ul>'
+    : '<p>補充メモはまだ入っていません。</p>';
+  $('holist').classList.add('show');
+}
+$('holist-close').addEventListener('click', () => $('holist').classList.remove('show'));
+$('holist').addEventListener('click', e => { if (e.target === $('holist')) $('holist').classList.remove('show'); });
+
 $('confirm-back').addEventListener('click', () => $('confirm').classList.remove('show'));
 $('confirm').addEventListener('click', e => { if (e.target === $('confirm')) $('confirm').classList.remove('show'); });
 
