@@ -132,7 +132,7 @@
     }
     body.typing #kbar { display: block; }
     body.typing footer { display: none; }
-    body.typing { padding-bottom: 330px; }
+    body.typing { padding-bottom: 390px; }
     .kb-in { max-width: 520px; margin: 0 auto; }
     #kb-title { font-size: 14px; padding: 2px 4px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #kb-title b { font-size: 16px; }
@@ -143,10 +143,28 @@
     }
     .keys button:active { background: #eceae2; }
     .keys .fn { background: #bfbcb0; font-size: 16px; }
+    /* 総在庫・在庫の欄を打っているときだけ出す。押すと「足りてる」にして次の商品へ進む */
+    .keys .okkey { grid-column: 1 / -1; height: 48px; background: #fff; color: var(--green); border: 2px solid var(--green); font-size: 18px; box-shadow: none; }
+    .keys .okkey:active { background: var(--green); color: #fff; }
+    #kbar:not(.z) .okkey { display: none; }
+    #kbar.z .next { grid-row: 4 / span 2; }
     .keys .next { grid-column: 4; grid-row: 3 / span 2; height: auto; background: var(--green); color: #fff; font-size: 20px; }
     .item { scroll-margin-top: 118px; }
     /* いま打っている欄 */
     .stepper input:focus { outline: none; background: #fff3b0; }
+
+    /* 入力完了を押した瞬間に、真ん中へ大きく出す印 */
+    #donepop { position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.35); pointer-events: none; }
+    #donepop.show { display: flex; }
+    #donepop .box { background: #fff; border-radius: 20px; padding: 24px 36px; text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+    #donepop .mark { width: 88px; height: 88px; margin: 0 auto 10px; border-radius: 50%; background: var(--green); color: #fff; font-size: 54px; line-height: 88px; }
+    #donepop .big { font-size: 24px; font-weight: 700; color: var(--green); }
+    #donepop-sub { font-size: 15px; color: var(--sub); margin-top: 2px; }
+    #banner { background: var(--green); color: #fff; font-size: 20px; text-align: center; }
+    #banner small { font-size: 13px; color: #fff; opacity: .95; margin-top: 2px; }
+    #banner.dirty { background: #fff6d6; color: #7a5a00; border-color: #e0b400; font-size: 16px; }
+    #banner.dirty small { color: #7a5a00; }
+    #submit.done { background: #fff; color: var(--green); border: 3px solid var(--green); }
 
     #toast {
       position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 20;
@@ -227,6 +245,7 @@
   <div class="kb-in">
     <div id="kb-title"></div>
     <div class="keys">
+      <button type="button" data-act="ok" class="okkey" id="kb-ok">✓ 足りてる（次へ）</button>
       <button type="button" data-k="1">1</button>
       <button type="button" data-k="2">2</button>
       <button type="button" data-k="3">3</button>
@@ -245,6 +264,7 @@
     </div>
   </div>
 </div>
+<div id="donepop"><div class="box"><div class="mark">✓</div><div class="big">入力完了済み</div><div id="donepop-sub"></div></div></div>
 <div id="toast"></div>
 
 <script>
@@ -330,6 +350,12 @@ function setField(tk, id, f, v) {
   const t = data[tk] = data[tk] || {};
   const r = t[id] = t[id] || {};
   if (v === undefined) delete r[f]; else r[f] = v;
+  // 入力完了のあとで直したら「修正あり」にする（もう一度 入力完了を押すまで「完了済み✓」は出さない）
+  const d = data.done && data.done[tk];
+  if (d && !d.dirty) {
+    d.dirty = true;
+    if (online) dayRef.child('done/' + tk + '/dirty').set(true).catch(showError);
+  }
   if (online) {
     dayRef.child(tk + '/' + id + '/' + f).set(v === undefined ? null : v).then(showSaved).catch(showError);
     clearTimeout(summaryTimer);
@@ -344,7 +370,8 @@ function setField(tk, id, f, v) {
 // 打つたびに保存しているのが見て分かるように、最後に保存できた時刻を上に出す
 function showSaved() {
   const d = new Date();
-  $('conn').textContent = (online ? '🟢 保存ずみ ' : '⚪ この端末に保存 ') + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+  // 「保存ずみ」と出すと完了したように見えるので、途中の保存は「一時保存」と呼ぶ。完了の印は入力完了を押したときだけ
+  $('conn').textContent = (online ? '🟢 一時保存 ' : '⚪ この端末に一時保存 ') + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 
 function saveLocal() {
@@ -444,11 +471,17 @@ function paintAll() {
   const done = doneAt(tabKey), b = $('banner');
   if (done) {
     b.style.display = 'block';
-    b.innerHTML = '✓ ' + esc(done) + ' に入力完了<small>納品などで数が変わったら、そのまま直せます（今日のうちは残ります）</small>';
-    $('submit').textContent = '直した内容でもう一度 入力完了';
+    const dirty = data.done[tabKey].dirty === true;
+    b.classList.toggle('dirty', dirty);
+    b.innerHTML = dirty
+      ? '入力完了のあとに修正あり<small>下の「もう一度 入力完了」を押すと、直した内容で完了になります</small>'
+      : '✓ 入力完了済み<small>' + esc(done) + ' に完了。納品などで数が変わったら、そのまま直せます</small>';
+    $('submit').textContent = dirty ? '直した内容でもう一度 入力完了' : '✓ 入力完了済み';
+    $('submit').classList.toggle('done', !dirty);
   } else {
     b.style.display = 'none';
     $('submit').textContent = t.label + ' を入力完了';
+    $('submit').classList.remove('done');
   }
 }
 
@@ -509,6 +542,7 @@ $('list').addEventListener('focusin', e => {
   const it = tabOf(tabKey).items.find(i => i.id === e.target.closest('.item').dataset.id);
   const col = e.target.closest('.col'), tei = col.querySelector('.teisu');
   $('kb-title').innerHTML = '<b>' + esc(it.name) + '</b>　' + esc(col.querySelector('.lt').textContent) + (tei ? '（' + esc(tei.textContent) + '）' : '');
+  $('kbar').classList.toggle('z', col.classList.contains('z'));
   document.body.classList.add('typing');
   showActive(e.target);
 });
@@ -567,6 +601,14 @@ $('kbar').addEventListener('pointerdown', e => {
   if (!b) return;
   e.preventDefault();
   if (b.dataset.k) keyIn(b.dataset.k);
+  else if (b.dataset.act === 'ok') {
+    // テンキーを閉じずに「足りてる」→ 次の商品の同じ欄へ（カードの足りてるボタンだとテンキーが閉じるため）
+    const cur = document.activeElement;
+    if (!cur || cur.tagName !== 'INPUT' || !cur.closest('.col.z')) return;
+    cur.value = '';
+    setField(tabKey, cur.closest('.item').dataset.id, 'z', 'ok');
+    moveInput(1);
+  }
   else if (b.dataset.act === 'prev') moveInput(-1);
   else if (b.dataset.act === 'next') moveInput(1);
   else if (document.activeElement) document.activeElement.blur();
@@ -608,7 +650,11 @@ $('confirm-go').addEventListener('click', () => {
   $('confirm').classList.remove('show');
   paintAll();
   window.scrollTo(0, 0);
-  toast('✓ ' + t.label + ' を入力完了にしました');
+  // 完了した実感が出るよう、真ん中に大きく出す
+  $('donepop-sub').textContent = t.label;
+  $('donepop').classList.add('show');
+  clearTimeout(toast.p);
+  toast.p = setTimeout(() => $('donepop').classList.remove('show'), 1600);
 });
 
 /* ===== その日のデータにつなぐ（日付が変わったらつなぎ直す＝空欄に戻る） ===== */
