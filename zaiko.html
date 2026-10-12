@@ -271,15 +271,19 @@
 <script>
 /* 商品の一覧（DRINKS / BIHIN）は zaiko-items.js にある。一覧ページ（zaiko-list.html）と共通 */
 
-/* ho＝補充メモの欄を出す / z＝総在庫の欄を出す */
-const TABS = [
+/* ho＝補充メモの欄を出す / z＝総在庫の欄を出す。
+   商品と定数は設定ページ（zaiko-edit.html）で変えられるので、変わったら buildTabs() で作り直す */
+let TABS;
+function buildTabs() { TABS = [
   { key: 'f2',    label: '２F＆総在庫', items: DRINKS, ho: true, z: true, zLabel: '総在庫',
     note: '①補充メモに2階へ持っていく数を書く → ②大元の冷蔵庫から出す → ③残った数を総在庫に入れる\n※総在庫が定数と同じ数か、それより少ないときは数字を入れる（定数より多いときだけ「足りてる」）' },
   { key: 'f1',    label: '１F',         items: DRINKS.filter(d => !d.ret), ho: true, z: false,
     note: '1階へ持っていく数だけ書く（総在庫は２Fのタブで数える）' },
   { key: 'bihin', label: '備品',        items: BIHIN, ho: false, z: true, zLabel: '在庫',
     note: '※在庫が定数と同じ数か、それより少ないときは数字を入れる（定数より多いときだけ「足りてる」）' },
-];
+]; }
+buildTabs();
+let pendingMaster = false;
 
 /* ===== 保存 =====
    zaiko/days/{YYYY-MM-DD} = {
@@ -513,7 +517,11 @@ $('list').addEventListener('focusout', e => {
   // 「次」「前」で隣の欄へ移っただけなら、バーは出したままにする
   setTimeout(() => {
     const a = document.activeElement;
-    if (!(a && a.tagName === 'INPUT' && a.closest('#list'))) document.body.classList.remove('typing');
+    if (!(a && a.tagName === 'INPUT' && a.closest('#list'))) {
+      document.body.classList.remove('typing');
+      // 打っている間に届いた商品・定数の変更は、手を離したときに反映する
+      if (pendingMaster) { pendingMaster = false; buildTabs(); render(); }
+    }
   }, 0);
 });
 $('list').addEventListener('keydown', e => {
@@ -643,6 +651,12 @@ function init() {
   online = App.initFirebase();
   if (online) $('conn').textContent = '🟢 同期中';
   attach();
+  // 設定ページで商品・定数が変わったら作り直す（打っている最中は待つ）
+  watchZaikoMaster(() => {
+    if (document.body.classList.contains('typing')) { pendingMaster = true; return; }
+    buildTabs();
+    render();
+  });
   setInterval(() => { if (App.todayLocal() !== dayKey) attach(); }, 30 * 1000);
 }
 init();

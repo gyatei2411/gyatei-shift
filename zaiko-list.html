@@ -74,6 +74,7 @@
 <header>
   <h1>📋 在庫一覧</h1>
   <div class="right">
+    <a href="zaiko-edit.html">⚙ 商品・定数</a>
     <a href="zaiko.html">在庫入力</a>
     <a href="admin.html">管理画面</a>
   </div>
@@ -93,7 +94,8 @@
 
 <script>
 /* 見るのは zaiko/days/{日付} の f2（総在庫）と bihin（在庫）だけ。f1 と補充メモ（ho）・Tへ返却（ret）は出さない */
-const SECTIONS = [
+// 商品と定数は設定ページ（zaiko-edit.html）で変わるので、描くたびに今の一覧から作る
+const sections = () => [
   { key: 'f2',    title: 'ドリンク（総在庫）', label: '２F＆総在庫', col: '総在庫', items: DRINKS.filter(d => d.teisu != null) },
   { key: 'bihin', title: '備品',               label: '備品',        col: '在庫',   items: BIHIN },
 ];
@@ -121,7 +123,7 @@ function render() {
   $('day').textContent = dayText(day);
   $('next').disabled = day >= App.todayLocal();
 
-  $('chips').innerHTML = SECTIONS.map(s => {
+  $('chips').innerHTML = sections().map(s => {
     const d = data.done && data.done[s.key];
     if (!d) return '<span class="chip">' + s.label + '：入力完了まだ</span>';
     if (d.dirty) return '<span class="chip dirty">' + s.label + '：' + esc(d.at) + ' 完了 → そのあと修正あり</span>';
@@ -130,7 +132,7 @@ function render() {
 
   const low = [];
   let entered = 0;
-  $('tables').innerHTML = SECTIONS.map(s => {
+  $('tables').innerHTML = sections().map(s => {
     const rows = s.items.map(it => {
       const z = data[s.key] && data[s.key][it.id] ? data[s.key][it.id].z : undefined;
       let cls = 'none', txt = '未入力', fus = '';
@@ -172,6 +174,7 @@ function attach() {
 $('prev').addEventListener('click', () => { day = shift(day, -1); attach(); });
 $('next').addEventListener('click', () => { day = shift(day, 1); attach(); });
 attach();
+watchZaikoMaster(render);
 </script>
 </body>
 </html>

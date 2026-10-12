@@ -781,7 +781,7 @@ const App = {
   forceUpdate() {
     const files = ['shared.js', 'xlsx-export.js', 'firebase-config.js', 'style.css',
                    'admin.html', 'shift-view.html', 'board.html', 'reply.html', 'memo.html', 'zaiko.html',
-                   'zaiko-items.js', 'zaiko-list.html'];
+                   'zaiko-items.js', 'zaiko-list.html', 'zaiko-edit.html'];
     return Promise.all(files.map(f => fetch(f, { cache: 'reload' }).catch(() => {})))
       .then(() => { location.reload(); });
   },

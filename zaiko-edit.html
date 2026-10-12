@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>在庫の商品・定数 - ぎゃあてい</title>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="shared.js"></script>
+  <script src="zaiko-items.js"></script>
+  <style>
+    /* 在庫の商品と定数を変えるページ（管理する人用）。「保存する」を押すまで、入力ページには反映されない */
+    :root {
+      --bg: #f4f2ec; --card: #fff; --ink: #22261f; --sub: #6d7166; --line: #dedbd0;
+      --green: #2f6b3c; --green-bg: #e6f1e4; --red: #c0392b; --red-bg: #fbe9e6; --blue: #1d4ed8;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; }
+    body {
+      background: var(--bg); color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+      font-size: 16px; line-height: 1.4; padding-bottom: 110px; -webkit-text-size-adjust: 100%;
+    }
+    button, input { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    header {
+      position: sticky; top: 0; z-index: 5; background: var(--green); color: #fff; padding: 8px 14px;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    header h1 { font-size: 18px; margin: 0; }
+    header a { color: #fff; font-size: 13px; font-weight: 700; padding: 8px 10px; border: 1px solid rgba(255,255,255,.5); border-radius: 8px; text-decoration: none; white-space: nowrap; }
+
+    main { max-width: 760px; margin: 0 auto; padding: 12px; }
+    .lead { font-size: 14px; color: var(--sub); margin: 0 4px 12px; }
+    h2 { font-size: 17px; margin: 20px 4px 8px; }
+    h2 small { font-size: 12px; font-weight: 400; color: var(--sub); margin-left: 6px; }
+    #error { display: none; background: var(--red-bg); border: 2px solid var(--red); color: var(--red); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-size: 14px; white-space: pre-line; }
+
+    .row { background: var(--card); border: 2px solid var(--line); border-radius: 14px; padding: 10px; margin-bottom: 8px; }
+    .row.new { border-color: var(--blue); }
+    .nm { width: 100%; height: 46px; padding: 0 10px; border: 2px solid var(--line); border-radius: 10px; font-size: 17px; font-weight: 700; background: #fff; }
+    .r2 { display: flex; align-items: flex-end; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    .fld { display: flex; flex-direction: column; font-size: 12px; font-weight: 700; color: var(--sub); }
+    .fld.par { color: var(--blue); }
+    .fld input { width: 84px; height: 46px; margin-top: 2px; padding: 0 6px; border: 2px solid var(--ink); border-radius: 10px; text-align: center; font-size: 19px; font-weight: 700; background: #fff; color: var(--ink); }
+    .fld.par input { border-color: var(--blue); color: var(--blue); }
+    .only { flex: 1; font-size: 13px; color: var(--sub); align-self: center; }
+    .ops { display: flex; gap: 6px; margin-left: auto; }
+    .ops button { width: 46px; height: 46px; padding: 0; border: 2px solid var(--line); border-radius: 10px; background: #fff; font-size: 18px; font-weight: 700; }
+    .ops button:disabled { opacity: .3; }
+    .ops .del { width: auto; padding: 0 10px; font-size: 14px; color: var(--red); border-color: var(--red); }
+    .add { width: 100%; height: 50px; border: 2px dashed var(--green); border-radius: 12px; background: transparent; color: var(--green); font-weight: 700; }
+
+    footer {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+      background: rgba(244,242,236,.96); border-top: 1px solid var(--line);
+      padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); text-align: center;
+    }
+    #state { font-size: 13px; color: var(--sub); margin-bottom: 6px; }
+    #state.dirty { color: #7a5a00; font-weight: 700; }
+    #state.saved { color: var(--green); font-weight: 700; }
+    #save { width: 100%; max-width: 536px; height: 58px; border: 0; border-radius: 14px; background: var(--green); color: #fff; font-size: 19px; font-weight: 700; }
+    #save:disabled { opacity: .45; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚙ 在庫の商品・定数</h1>
+  <a href="zaiko-list.html">在庫一覧へ</a>
+</header>
+
+<main>
+  <div id="error"></div>
+  <p class="lead">名前・定数を直したり、商品を足したり消したり、▲▼で並べ替えたりできます。<b>下の「保存する」を押すと</b>、在庫入力の画面に反映されます。</p>
+
+  <h2>ドリンク<small>総在庫の定数を空欄にすると、補充メモだけの商品になります</small></h2>
+  <div id="drinks"></div>
+  <button type="button" class="add" data-add="drinks">＋ ドリンクを足す</button>
+
+  <h2>備品</h2>
+  <div id="bihin"></div>
+  <button type="button" class="add" data-add="bihin">＋ 備品を足す</button>
+</main>
+
+<footer>
+  <div id="state">変更はありません</div>
+  <button type="button" id="save" disabled>保存する</button>
+</footer>
+
+<script>
+/* 保存先は zaiko/master = { drinks: [...], bihin: [...], at }。zaiko-items.js がこれを読んで初期値より優先する。
+   id は一度付けたら変えない（その日の入力がこの id に結び付いているため）。名前だけ直す分には何も失われない */
+const online = App.initFirebase();
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+let ed = { drinks: [], bihin: [] };
+let dirty = false;
+
+function load() {
+  ed = { drinks: DRINKS.map(x => Object.assign({}, x)), bihin: BIHIN.map(x => Object.assign({}, x)) };
+  dirty = false;
+  render();
+}
+
+function rowHtml(kind, it, i, n) {
+  const ops = '<div class="ops">' +
+    '<button type="button" data-op="up"' + (i === 0 ? ' disabled' : '') + ' aria-label="上へ">▲</button>' +
+    '<button type="button" data-op="down"' + (i === n - 1 ? ' disabled' : '') + ' aria-label="下へ">▼</button>' +
+    '<button type="button" data-op="del" class="del">削除</button></div>';
+  let mid;
+  if (it.ret) {
+    mid = '<div class="only">「Tへ返却」のチェックだけの商品</div>';
+  } else {
+    mid = (kind === 'drinks'
+      ? '<label class="fld par">補充メモの定数<input data-f="par" type="text" value="' + esc(it.par) + '"></label>' : '') +
+      '<label class="fld">' + (kind === 'drinks' ? '総在庫の定数' : '在庫の定数') +
+      '<input data-f="teisu" type="text" inputmode="numeric" value="' + esc(it.teisu) + '"></label>';
+  }
+  return '<div class="row' + (it.isNew ? ' new' : '') + '" data-kind="' + kind + '" data-i="' + i + '">' +
+    '<input class="nm" data-f="name" type="text" placeholder="商品名" value="' + esc(it.name) + '">' +
+    '<div class="r2">' + mid + ops + '</div></div>';
+}
+
+function render() {
+  ['drinks', 'bihin'].forEach(k => {
+    $(k).innerHTML = ed[k].map((it, i) => rowHtml(k, it, i, ed[k].length)).join('');
+  });
+  paintState();
+}
+function paintState(msg) {
+  const s = $('state');
+  s.className = dirty ? 'dirty' : (msg ? 'saved' : '');
+  s.textContent = dirty ? 'まだ保存していない変更があります' : (msg || '変更はありません');
+  $('save').disabled = !dirty;
+}
+function touch() { dirty = true; paintState(); }
+
+document.querySelector('main').addEventListener('input', e => {
+  const row = e.target.closest('.row');
+  if (!row || !e.target.dataset.f) return;
+  const it = ed[row.dataset.kind][+row.dataset.i], f = e.target.dataset.f, v = e.target.value;
+  // 定数は、保存のときにまとめて数字かどうか確かめる。ここでは打ったまま持っておく
+  it[f] = v;
+  touch();
+});
+document.querySelector('main').addEventListener('click', e => {
+  const add = e.target.closest('[data-add]');
+  if (add) {
+    const k = add.dataset.add;
+    ed[k].push({ id: 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: '', isNew: true });
+    touch();
+    render();
+    const rows = $(k).querySelectorAll('.row');
+    rows[rows.length - 1].querySelector('.nm').focus();
+    return;
+  }
+  const b = e.target.closest('[data-op]');
+  if (!b) return;
+  const row = b.closest('.row'), list = ed[row.dataset.kind], i = +row.dataset.i;
+  if (b.dataset.op === 'del') {
+    const name = list[i].name || '（名前なし）';
+    if (!confirm('「' + name + '」を一覧から消します。\n在庫入力の画面に出なくなります。よろしいですか？')) return;
+    list.splice(i, 1);
+  } else {
+    const j = b.dataset.op === 'up' ? i - 1 : i + 1;
+    if (j < 0 || j >= list.length) return;
+    const t = list[i]; list[i] = list[j]; list[j] = t;
+  }
+  touch();
+  render();
+});
+
+// 保存できる形に整える。おかしなところがあれば errs に理由を入れる
+function build(kind, errs) {
+  const label = kind === 'drinks' ? 'ドリンク' : '備品';
+  return ed[kind].map((it, i) => {
+    const name = String(it.name || '').trim();
+    const where = label + 'の' + (i + 1) + '番目' + (name ? '「' + name + '」' : '');
+    if (!name) errs.push(where + '：商品名が空です');
+    const o = { id: it.id, name: name };
+    if (it.ret) { o.ret = true; return o; }
+    const par = String(it.par == null ? '' : it.par).trim();
+    if (kind === 'drinks' && par) o.par = par;
+    const t = String(it.teisu == null ? '' : it.teisu).trim();
+    if (t === '') {
+      if (kind === 'bihin') errs.push(where + '：在庫の定数を入れてください');
+    } else if (!/^\d+$/.test(t)) {
+      errs.push(where + '：定数は数字で入れてください（今は「' + t + '」）');
+    } else {
+      o.teisu = Number(t);
+    }
+    return o;
+  });
+}
+
+$('save').addEventListener('click', () => {
+  const errs = [];
+  const master = { drinks: build('drinks', errs), bihin: build('bihin', errs), at: new Date().toISOString() };
+  if (!master.drinks.length) errs.push('ドリンクが1つもありません');
+  if (!master.bihin.length) errs.push('備品が1つもありません');
+  const box = $('error');
+  if (errs.length) {
+    box.style.display = 'block';
+    box.textContent = '保存できません。次のところを直してください。\n・' + errs.join('\n・');
+    window.scrollTo(0, 0);
+    return;
+  }
+  box.style.display = 'none';
+  const done = () => {
+    try { localStorage.setItem(ZAIKO_MASTER_KEY, JSON.stringify(master)); } catch (e) {}
+    applyZaikoMaster(master);
+    load();
+    paintState('✓ 保存しました。在庫入力の画面に反映されます');
+  };
+  if (online) {
+    $('save').disabled = true;
+    App.fbDB.ref('zaiko/master').set(master).then(done).catch(err => {
+      box.style.display = 'block';
+      box.textContent = '保存できませんでした。電波を確かめて、もう一度押してください。（' + (err && err.message ? err.message : err) + '）';
+      $('save').disabled = false;
+    });
+  } else {
+    done();
+  }
+});
+
+window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+load();
+// ほかの端末で保存されたら読み直す。ただし、こちらで直している途中なら上書きしない
+watchZaikoMaster(() => { if (!dirty) load(); });
+</script>
+</body>
+</html>
