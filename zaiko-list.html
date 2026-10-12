@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>在庫一覧 - ぎゃあてい</title>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="shared.js"></script>
+  <script src="zaiko-items.js"></script>
+  <style>
+    /* 在庫入力（zaiko.html）で入れた数を見るだけのページ。管理する人用なので、要注文もここには出す。
+       補充メモは補充する人のメモなので、ここには出さない */
+    :root {
+      --bg: #f4f2ec; --card: #fff; --ink: #22261f; --sub: #6d7166; --line: #dedbd0;
+      --green: #2f6b3c; --green-bg: #e6f1e4; --red: #c0392b; --red-bg: #fbe9e6;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      background: var(--bg); color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+      font-size: 16px; line-height: 1.4; padding-bottom: 40px; -webkit-text-size-adjust: 100%;
+    }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    header {
+      position: sticky; top: 0; z-index: 5; background: var(--green); color: #fff; padding: 8px 14px;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    header h1 { font-size: 18px; margin: 0; }
+    header .right { display: flex; gap: 8px; }
+    header a { color: #fff; font-size: 13px; font-weight: 700; padding: 8px 10px; border: 1px solid rgba(255,255,255,.5); border-radius: 8px; text-decoration: none; white-space: nowrap; }
+
+    main { max-width: 760px; margin: 0 auto; padding: 12px; }
+    .daynav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .daynav button { height: 46px; padding: 0 14px; border: 2px solid var(--line); border-radius: 10px; background: #fff; font-weight: 700; }
+    .daynav button:disabled { opacity: .4; }
+    .daynav .day { flex: 1; text-align: center; font-size: 19px; font-weight: 700; }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .chip { padding: 6px 12px; border-radius: 999px; background: #e7e5dc; color: var(--sub); font-size: 14px; font-weight: 700; }
+    .chip.done { background: var(--green); color: #fff; }
+    .chip.dirty { background: #fff6d6; color: #7a5a00; }
+
+    .box { background: var(--card); border: 2px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; }
+    .box.order { border-color: var(--red); background: var(--red-bg); }
+    .box h2 { font-size: 16px; margin: 0 0 8px; }
+    .box.order h2 { color: var(--red); }
+    .box p { margin: 0; color: var(--sub); }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 9px 6px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+    th { font-size: 12px; color: var(--sub); font-weight: 700; }
+    th:first-child, td:first-child { text-align: left; white-space: normal; font-weight: 700; }
+    tr:last-child td { border-bottom: 0; }
+    td.num { font-size: 18px; font-weight: 700; }
+    tr.low td { color: var(--red); }
+    tr.low td:first-child::after { content: " 要注文"; font-size: 11px; background: var(--red); color: #fff; border-radius: 4px; padding: 1px 5px; margin-left: 6px; white-space: nowrap; }
+    tr.ok td.num { color: var(--green); font-size: 15px; }
+    tr.none td.num { color: #b5b2a6; font-size: 14px; font-weight: 400; }
+    #error { display: none; background: var(--red-bg); border: 2px solid var(--red); color: var(--red); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-size: 14px; }
+
+    @media print {
+      header .right, .daynav button { display: none; }
+      header { position: static; }
+      body { background: #fff; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📋 在庫一覧</h1>
+  <div class="right">
+    <a href="zaiko.html">在庫入力</a>
+    <a href="admin.html">管理画面</a>
+  </div>
+</header>
+
+<main>
+  <div id="error"></div>
+  <div class="daynav">
+    <button type="button" id="prev">◀ 前の日</button>
+    <div class="day" id="day"></div>
+    <button type="button" id="next">次の日 ▶</button>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div id="order"></div>
+  <div id="tables"></div>
+</main>
+
+<script>
+/* 見るのは zaiko/days/{日付} の f2（総在庫）と bihin（在庫）だけ。f1 と補充メモ（ho）・Tへ返却（ret）は出さない */
+const SECTIONS = [
+  { key: 'f2',    title: 'ドリンク（総在庫）', label: '２F＆総在庫', col: '総在庫', items: DRINKS.filter(d => d.teisu != null) },
+  { key: 'bihin', title: '備品',               label: '備品',        col: '在庫',   items: BIHIN },
+];
+
+let day = App.todayLocal();
+let data = {};
+let ref = null;
+const online = App.initFirebase();
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function shift(d, n) {
+  const [y, m, dd] = d.split('-').map(Number);
+  const t = new Date(y, m - 1, dd + n);
+  const p = x => String(x).padStart(2, '0');
+  return t.getFullYear() + '-' + p(t.getMonth() + 1) + '-' + p(t.getDate());
+}
+function dayText(d) {
+  const [y, m, dd] = d.split('-').map(Number);
+  const t = new Date(y, m - 1, dd);
+  return m + '/' + dd + '（' + '日月火水木金土'.charAt(t.getDay()) + '）' + (d === App.todayLocal() ? ' 今日' : '');
+}
+
+function render() {
+  $('day').textContent = dayText(day);
+  $('next').disabled = day >= App.todayLocal();
+
+  $('chips').innerHTML = SECTIONS.map(s => {
+    const d = data.done && data.done[s.key];
+    if (!d) return '<span class="chip">' + s.label + '：入力完了まだ</span>';
+    if (d.dirty) return '<span class="chip dirty">' + s.label + '：' + esc(d.at) + ' 完了 → そのあと修正あり</span>';
+    return '<span class="chip done">✓ ' + s.label + '：' + esc(d.at) + ' 入力完了</span>';
+  }).join('');
+
+  const low = [];
+  let entered = 0;
+  $('tables').innerHTML = SECTIONS.map(s => {
+    const rows = s.items.map(it => {
+      const z = data[s.key] && data[s.key][it.id] ? data[s.key][it.id].z : undefined;
+      let cls = 'none', txt = '未入力', fus = '';
+      if (z === 'ok') { cls = 'ok'; txt = '足りてる'; entered++; }
+      else if (typeof z === 'number') {
+        entered++;
+        // 定数と同じ数になったら注文する（zaiko.html と同じ基準）
+        if (z <= it.teisu) { cls = 'low'; fus = String(it.teisu - z); low.push({ name: it.name, teisu: it.teisu, z: z }); }
+        else cls = 'num';
+        txt = String(z);
+      }
+      return '<tr class="' + cls + '"><td>' + esc(it.name) + '</td><td>' + it.teisu + '</td><td class="num">' + txt + '</td><td>' + fus + '</td></tr>';
+    }).join('');
+    return '<div class="box"><h2>' + s.title + '</h2><table><thead><tr><th>商品</th><th>定数</th><th>' + s.col + '</th><th>不足</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }).join('');
+
+  $('order').innerHTML = low.length
+    ? '<div class="box order"><h2>要注文（' + low.length + ' 品）</h2><table><tbody>' +
+      low.map(x => '<tr><td>' + esc(x.name) + '</td><td>定数 ' + x.teisu + '</td><td class="num">在庫 ' + x.z + '</td><td>不足 ' + (x.teisu - x.z) + '</td></tr>').join('') +
+      '</tbody></table></div>'
+    : '<div class="box"><p>' + (entered ? '要注文の商品はありません。' : 'この日はまだ入力がありません。') + '</p></div>';
+}
+
+function attach() {
+  data = {};
+  if (online) {
+    if (ref) ref.off();
+    ref = App.fbDB.ref('zaiko/days/' + day);
+    ref.on('value', snap => { data = snap.val() || {}; $('error').style.display = 'none'; render(); }, err => {
+      $('error').style.display = 'block';
+      $('error').textContent = '読み込めませんでした。（' + (err && err.message ? err.message : err) + '）';
+    });
+  } else {
+    try { data = JSON.parse(localStorage.getItem('gy_zaiko_' + day) || '{}'); } catch (e) {}
+  }
+  render();
+}
+
+$('prev').addEventListener('click', () => { day = shift(day, -1); attach(); });
+$('next').addEventListener('click', () => { day = shift(day, 1); attach(); });
+attach();
+</script>
+</body>
+</html>
