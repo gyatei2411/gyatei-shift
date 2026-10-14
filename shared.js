@@ -94,7 +94,10 @@ const App = {
     return JSON.parse(new TextDecoder().decode(bytes));
   },
 
+  // Firebase につながっていれば ?id= だけの短いURL（中身は reply.html が Firebase から読む）。
+  // つながっていないときは従来どおり依頼の中身を丸ごと ?r= に入れる
   buildRequestUrl(baseUrl, payload) {
+    if (App.fbReady && payload.id) return `${baseUrl}?id=${encodeURIComponent(payload.id)}`;
     return `${baseUrl}?r=${App.encodeBase64Url(payload)}`;
   },
 
@@ -104,7 +107,18 @@ const App = {
       try { return { type: 'request', data: App.decodeBase64Url(params.get('r')) }; }
       catch (e) { return { type: 'error', error: e.message }; }
     }
+    if (params.get('id')) return { type: 'requestId', id: params.get('id') };
     return { type: 'none' };
+  },
+
+  // 短いURL（?id=）用。依頼の中身を Firebase から1回だけ読む。無ければ null
+  fetchRequest(id) {
+    if (!App.fbReady) return Promise.resolve(App.getRequest(id) || null);
+    return App.fbDB.ref('requests/' + id).once('value').then(sn => {
+      const v = sn.val();
+      if (!v || !v.ws || !v.staff) return null;
+      return { v: 1, id, ws: v.ws, shop: v.shop, staff: Object.values(v.staff), closed: v.closed ? Object.values(v.closed) : [] };
+    });
   },
 
   /* ===== 祝日 =====
@@ -194,7 +208,7 @@ const App = {
   },
 
   // アプリのバージョン（更新したらここを書き換える）
-  VERSION: '2026.10.12',
+  VERSION: '2026.10.14',
   lastSyncAt: null,   // Firebase から最後に受け取った時刻
 
   KEYS: {

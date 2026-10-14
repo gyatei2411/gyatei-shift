@@ -196,8 +196,19 @@
     function init() {
       App.initFirebase();
       const parsed = App.parseUrl();
-      if (parsed.type === 'request' && parsed.data && parsed.data.staff) {
-        request = parsed.data;
+      if (parsed.type === 'requestId') {
+        // 短いURL（?id=）… 依頼の中身を Firebase から読んでから始める
+        App.fetchRequest(parsed.id)
+          .then(r => start(r))
+          .catch(() => start(null));
+        return;
+      }
+      start(parsed.type === 'request' ? parsed.data : null);
+    }
+
+    function start(req) {
+      if (req && req.staff) {
+        request = req;
         closedSet = new Set(request.closed || []);
         renderForm();
         document.getElementById('form-section').style.display = '';
