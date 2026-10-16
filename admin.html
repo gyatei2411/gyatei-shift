@@ -457,6 +457,13 @@
       renderStaffMaster();
     }
 
+    // ホールリーダー。書くのはこの人の分だけ（setStaffMeta は1人ずつ保存する）
+    function toggleHall(name) {
+      const m = staffMetaOf(name);
+      App.setStaffMeta(name, Object.assign(m, { hallLeader: !m.hallLeader }));
+      renderStaffMaster();
+    }
+
     function setHours(name, input) {
       const v = String(input.value || '').trim();
       if (v && !App.parseHours(v)) {
@@ -945,7 +952,7 @@
       el.innerHTML = staff.map((n, i) => {
         const m = Object.assign({ positions0: [], positions: [], positions2: [], t2always: false, t2extra: false,
                                   rank: '', daysMin: null, daysMax: null, note: '', priority: false,
-                                  rookie: false, hours: '', desh: false }, meta[n] || {});
+                                  rookie: false, hours: '', desh: false, hallLeader: false }, meta[n] || {});
         const rk = App.rankKey(m);
         const dOn = App.canDesh(meta, n);   // d（デシャップ）ができる人
         const RC = { top: '#BE123C', priority: '#B45309', housewife: '#0369A1', student: '#7E22CE' };
@@ -953,7 +960,7 @@
         const esc = n.replace(/'/g, "\\'");
         return `
         <div class="staff-master-row" style="flex-wrap:wrap;${rk ? `background:${RBG[rk]};border-color:${RC[rk]}` : ''}">
-          <span class="name">${n}${rk ? ` <span style="font-size:0.68rem;color:${RC[rk]};font-weight:700">${App.RANK_LABEL[rk]}</span>` : ''}${m.rookie ? ` <span style="font-size:0.68rem;background:#DC2626;color:#fff;font-weight:800;padding:1px 7px;border-radius:999px">新人</span>` : ''}</span>
+          <span class="name">${n}${rk ? ` <span style="font-size:0.68rem;color:${RC[rk]};font-weight:700">${App.RANK_LABEL[rk]}</span>` : ''}${m.rookie ? ` <span style="font-size:0.68rem;background:#DC2626;color:#fff;font-weight:800;padding:1px 7px;border-radius:999px">新人</span>` : ''}${m.hallLeader ? ` <span style="font-size:0.68rem;background:#047857;color:#fff;font-weight:800;padding:1px 7px;border-radius:999px">ホールリーダー</span>` : ''}</span>
           <span style="display:inline-flex;gap:4px;flex-wrap:wrap" title="シフトに入れる優先順位：★★最優先 ＞ ★優先 ＞ 主婦 ＞ 無印 ＞ 学生&#10;16:30上がり（応援Tの日）は、この順位が低い人から先に上がります">
             ${['top','priority','housewife','student'].map(k => `
               <button class="btn btn-sm" onclick="setRank('${esc}', '${k}')"
@@ -967,6 +974,11 @@
               style="padding:3px 10px;font-size:0.76rem;font-weight:700;border-radius:6px;cursor:pointer;
                      border:1.5px solid ${m.rookie ? '#DC2626' : 'var(--border)'};
                      background:${m.rookie ? '#DC2626' : '#fff'};color:${m.rookie ? '#fff' : 'var(--muted)'}">新人</button>
+            <button class="btn btn-sm" onclick="toggleHall('${esc}')"
+              title="ホールリーダー。&#10;自動割り当てで、ホールリーダーが出勤する日は そのうち最低1人を 1部R2 に入れます。&#10;※ シフト表やタブレットには出しません"
+              style="padding:3px 10px;font-size:0.76rem;font-weight:700;border-radius:6px;cursor:pointer;
+                     border:1.5px solid ${m.hallLeader ? '#047857' : 'var(--border)'};
+                     background:${m.hallLeader ? '#047857' : '#fff'};color:${m.hallLeader ? '#fff' : 'var(--muted)'}">ホールリーダー</button>
           </span>
           <div class="actions">
             <button class="btn btn-outline btn-sm" onclick="renameStaffPrompt('${esc}')" title="名前を変える">✏️</button>
@@ -1126,7 +1138,7 @@
       return Object.assign(
         { positions0: [], positions: [], positions2: [], t2always: false, t2extra: false,
           rank: '', daysMin: null, daysMax: null, note: '', priority: false,
-          rookie: false, hours: '', desh: false },
+          rookie: false, hours: '', desh: false, hallLeader: false },
         App.getStaffMeta()[name] || {});
     }
 

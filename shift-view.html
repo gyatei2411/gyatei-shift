@@ -1317,6 +1317,21 @@
 
       const results = [];  // { name, day, pos, start, end }
 
+      // 1部（9時〜16時）の時間を決める。数値で保持し、2部の判定後に文字列化する
+      //（0部（C/1F/Rj/Tj）がついた人はあとで9時に前倒しする）
+      const entryFor = (person, day, pos) => {
+        const tc = person.d[day] === 't' ? getTimeCons(timeCons, person.name, day) : null;
+        const base = baseStart(pos);
+        return {
+          name: person.name, day, pos,
+          st: tc ? Math.max(tc.start, base) : base,
+          en: tc ? Math.min(tc.end, PART1_END) : PART1_END,   // 1部は16時まで
+          tcEnd: tc ? tc.end : 99,                            // その人が働ける上限（99=ラスト）
+          tcStart: tc ? tc.start : 0,                         // その人が出られる最も早い時刻
+          pos2: null, early: false
+        };
+      };
+
       for (let day = 0; day < 7; day++) {
         if (closed.has(day)) continue;
 
@@ -1373,20 +1388,11 @@
           return (m.positions || []).filter(p => p !== 'R1' && needsMap[p] && rookieOk(person.name, p));
         };
 
-        // 1部（9時〜16時）の時間を決める。数値で保持し、2部の判定後に文字列化する
         const assignPerson = (person, pos, needsMap) => {
-          const sym = person.d[day];
-          const tc = sym === 't' ? getTimeCons(timeCons, person.name, day) : null;
           needsMap[pos]--;
           assignedToday.add(person.name);
           assignedCount[person.name]++;
-          //（0部（C/1F/Rj/Tj）がついた人はあとで9時に前倒しする）
-          const base = baseStart(pos);
-          const st = tc ? Math.max(tc.start, base) : base;
-          const en = tc ? Math.min(tc.end, PART1_END) : PART1_END;  // 1部は16時まで
-          const tcEnd = tc ? tc.end : 99;                           // その人が働ける上限（99=ラスト）
-          const tcStart = tc ? tc.start : 0;                        // その人が出られる最も早い時刻
-          results.push({ name: person.name, day, pos, st, en, tcEnd, tcStart, pos2: null, early: false });
+          results.push(entryFor(person, day, pos));
         };
 
         // ── 第1パス: 優先枠に「できるポジションが少ない人」から配置 ──
@@ -1428,6 +1434,8 @@
         // ── 修復パス: 空いている枠を「配置済みの人の移動＋余っている人」で埋める ──
         //   例) 青木(K,W可)がKに入り、Kしかできない山口が余ってWが不足
         //        → 青木をWへ移し、空いたKに山口を入れる（定員は超えない）
+        //   1人ずらしても埋まらなければ、2人ずらす（2026/10/16）
+        //   例) R2 が空き：駒原(W→R2) → 空いた W に青木(K→W) → 空いた K に山口
         const byName = {};
         available.forEach(r => { byName[r.name] = r; });
         for (let guard = 0; guard < 12; guard++) {
@@ -1435,6 +1443,18 @@
           const idle = sorted.filter(r => !assignedToday.has(r.name));
           if (!openPos.length || !idle.length) break;
           let moved = false;
+          // pos に入れられる余っている人（後回しでない人 → 区分 → 充足度）
+          const pickIdle = (pos) => idle.filter(x => (meta[x.name].positions || []).indexOf(pos) >= 0
+                                                  && rookieOk(x.name, pos))
+            .sort((p, q) => (isBack(p.name, day) ? 1 : 0) - (isBack(q.name, day) ? 1 : 0)
+                         || rankOf(p.name) - rankOf(q.name)
+                         || fillRate(p.name) - fillRate(q.name))[0];
+          const unassign = (r) => {
+            results.splice(results.indexOf(r), 1);
+            assignedToday.delete(r.name);
+            assignedCount[r.name]--;
+            needs[r.pos] = (needs[r.pos] || 0) + 1;
+          };
           for (const p of openPos) {
             // p に移せる配置済みの人（できるポジションが多い人＝調整役から）
             const movable = results
@@ -1442,11 +1462,7 @@
                         && rookieOk(r.name, p))
               .sort((a, b) => (meta[b.name].positions || []).length - (meta[a.name].positions || []).length);
             for (const mv of movable) {
-              const u = idle.filter(x => (meta[x.name].positions || []).indexOf(mv.pos) >= 0
-                                      && rookieOk(x.name, mv.pos))
-                .sort((p, q) => (isBack(p.name, day) ? 1 : 0) - (isBack(q.name, day) ? 1 : 0)
-                             || rankOf(p.name) - rankOf(q.name)
-                             || fillRate(p.name) - fillRate(q.name))[0];
+              const u = pickIdle(mv.pos);
               const person = byName[mv.name];
               if (!u || !person) continue;
               const freed = mv.pos;
@@ -1458,6 +1474,28 @@
               assignPerson(u, freed, needs);    // 空いた枠に余っていた人を
               moved = true;
               break;
+            }
+            if (moved) break;
+            // 2人ずらす：mv を p へ → 空いた mv の枠に y → 空いた y の枠に余っている人
+            for (const mv of movable) {
+              const pm = byName[mv.name];
+              if (!pm) continue;
+              const ys = results.filter(r => r.day === day && r !== mv && r.pos !== mv.pos && r.pos !== p
+                && (meta[r.name].positions || []).indexOf(mv.pos) >= 0 && rookieOk(r.name, mv.pos));
+              for (const y of ys) {
+                const u = pickIdle(y.pos);
+                const py = byName[y.name];
+                if (!u || !py) continue;
+                const f1 = mv.pos, f2 = y.pos;
+                unassign(mv);
+                unassign(y);
+                assignPerson(pm, p, needs);
+                assignPerson(py, f1, needs);
+                assignPerson(u, f2, needs);
+                moved = true;
+                break;
+              }
+              if (moved) break;
             }
             if (moved) break;
           }
@@ -1544,6 +1582,176 @@
         });
       }
 
+      // ===== 1部を決めたあとの手当て（2026/10/16） =====
+      //  1部を週ぶん決めたあとで、日ごとに次の4つを見直す（上ほど大事）
+      //   ① ホールリーダー（スタッフ管理の印）が出勤する日は、そのうち1人以上を 1部R2 に
+      //   ② d（デシャップ）ができる人が 1部R2 にいる（第4パスで入れたものを崩さない）
+      //   ③ 0部の C（クリーン）と 1F（一階の準備）を、9時から出られる R2/R1/W の人につけられる
+      //   ④ 2部T にラストまで残れる人（○の人）がいる。応援Tが来る日は2人、来ない日は3人が目標
+      //      … 2部は △で途中で上がる人より ○の人を入れる（区分に関係なく全員）
+      //  やり方は「ポジションの入れ替え」か「まだ入っていない人との交代」。
+      //  **どれか1つでも悪くなる入れ替えはしない**（2部Wでラストまで残れる人と m も減らさない）。
+      //  交代で外れるのは ★★最優先・★優先・必ずT・応援T 以外の人で、
+      //  後回しの人 → その週に出られる日が多い人 → 週の充足度が高い人 → 週に多く入っている人 → 区分が低い人 の順。
+      //  **その週ここしか入っていない人は外さない**（外すと週に1日も入れなくなるため）。
+      //  例：月曜しか出られない兼松さんは残し、週に何回か入れる羽生田さんを外す
+      //  （ほかの日に入れるので外せる日の融通が利く。2026/10/16 社長指定）
+      //  例外は ①ホールリーダー・②d のためだけ（ほかに手がないときに限る）
+      const NO_ZERO = ['K', 'T'];   // K・T はもともと始業9時なので0部はつけない
+      const mustT = (name) => !!(meta[name] || {}).t2always;      // 1部W以外の日は必ず2部T
+      const helpT = (name) => !!(meta[name] || {}).t2extra;        // 2部Tへヘルプ（表記なし）
+      const isHL = (name) => App.isHallLeader(meta, name);
+      const canPos = (name, p) => ((meta[name] || {}).positions || []).indexOf(p) >= 0;
+      const can0n = (name, p) => ((meta[name] || {}).positions0 || []).indexOf(p) >= 0;
+      const can2n = (name, p) => ((meta[name] || {}).positions2 || []).indexOf(p) >= 0;
+      const lastOK = (r) => r.tcEnd >= 99;   // ラストまで残れる（○、または △で「-L」）
+      const fixLines = [];   // 入れ替えた記録
+      const hlShort = [];    // ホールリーダーを 1部R2 に入れられなかった日
+
+      // その日の出来を数で表す。大きいほどよい
+      //  [ホールリーダー, d, C・1F, 2部Tのラスト, 2部Wのラスト, m]
+      //  最後の2つは「減らさない」ためだけに見る（これを上げるための入れ替えはしない）
+      const dayScore = (rows) => {
+        const hlIn = rows.some(r => isHL(r.name));
+        const hl = (!hlIn || rows.some(r => r.pos === 'R2' && isHL(r.name))) ? 1 : 0;
+        const d = rows.some(r => r.pos === 'R2' && App.canDesh(meta, r.name)) ? 1 : 0;
+        // C と 1F を別々の人につけられるか（9時から・1部が K/T 以外・0部にチェック）
+        const am = rows.filter(r => (r.tcStart || 0) <= 9 && NO_ZERO.indexOf(r.pos) < 0);
+        const cA = am.filter(r => can0n(r.name, 'C')), fA = am.filter(r => can0n(r.name, '1F'));
+        const cover = (cA.length && fA.length)
+          ? ((cA.length === 1 && fA.length === 1 && cA[0].name === fA[0].name) ? 1 : 2)
+          : ((cA.length || fA.length) ? 1 : 0);
+        // 2部T にラストまで残れる人（1部が R2/R1/T の人。W は2部もW、K は通しでK）
+        const helper = rows.some(r => helpT(r.name) && r.pos !== 'W' && r.tcEnd > PART1_END);
+        const tl = rows.filter(r => ['R2', 'R1', 'T'].indexOf(r.pos) >= 0 && !helpT(r.name)
+                                  && lastOK(r) && can2n(r.name, 'T')).length;
+        const wl = rows.filter(r => r.pos === 'W' && lastOK(r) && can2n(r.name, 'W')).length;
+        // m（盛り付け）は 1部がWの人だけ
+        const mm = rows.some(r => r.pos === 'W' && can0n(r.name, 'm')) ? 1 : 0;
+        return [hl, d, cover, Math.min(helper ? PART2_T - 1 : PART2_T, tl), wl, mm];
+      };
+      const TRIGGER = [true, true, true, true, false, false];   // 入れ替えのきっかけにするもの
+      const GAIN_W = [1000, 100, 10, 1, 0.5, 2];                // 候補を比べるときの重み
+      const SCORE_LABEL = ['ホールリーダー', 'd', 'C・1F', '2部ラスト', '', ''];
+      const gainOf = (a, b) => a.reduce((sum, v, i) => sum + (v - b[i]) * GAIN_W[i], 0);
+      // どれも下がらず、①〜④のどれかが上がる。
+      //   ただし m だけは、ホールリーダーを R2 に入れるためなら外れてもよい
+      //  （R2 しかできない人ばかりの日に、W の西川さんを R2 へ回すと m が空くことがあるため。
+      //    空いた m は備考に「⚠ 0部未配置」と出る）
+      const M_IDX = 5;
+      const betterAll = (a, b) => a.some((v, i) => TRIGGER[i] && v > b[i])
+        && a.every((v, i) => v >= b[i] || (i === M_IDX && a[0] > b[0]));
+      const lexLess = (a, b) => {
+        for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i];
+        return false;
+      };
+      // 新人は同じ日の同じポジションに1人まで
+      const rookieValid = (rows) => {
+        const seen = {};
+        return rows.every(r => {
+          if (!App.isRookie(meta, r.name)) return true;
+          if (seen[r.pos]) return false;
+          return (seen[r.pos] = true);
+        });
+      };
+      // 交代で外してよい人
+      const victimOk = (name) => rankOf(name) > App.RANK_PUSH_MAX && !mustT(name) && !helpT(name);
+      // その日入れられる人か（1部の割り当てと同じ条件。記録は残さない）
+      const canWork = (r, day) => {
+        const sym = r.d[day];
+        if (sym !== 'o' && sym !== 't') return false;
+        const m = meta[r.name];
+        if (!m || !m.positions || !m.positions.length) return false;
+        if (maxDays[r.name] !== undefined && assignedCount[r.name] >= maxDays[r.name]) return false;
+        if (sym === 't' && !getTimeCons(timeCons, r.name, day)) return false;
+        return true;
+      };
+      const moveTo = (r, p) => { r.pos = p; r.st = Math.max(r.tcStart || 0, baseStart(p)); };
+      const swapIn = (z, v, pos) => {
+        results.splice(results.indexOf(v), 1);
+        assignedCount[v.name]--;
+        results.push(entryFor(z, v.day, pos));
+        assignedCount[z.name]++;
+      };
+      const NO_COST = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+      // その週に出られる日数（○△の日。定休日は除く）。多い人ほど外せる日の融通が利く
+      const availDays = {};
+      replies.forEach(r => {
+        let n = 0;
+        for (let i = 0; i < 7; i++) if (!closed.has(i) && (r.d[i] === 'o' || r.d[i] === 't')) n++;
+        availDays[r.name] = n;
+      });
+
+      for (let day = 0; day < 7; day++) {
+        if (closed.has(day)) continue;
+        const dLabel = `${App.fmtMD(App.weekDates(req.ws)[day])}(${App.DOW_LABELS[day]})`;
+        for (let step = 0; step < 6; step++) {
+          const rows = results.filter(r => r.day === day);
+          if (!rows.length) break;
+          const cur = dayScore(rows);
+          const inDay = new Set(rows.map(r => r.name));
+          const idle = replies.filter(r => !inDay.has(r.name) && canWork(r, day) && !isBack(r.name, day));
+          let best = null;
+          const tryMove = (kind, nrows, cost, apply, onlyDay) => {
+            if (!rookieValid(nrows)) return;
+            const sc = dayScore(nrows);
+            if (!betterAll(sc, cur)) return;
+            // その週ここしか入っていない人を外すのは、ホールリーダーか d のためだけ
+            if (onlyDay && !(sc[0] > cur[0] || sc[1] > cur[1])) return;
+            // 上がり幅 → その週ここしか入っていない人を外さない手 → 入れ替え・交代・ずらし交代 の順
+            const key = [-gainOf(sc, cur), onlyDay ? 1 : 0, kind].concat(cost);
+            if (!best || lexLess(key, best.key)) best = { key, sc, apply };
+          };
+          const set = (rs, x, p) => rs.map(r => r === x ? Object.assign({}, r, { pos: p }) : r);
+
+          // ア) その日のポジションの入れ替え（人は増えも減りもしない）
+          rows.forEach((x, i) => rows.forEach((y, j) => {
+            if (j <= i || x.pos === y.pos || !canPos(x.name, y.pos) || !canPos(y.name, x.pos)) return;
+            tryMove(0, set(set(rows, x, y.pos), y, x.pos), NO_COST, (why) => {
+              const px = x.pos, py = y.pos;
+              moveTo(x, py); moveTo(y, px);
+              fixLines.push(`${dLabel} ${x.name} ${px}→${py} ／ ${y.name} ${py}→${px}（${why}）`);
+            });
+          }));
+
+          // イ) まだ入っていない人と交代（直接、または1人ずらして）
+          idle.forEach(z => rows.forEach(v => {
+            if (!victimOk(v.name)) return;
+            const onlyDay = assignedCount[v.name] <= 1;   // その週ここしか入っていない人
+            const vCost = [onlyDay ? 1 : 0, isBack(v.name, day) ? 0 : 1, -availDays[v.name], -fillRate(v.name),
+                           -assignedCount[v.name], -rankOf(v.name)];
+            const tryIn = (kind, nrows, apply) => {
+              // ホールリーダーを外して「ホールリーダーがいない日」にしてしまわない
+              if (isHL(v.name) && !nrows.some(r => r.pos === 'R2' && isHL(r.name))) return;
+              const zE = nrows.find(r => r.name === z.name);
+              tryMove(kind, nrows, vCost.concat([rankOf(z.name), fillRate(z.name), lastOK(zE) ? 0 : 1]), apply, onlyDay);
+            };
+            if (canPos(z.name, v.pos)) {
+              tryIn(1, rows.filter(r => r !== v).concat([entryFor(z, day, v.pos)]), (why) => {
+                const p = v.pos;
+                swapIn(z, v, p);
+                fixLines.push(`${dLabel} ${p}: ${v.name} → ${z.name}（${why}）`);
+              });
+            }
+            rows.forEach(x => {
+              if (x === v || x.pos === v.pos || !canPos(x.name, v.pos) || !canPos(z.name, x.pos)) return;
+              tryIn(2, set(rows.filter(r => r !== v), x, v.pos).concat([entryFor(z, day, x.pos)]), (why) => {
+                const px = x.pos, pv = v.pos;
+                moveTo(x, pv);
+                swapIn(z, v, px);
+                fixLines.push(`${dLabel} ${pv}: ${v.name} → ${x.name}（${px}から移動）／ ${px}: ${z.name}（${why}）`);
+              });
+            });
+          }));
+
+          if (!best) break;
+          const why = best.sc.map((v, i) => (TRIGGER[i] && v > cur[i]) ? SCORE_LABEL[i] : '')
+            .filter(Boolean).join('・') + 'のため';
+          best.apply(why);
+        }
+        if (!dayScore(results.filter(r => r.day === day))[0]) hlShort.push(dLabel);
+      }
+
       // ===== 2部（16時〜L）の割り当て =====
       //  ・1部を全部決めてから検討する
       //  ・K（調理場）は1部・2部を通してK。時間は 9-L
@@ -1560,8 +1768,6 @@
         const m = meta[r.name] || {};
         return (m.positions2 || []).indexOf(p) >= 0 && r.tcEnd > PART1_END;
       };
-      const mustT = (name) => !!(meta[name] || {}).t2always;      // 1部W以外の日は必ず2部T
-      const helpT = (name) => !!(meta[name] || {}).t2extra;        // 2部Tへヘルプ（表記なし）
 
       for (let day = 0; day < 7; day++) {
         if (closed.has(day)) continue;
@@ -1602,30 +1808,40 @@
           if (tPicked.length >= PART2_T) return;
           if (mustT(r.name) && tOk(r)) take(r);
         });
-        // ② 1部がTの人（そのまま続ける）
+        // ② 1部がTで、ラストまで残れる人（そのまま続ける）
         todays.forEach(r => {
           if (tPicked.length >= PART2_T) return;
-          if (r.pos === 'T' && tOk(r)) take(r);
+          if (r.pos === 'T' && lastOK(r) && tOk(r)) take(r);
         });
         // ③ 応援Tが来る日は、入れ替わりで上がる役として R2 を最低1人入れる
+        //    （ラストまで残れない人を先に。○の人にはラストまで残ってもらう）
         if (helper && tPicked.length < PART2_T && !tPicked.some(isR2)) {
           const r2c = todays.filter(r => tOk(r) && isR2(r))
-            .sort((a, b) => second[a.name] - second[b.name] || assignedCount[b.name] - assignedCount[a.name])[0];
+            .sort((a, b) => (lastOK(a) ? 1 : 0) - (lastOK(b) ? 1 : 0)
+                         || second[a.name] - second[b.name] || assignedCount[b.name] - assignedCount[a.name])[0];
           if (r2c) take(r2c);
         }
-        // ④ 残りは2部の回数が少ない人から（均等化）
+        // ④ 残りは ○（ラストまで残れる人）が先。△で途中で上がる人は後（区分は見ない）
+        //    同じなら遅くまでいられる人 → 1部からTの人 → 2部の回数が少ない人（均等化）
         todays.filter(tOk)
-          .sort((a, b) => second[a.name] - second[b.name] || assignedCount[b.name] - assignedCount[a.name])
+          .sort((a, b) => (lastOK(b) ? 1 : 0) - (lastOK(a) ? 1 : 0)
+                       || b.tcEnd - a.tcEnd
+                       || (a.pos === 'T' ? 0 : 1) - (b.pos === 'T' ? 0 : 1)
+                       || second[a.name] - second[b.name] || assignedCount[b.name] - assignedCount[a.name])
           .forEach(r => { if (tPicked.length < PART2_T) take(r); });
 
         if (tPicked.length < PART2_T) {
           for (let k = tPicked.length; k < PART2_T; k++) shortages2.push(`${dayName} 2部T`);
         } else if (helper) {
           // ⑤ 応援Tが来る日は、入れ替わりで3名のうち1人が16:30で上がる
-          //    **区分が低い人から**上がってもらう（優先度の高い人はラストまで残す）。
+          //    まず**ラストまで残れない人**（△で早く上がる人ほど先）。
+          //    その次は**区分が低い人から**上がってもらう（優先度の高い人はラストまで残す）。
           //    同じ区分なら R2 からTに入った人 → 2部の回数が多い人。必ずTの人は除く
           const cands = tPicked.filter(x => !mustT(x.name));
           cands.sort((a, b) => {
+            const la = lastOK(a) ? 1 : 0, lb = lastOK(b) ? 1 : 0;
+            if (la !== lb) return la - lb;
+            if (!la && a.tcEnd !== b.tcEnd) return a.tcEnd - b.tcEnd;
             const rk = rankOf(b.name) - rankOf(a.name);   // rankOf が大きい＝区分が低い
             if (rk !== 0) return rk;
             const ar = isR2(a) ? 0 : 1, br = isR2(b) ? 0 : 1;
@@ -1638,7 +1854,8 @@
         // ---- 2部Wの補充（16時で上がる1部Wの人数分） ----
         const wPicked = [];
         todays.filter(r => !r.pos2 && !r.help2 && canPart2(r, 'W'))
-          .sort((a, b) => second[a.name] - second[b.name] || assignedCount[b.name] - assignedCount[a.name])
+          .sort((a, b) => (lastOK(b) ? 1 : 0) - (lastOK(a) ? 1 : 0) || b.tcEnd - a.tcEnd
+                       || second[a.name] - second[b.name] || assignedCount[b.name] - assignedCount[a.name])
           .forEach(r => { if (wPicked.length < needW) { r.pos2 = 'W'; wPicked.push(r); } });
         if (wPicked.length < needW) {
           for (let k = wPicked.length; k < needW; k++) shortages2.push(`${dayName} 2部W`);
@@ -1666,8 +1883,7 @@
       const zeroResults = [];    // { name, day, pos0 }
       const zeroShort = {};      // day → つけられなかった0部の配列
       const zeroShortLines = [];
-      // K・T はもともと始業9時なので0部はつけない
-      const NO_ZERO = ['K', 'T'];
+      // K・T はもともと始業9時なので0部はつけない（NO_ZERO は上の「手当て」で定義）
       const zeroOk = (r) => NO_ZERO.indexOf(r.pos) < 0;
 
       for (let day = 0; day < 7; day++) {
@@ -1687,7 +1903,7 @@
         if (morning.length < MORNING_BASE) wanted.push('Rj', 'Tj');
         wanted.push('m');
 
-        wanted.forEach(p => {
+        wanted.forEach((p, wi) => {
           const anytime = App.POSITIONS0_ANYTIME.indexOf(p) >= 0;
           // m：1部がWの人限定。時間不問なので C/1F/Rj/Tj との兼任も OK
           // それ以外：9時から出られる人から、1人1役
@@ -1695,7 +1911,16 @@
             ? todays.filter(r => r.pos === 'W' && can0(r, 'm'))
             : morning.filter(r => zeroOk(r) && !used.has(r.name) && can0(r, p));
           if (!pool.length) { (zeroShort[day] = zeroShort[day] || []).push(p); return; }
+          // この人に p をつけると、あとの C/1F/Rj/Tj をできる人がいなくなるなら後回し
+          //（例：1F をできるのが1人だけなのに、その人を C に取ってしまうと 1F が空く）
+          const starves = (c) => !anytime && wanted.slice(wi + 1).some(q => {
+            if (App.POSITIONS0_ANYTIME.indexOf(q) >= 0) return false;
+            const rest = morning.filter(r => zeroOk(r) && !used.has(r.name) && can0(r, q));
+            return rest.length > 0 && rest.every(r => r === c);
+          });
           pool.sort((a, b) => {
+            const sa = starves(a) ? 1 : 0, sb = starves(b) ? 1 : 0;
+            if (sa !== sb) return sa - sb;
             const ra = rankOf(a.name), rb = rankOf(b.name);   // ★★最優先 > ★優先 > 主婦 > 無印 > 学生
             if (ra !== rb) return ra - rb;
             return zeroCount[a.name] - zeroCount[b.name] || assignedCount[b.name] - assignedCount[a.name];
@@ -1791,6 +2016,14 @@
       if (noPriLines.length) msg += `\n\n【曜日で後回しにした人】\n${noPriLines.join('\n')}`;
       if (swapped.length) msg += `\n\n【★優先メンバーのため入れ替え】\n${swapped.join('\n')}`;
       if (dSwapped.length) msg += `\n\n【d（デシャップ）のため入れ替え】\n${dSwapped.join('\n')}`;
+      if (fixLines.length) {
+        msg += `\n\n【ホールリーダー・朝の準備（C/1F）・2部のための入れ替え】\n${fixLines.join('\n')}`;
+        msg += `\n→「2部ラスト」＝2部Tにラストまで残れる人（○の人）を増やすための入れ替えです`;
+      }
+      if (hlShort.length) {
+        msg += `\n\n【ホールリーダーを 1部R2 に入れられなかった日】\n${hlShort.join(' / ')}`;
+        msg += `\n→ その日のR2を手で直してください`;
+      }
       if (dShort.length) {
         msg += `\n\n【d（デシャップ）ができる人を入れられなかった日】\n${dShort.join(' / ')}`;
         msg += `\n→ スタッフ管理で「d」に印を付けた人（R2ができる人）を増やすか、その日のR2を手で直してください`;
@@ -2040,6 +2273,7 @@ ${head}${rest}
       txt += `## ポジションと1日の必要人数（計9名にできるだけ近づける）\n`;
       txt += `- K: 3人\n- R2: 3人（**うち1人は必ず《 d 》が付いている人**）\n- W: 2人\n- T: 1人\n- R1: 0人（使わない）\n`;
       txt += `- 《 d 》はデシャップができる人の印。**表記はしない**（ポジションは R2 と書く）。1日1人以上必要\n`;
+      txt += `- 《ホールリーダー》の人が出勤する日は、**そのうち最低1人を 1部R2** にする（表記はしない）\n`;
       txt += `- 人数不足の場合の優先順位: ①K3人 ②R2 2人（《 d 》の人を優先） ③W1人 ④残り\n`;
       txt += `- シフトに入れる優先順位は **【★★最優先】> 【★優先】> 【主婦】> 無印 > 【学生】**。ただし**定員（計9名）は絶対に超えない**\n`;
       txt += `- 各人の「週□回まで」が書いてあれば、その回数を**上限**とする\n`;
@@ -2064,7 +2298,9 @@ ${head}${rest}
       txt += `- 《応援T》の人は2部Tへヘルプに行くが、**pos に T は書かない**（1部のポジションのまま）。\n`;
       txt += `  ただし終業は L まで（例: \"K\" で 9-L）。3名には数えない。1部がWなら普通にWを続ける\n`;
       txt += `  《応援T》が出勤する日だけ、3名のうち1人を \"R2→（T\" -1630 にして入れ替わりで上がらせる\n`;
-      txt += `  **先に上がる1人は、区分（優先順位）が一番低い人から選ぶ**（順位が高い人はラストまで残す）。《必ずT》の人は選ばない\n`;
+      txt += `  **先に上がる1人は、まずラストまで残れない△の人**。いなければ区分（優先順位）が一番低い人（順位が高い人はラストまで残す）。《必ずT》の人は選ばない\n`;
+      txt += `- **2部（T・W）は ○の人（ラストまで残れる人）を △の人より優先**する。区分（★優先など）に関係なく全員に当てはめる。\n`;
+      txt += `  ○の人が1部に入っていなければ、2部に残れない△の人と交代して入れてよい（★★最優先・★優先の人は外さない）\n`;
       txt += `- 2部W = 1部Wのうち16時で上がる人がいれば、その人数分だけ別の人をつける\n`;
       txt += `- 《必ずT》以外は、2部に入る回数が週でできるだけ均等になるように選ぶ\n\n`;
       txt += `## 0部（9:00〜9:30 朝の準備）\n`;
@@ -2079,7 +2315,8 @@ ${head}${rest}
       txt += `  その場合 pos0 は \"C・m\" のように・でつなぐ（9時からCで掃除 → 10時からmで盛り付け、start は \"9\"）\n`;
       txt += `- Rj（レストラン準備ヘルプ）・Tj（テイクアウト準備）は **9時から出られる人が${App.getMorningBase()}人未満の日だけ**発生する（1人ずつ）\n`;
       txt += `- **つける順番は 【★★最優先】> 【★優先】> 【主婦】> 無印 > 【学生】**。同じ区分なら週の0部回数が少ない人から\n`;
-      txt += `- 0部は **1人1役**。できる人がいなければ**無理につけず、その日は空欄のまま**にして理由を書く\n\n`;
+      txt += `- **C と 1F は毎日つける**。9時から出られる人が K・T にしかいなければ、1部の配置を入れ替えて R2/R1/W に回す\n`;
+      txt += `- 0部は **1人1役**。それでもできる人がいなければ**無理につけず、その日は空欄のまま**にして理由を書く\n\n`;
       txt += `## 出勤時間のルール\n`;
 
       txt += `- **基本の始業**: K・T = **9**、R2 = **930**、W = **10**\n`;
@@ -2098,6 +2335,7 @@ ${head}${rest}
         const p1 = (m.positions || []).filter(p => p !== 'R2d');
         txt += ` / 1部: ${p1.length ? p1.join(',') : '未設定'}`;
         if (App.canDesh(meta, r.name)) txt += ' 《 d 》';
+        if (App.isHallLeader(meta, r.name)) txt += ' 《ホールリーダー》';
         txt += ` / 2部: ${m.positions2 && m.positions2.length ? m.positions2.join(',') : 'なし'}`;
         if (m.t2always) txt += ' 《必ずT》';
         if (m.t2extra) txt += ' 《応援T・表記なし》';

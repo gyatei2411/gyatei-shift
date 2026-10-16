@@ -208,7 +208,7 @@ const App = {
   },
 
   // アプリのバージョン（更新したらここを書き換える）
-  VERSION: '2026.10.14',
+  VERSION: '2026.10.16',
   lastSyncAt: null,   // Firebase から最後に受け取った時刻
 
   KEYS: {
@@ -263,6 +263,14 @@ const App = {
     const m = (meta || {})[name] || {};
     // 古い設定（できるポジションに R2d が残っている人）も d ができる人として扱う
     return !!(m.desh || (m.positions || []).indexOf('R2d') >= 0);
+  },
+
+  /* ホールリーダー（2026/10/16）
+     d と同じく「その人の印」（staffmeta.hallLeader）。表には出さない。
+     自動割り当てでは、ホールリーダーが1人でも出勤する日は
+     **そのうち最低1人を 1部R2 に入れる**（shift-view.html の「1部を決めたあとの手当て」） */
+  isHallLeader(meta, name) {
+    return !!(((meta || {})[name] || {}).hallLeader);
   },
 
   // 表示用。古い週に残っている「R2d」は「R2」として見せる（データは書き換えない）
@@ -370,7 +378,8 @@ const App = {
     const re = /([\u6708\u706b\u6c34\u6728\u91d1\u571f\u65e5][\u6708\u706b\u6c34\u6728\u91d1\u571f\u65e5\u66dc\u30fb\u3001,\uff65\s\u3000]*)(?:\u306f|\u306e\u307f|\u3060\u3051)?\s*(?:\u512a\u5148\u3057\u306a\u3044|\u512a\u5148\u305b\u305a|\u512a\u5148\u306a\u3057|\u5f8c\u56de\u3057|\u3042\u3068\u307e\u308f\u3057)/g;
     let m;
     while ((m = re.exec(t)) !== null) {
-      for (const c of m[1]) {
+      // 「土曜日は後回し」の「曜日」の日を日曜と読まない（2026/10/16 まで 土・日 になっていた）
+      for (const c of m[1].replace(/曜日/g, '曜')) {
         const i = App.DOW_LABELS.indexOf(c);
         if (i >= 0 && out.indexOf(i) < 0) out.push(i);
       }

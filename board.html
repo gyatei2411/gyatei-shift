@@ -817,6 +817,24 @@
       }, () => {});   // ルール未設定なら黙って何も出さない
     }
 
+    /* 表示する週のスタッフの回答（○△✕未・希望時間）を Firebase から受け取る（2026/10/16）
+       以前は購読していなかったので、回答は「その端末で管理画面かシフト表を開いたとき」の
+       手元の写ししかなかった。店のタブレットでは**未確定の週の 未・△ が出なかった**
+       （11/8 の西川さんの「未」など）。確定した週は確定時の写し（conf.avail）を使うので出ていた */
+    const repSubs = new Set();
+    let repTimer = null;
+    function watchReplies() {
+      if (!App.isOnline()) return;
+      reqIds.forEach(id => {
+        if (repSubs.has(id)) return;
+        repSubs.add(id);
+        App.subscribeReplies(id, () => {
+          clearTimeout(repTimer);
+          repTimer = setTimeout(render, 300);   // 週をまたいでまとめて届くので1回にまとめる
+        });
+      });
+    }
+
     // 表示できる週を集める（確定済みを優先。無ければ全依頼）
     function pickWeeks() {
       const prevId = reqIds[cursor];
@@ -852,6 +870,7 @@
         if (idx < 0) idx = reqIds.length - 1;
       }
       cursor = Math.max(0, idx);
+      watchReplies();
     }
 
     function moveWeek(step) {
