@@ -6,17 +6,13 @@
    par   … 2階・1階の冷蔵庫の定数。補充メモの数量の右に出す
    teisu … 総在庫の定数。総在庫の数量の右に出す。これと同じか少ないと要注文。無い商品は補充メモだけ
    ret   … 数ではなく「Tへ返却」のチェックだけの商品 */
+// 並びは冷蔵庫の順（2026/10/17 社長指定：オレンジジュースのあとに ゆずサイダー・ケルシュ・アルト・抹茶ビール・ぎゃあてい純米酒）
 const DEFAULT_DRINKS = [
-  { id: 'kolsch',     name: 'ケルシュ（青）',       par: '10',  teisu: 20 },
-  { id: 'alt',        name: 'アルト（赤）',         par: '10',  teisu: 20 },
-  { id: 'matcha',     name: '抹茶ビール',           par: '5',   teisu: 20 },
-  { id: 'junmai',     name: '純米酒',               par: '5',   teisu: 10 },
   { id: 'asahi',      name: 'アサヒスーパードライ', par: '10',  teisu: 20 },
   { id: 'yuzuchu',    name: 'ゆずチューハイ',       par: '5',   teisu: 10 },
   { id: 'umechu',     name: '梅チューハイ',         par: '5',   teisu: 10 },
   { id: 'gyokuro',    name: '玉露梅酒',             par: '5',   teisu: 5 },
   { id: 'hannari',    name: 'はんなり梅酒',         par: '5',   teisu: 5 },
-  { id: 'yuzucider',  name: 'ゆずサイダー',         par: '10',  teisu: 20 },
   { id: 'cola',       name: 'コーラ',               par: '10',  teisu: 20 },
   { id: 'allfree',    name: 'オールフリー',         par: '8',   teisu: 10 },
   { id: 'jurakudai',  name: '聚楽第',               par: '1',   teisu: 1 },
@@ -24,6 +20,11 @@ const DEFAULT_DRINKS = [
   { id: 'ine',        name: '伊根満開',             par: '1',   teisu: 1 },
   { id: 'gessho',     name: 'げっしょう',           par: '1',   teisu: 1 },
   { id: 'orange',     name: 'オレンジジュース',     par: '2/3', teisu: 2 },
+  { id: 'yuzucider',  name: 'ゆずサイダー',         par: '10',  teisu: 20 },
+  { id: 'kolsch',     name: 'ケルシュ（青）',       par: '10',  teisu: 20 },
+  { id: 'alt',        name: 'アルト（赤）',         par: '10',  teisu: 20 },
+  { id: 'matcha',     name: '抹茶ビール',           par: '5',   teisu: 20 },
+  { id: 'junmai',     name: 'ぎゃあてい純米酒',     par: '5',   teisu: 10 },
   { id: 'tansan',     name: '炭酸',                 par: '3' },
   { id: 'arashicola', name: '嵐山コーラ',           par: '1' },
   { id: 'shiso',      name: 'しそジュース',         ret: true },

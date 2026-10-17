@@ -16,7 +16,7 @@
   <script src="firebase-config.js"></script>
   <script src="shared.js"></script>
   <!-- ?v= は、ブラウザが覚えている古い zaiko-items.js を使わせないための目印。このファイルを変えたら3ページとも数字を変える -->
-  <script src="zaiko-items.js?v=20261012b"></script>
+  <script src="zaiko-items.js?v=20261017"></script>
   <style>
     /* この画面は style.css を使わない（立ったまま片手で押す前提で、ボタンを大きくしてある） */
     :root {
@@ -314,60 +314,73 @@ let pendingMaster = false;
      done:  { f2|f1|bihin: { at: 'HH:MM' } },      // 入力完了を押した時刻
      summary: { at, shortage: [ { tab, name, teisu, zaiko, fusoku } ] }   // 15:30のルーティンが読む
    }
-   日付ごとに別の場所へ書くので、次の日に開くと空欄から始まる。 */
+   日付ごとに別の場所へ書くので、次の日に開くと空欄から始まる。
+
+   ★ 入力完了を押すまでは「下書き」（2026/10/17 社長指定。誤って押した数がそのまま確定しないように）
+   打った数は、まずこの端末の下書き（draft）にだけ入れる。Firebase（conf）へ書くのは「入力完了」を押したときだけ。
+   ほかのスマホ・在庫一覧・15:30の報告に出るのは、入力完了で確定した数だけ。
+   下書きは localStorage に置くので、画面を閉じても同じ端末で開けば続きから入れられる（日付が変わると消える）。
+   draft = { f2|f1|bihin: { id: { ho|z|ret: 値（null＝空欄に戻した） } } } */
 let tabKey = 'f2';
 let dayKey = '';
-let data = {};
+let conf = {};    // 確定した数（Firebase）
+let draft = {};   // この端末の下書き（まだ確定していない数）
 let online = false;
 let dayRef = null;
-let summaryTimer = null;
 
 const $ = id => document.getElementById(id);
 const tabOf = k => TABS.find(t => t.key === k);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const LOCAL = d => 'gy_zaiko_' + d;
+const DRAFT = d => 'gy_zaiko_draft_' + d;
+const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
 
-function val(tk, id, f) {
-  const r = data[tk] && data[tk][id];
+function confVal(tk, id, f) {
+  const r = conf[tk] && conf[tk][id];
   return r ? r[f] : undefined;
 }
+// 画面に出す数＝下書きがあれば下書き、無ければ確定した数
+function val(tk, id, f) {
+  const r = draft[tk] && draft[tk][id];
+  if (has(r, f)) return r[f] === null ? undefined : r[f];
+  return confVal(tk, id, f);
+}
+function hasDraft(tk) { return !!draft[tk] && Object.keys(draft[tk]).length > 0; }
 
 function setField(tk, id, f, v) {
-  const t = data[tk] = data[tk] || {};
+  const t = draft[tk] = draft[tk] || {};
   const r = t[id] = t[id] || {};
-  if (v === undefined) delete r[f]; else r[f] = v;
-  // 入力完了のあとで直したら「修正あり」にする（もう一度 入力完了を押すまで「完了済み✓」は出さない）
-  const d = data.done && data.done[tk];
-  if (d && !d.dirty) {
-    d.dirty = true;
-    if (online) dayRef.child('done/' + tk + '/dirty').set(true).catch(showError);
-  }
-  if (online) {
-    dayRef.child(tk + '/' + id + '/' + f).set(v === undefined ? null : v).then(showSaved).catch(showError);
-    clearTimeout(summaryTimer);
-    summaryTimer = setTimeout(writeSummary, 1000);
-  } else {
-    saveLocal();
-    showSaved();
-  }
+  // 確定した数と同じに戻したら、下書きから外す（「まだ確定していない」を出しっぱなしにしない）
+  if (v === confVal(tk, id, f)) delete r[f];
+  else r[f] = v === undefined ? null : v;
+  if (!Object.keys(r).length) delete t[id];
+  if (!Object.keys(t).length) delete draft[tk];
+  saveDraft();
+  showSaved();
   paintAll();
 }
 
-// 打つたびに保存しているのが見て分かるように、最後に保存できた時刻を上に出す
 function showSaved() {
   const d = new Date();
-  // 「保存ずみ」と出すと完了したように見えるので、途中の保存は「一時保存」と呼ぶ。完了の印は入力完了を押したときだけ
-  $('conn').textContent = (online ? '🟢 一時保存 ' : '⚪ この端末に一時保存 ') + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+  // 下書きは確定ではないので「保存」とは呼ばない。確定は入力完了を押したときだけ
+  $('conn').textContent = '📝 下書き ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 
+function saveDraft() {
+  try {
+    if (Object.keys(draft).length) localStorage.setItem(DRAFT(dayKey), JSON.stringify(draft));
+    else localStorage.removeItem(DRAFT(dayKey));
+  } catch (e) {}
+}
 function saveLocal() {
-  try { localStorage.setItem(LOCAL(dayKey), JSON.stringify(data)); } catch (e) {}
+  try { localStorage.setItem(LOCAL(dayKey), JSON.stringify(conf)); } catch (e) {}
 }
 
+// 要注文は確定した数（conf）だけで数える。下書きは入れない
 function shortage() {
   const out = [];
   TABS.filter(t => t.z).forEach(t => t.items.forEach(it => {
-    const z = val(t.key, it.id, 'z');
+    const z = confVal(t.key, it.id, 'z');
     // 定数と同じ数になったら注文する（定数より多いときだけ足りている）
     if (it.teisu != null && typeof z === 'number' && z <= it.teisu) {
       out.push({ tab: t.label, name: it.name, teisu: it.teisu, zaiko: z, fusoku: it.teisu - z });
@@ -375,17 +388,13 @@ function shortage() {
   }));
   return out;
 }
-function writeSummary() {
-  clearTimeout(summaryTimer);
-  if (!online) return;
-  dayRef.child('summary').set({ at: new Date().toISOString(), shortage: shortage() }).catch(showError);
-}
+function summaryNow() { return { at: new Date().toISOString(), shortage: shortage() }; }
 
 function remainOf(t) {
   if (!t.z) return 0;
   return t.items.filter(it => it.teisu != null && val(t.key, it.id, 'z') === undefined).length;
 }
-function doneAt(tk) { return data.done && data.done[tk] ? data.done[tk].at : ''; }
+function doneAt(tk) { return conf.done && conf.done[tk] ? conf.done[tk].at : ''; }
 
 /* ===== 描画 ===== */
 function stepperHtml(f, label) {
@@ -425,7 +434,7 @@ function render() {
 function paintAll() {
   const t = tabOf(tabKey);
   $('tabs').innerHTML = TABS.map(x => {
-    const done = doneAt(x.key), n = remainOf(x);
+    const done = doneAt(x.key) && !hasDraft(x.key), n = remainOf(x);
     const badge = done ? '<span class="n done">✓</span>' : '<span class="n">' + (n || '') + '</span>';
     return '<button type="button" class="tab' + (x.key === tabKey ? ' active' : '') + '" data-tab="' + x.key + '">' + x.label + badge + '</button>';
   }).join('');
@@ -454,16 +463,20 @@ function paintAll() {
     if (z === 'ok' || typeof z === 'number') el.classList.add('ok');
   });
 
-  const done = doneAt(tabKey), b = $('banner');
-  if (done) {
+  const done = doneAt(tabKey), b = $('banner'), pend = hasDraft(tabKey);
+  if (pend) {
+    // 下書きがある＝まだ確定していない。入力完了を押すまで、ほかのスマホにも報告にも出ない
     b.style.display = 'block';
-    const dirty = data.done[tabKey].dirty === true;
-    b.classList.toggle('dirty', dirty);
-    b.innerHTML = dirty
-      ? '入力完了のあとに修正あり<small>下の「もう一度 入力完了」を押すと、直した内容で完了になります</small>'
-      : '✓ 入力完了済み<small>' + esc(done) + ' に完了。納品などで数が変わったら、そのまま直せます</small>';
-    $('submit').textContent = dirty ? '直した内容でもう一度 入力完了' : '✓ 入力完了済み';
-    $('submit').classList.toggle('done', !dirty);
+    b.classList.add('dirty');
+    b.innerHTML = 'まだ確定していません<small>下の「' + (done ? 'もう一度 ' : '') + '入力完了」を押すと確定して、ほかのスマホにも出ます</small>';
+    $('submit').textContent = done ? '直した内容でもう一度 入力完了' : t.label + ' を入力完了';
+    $('submit').classList.remove('done');
+  } else if (done) {
+    b.style.display = 'block';
+    b.classList.remove('dirty');
+    b.innerHTML = '✓ 入力完了済み<small>' + esc(done) + ' に確定。数を直したら、もう一度 入力完了を押すと確定します</small>';
+    $('submit').textContent = '✓ 入力完了済み';
+    $('submit').classList.add('done');
   } else {
     b.style.display = 'none';
     $('submit').textContent = t.label + ' を入力完了';
@@ -481,7 +494,7 @@ function toast(msg) {
 function showError(err) {
   const el = $('error');
   el.style.display = 'block';
-  el.textContent = '保存できませんでした。電波を確かめて、もう一度入れ直してください。（' + (err && err.message ? err.message : err) + '）';
+  el.textContent = '確定できませんでした。電波を確かめて、もう一度「入力完了」を押してください。入れた数はこの端末に残っています。（' + (err && err.message ? err.message : err) + '）';
 }
 
 /* ===== 操作 ===== */
@@ -649,11 +662,30 @@ $('confirm-go').addEventListener('click', () => {
   const t = tabOf(tabKey);
   const d = new Date(), at = d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
   // 補充メモだけ入れて完了にする日があるので、空欄の総在庫には何も入れない
-  (data.done = data.done || {})[t.key] = { at: at };
+  // このタブの下書きを確定した数（conf）へ移してから、まとめて1回で書く
+  const upd = {};
+  const dt = draft[t.key] || {};
+  Object.keys(dt).forEach(id => Object.keys(dt[id]).forEach(f => {
+    const v = dt[id][f];
+    upd[t.key + '/' + id + '/' + f] = v;
+    const r = ((conf[t.key] = conf[t.key] || {})[id] = conf[t.key][id] || {});
+    if (v === null) delete r[f]; else r[f] = v;
+  }));
+  (conf.done = conf.done || {})[t.key] = { at: at };
+  upd['done/' + t.key] = { at: at };
+  upd['summary'] = summaryNow();
+  const finish = () => {
+    delete draft[t.key];
+    saveDraft();
+    $('conn').textContent = '🟢 確定 ' + at;
+    paintAll();
+  };
   if (online) {
-    dayRef.child('done/' + t.key).set({ at: at }).then(writeSummary).catch(showError);
+    $('conn').textContent = '確定中…';
+    dayRef.update(upd).then(finish).catch(showError);
   } else {
     saveLocal();
+    finish();
   }
   $('confirm').classList.remove('show');
   paintAll();
@@ -670,25 +702,32 @@ function attach() {
   dayKey = App.todayLocal();
   const d = new Date();
   $('today').textContent = d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate() + '（' + '日月火水木金土'.charAt(d.getDay()) + '）';
-  data = {};
+  conf = {};
+  draft = {};
+  try {
+    draft = JSON.parse(localStorage.getItem(DRAFT(dayKey)) || '{}') || {};
+    // 前の日までの下書きはこの端末から消す（次の日は空欄から）
+    Object.keys(localStorage).filter(k => k.indexOf('gy_zaiko_draft_') === 0 && k !== DRAFT(dayKey)).forEach(k => localStorage.removeItem(k));
+  } catch (e) {}
   if (online) {
     if (dayRef) dayRef.off();
     dayRef = App.fbDB.ref('zaiko/days/' + dayKey);
-    dayRef.on('value', snap => { data = snap.val() || {}; $('error').style.display = 'none'; paintAll(); }, showError);
+    dayRef.on('value', snap => { conf = snap.val() || {}; $('error').style.display = 'none'; paintAll(); }, showError);
   } else {
     try {
-      data = JSON.parse(localStorage.getItem(LOCAL(dayKey)) || '{}');
+      conf = JSON.parse(localStorage.getItem(LOCAL(dayKey)) || '{}');
       // 前の日までの分はこの端末から消す
       Object.keys(localStorage).filter(k => k.indexOf('gy_zaiko_2') === 0 && k !== LOCAL(dayKey)).forEach(k => localStorage.removeItem(k));
     } catch (e) {}
   }
+  if (Object.keys(draft).length) $('conn').textContent = '📝 下書きあり';
   render();
 }
 
 function init() {
   try { const t = localStorage.getItem('gy_zaiko_tab'); if (tabOf(t)) tabKey = t; } catch (e) {}
   online = App.initFirebase();
-  if (online) $('conn').textContent = '🟢 同期中';
+  if (online) $('conn').textContent = '🟢 接続中';
   attach();
   // 設定ページで商品・定数が変わったら作り直す（打っている最中は待つ）
   watchZaikoMaster(() => {
