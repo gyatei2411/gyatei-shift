@@ -558,16 +558,17 @@
            `<th style="padding:8px 10px;border-bottom:2px solid #CBD5E1">+500の日</th>` +
            `<th style="padding:8px 10px;border-bottom:2px solid #CBD5E1">+1000の日</th>` +
            `<th style="padding:8px 10px;border-bottom:2px solid #CBD5E1">UP合計</th>` +
+           `<th style="padding:8px 10px;border-bottom:2px solid #CBD5E1" title="給与の勤怠記入表の「繁忙手当 ＠500×回数」の回数。&#10;+500の日 = 1回、+1000の日 = 2回">繁忙手当<br>（回）</th>` +
            `<th style="padding:8px 10px;border-bottom:2px solid #CBD5E1">欠勤</th>` +
            `<th style="text-align:left;padding:8px 10px;border-bottom:2px solid #CBD5E1">出勤した日</th>` +
            `</tr></thead><tbody>`;
 
-      const lines = ['名前\t出勤\t+500の日\t+1000の日\tUP合計(円)\t欠勤'];
-      const tot = { days: 0, up500: 0, up1000: 0, bonus: 0, absent: 0 };
+      const lines = ['名前\t出勤\t+500の日\t+1000の日\tUP合計(円)\t繁忙手当(回)\t欠勤'];
+      const tot = { days: 0, up500: 0, up1000: 0, bonus: 0, upCount: 0, absent: 0 };
 
       rows.forEach(x => {
         tot.days += x.days; tot.up500 += x.up500; tot.up1000 += x.up1000;
-        tot.bonus += x.bonus; tot.absent += x.absent;
+        tot.bonus += x.bonus; tot.upCount += x.upCount; tot.absent += x.absent;
         const c = 'padding:7px 10px;border-bottom:1px solid #E2E8F0;text-align:center';
         // 出勤0日の人は薄く出す（行は残す）
         h += `<tr${x.days || x.absent ? '' : ' style="color:var(--muted)"'}>` +
@@ -576,24 +577,25 @@
           `<td style="${c}${x.up500 ? ';background:#FEF3C7;color:#92400E;font-weight:800' : ''}">${x.up500 || '・'}</td>` +
           `<td style="${c}${x.up1000 ? ';background:#FDBA74;color:#7C2D12;font-weight:800' : ''}">${x.up1000 || '・'}</td>` +
           `<td style="${c};font-weight:800">${x.bonus ? x.bonus.toLocaleString() + '円' : '・'}</td>` +
+          `<td style="${c};font-weight:800">${x.upCount}</td>` +
           `<td style="${c}${x.absent ? ';color:#DC2626;font-weight:800' : ''}">${x.absent || '・'}</td>` +
           `<td style="padding:7px 10px;border-bottom:1px solid #E2E8F0;font-size:0.78rem;color:var(--muted)">` +
             x.detail.map(o => `<span style="white-space:nowrap;margin-right:6px${o.up ? ';font-weight:800;color:#92400E' : ''}">` +
               `${md(o.date)}${o.up ? '+' + o.up : ''}</span>`).join('') + `</td>` +
           `</tr>`;
-        lines.push([x.name, x.days, x.up500, x.up1000, x.bonus, x.absent].join('\t'));
+        lines.push([x.name, x.days, x.up500, x.up1000, x.bonus, x.upCount, x.absent].join('\t'));
       });
 
       const cf = 'padding:8px 10px;border-top:2px solid #CBD5E1;text-align:center;font-weight:800';
       h += `<tr style="background:#F8FAFC">` +
         `<td style="padding:8px 10px;border-top:2px solid #CBD5E1;font-weight:800">合計 ${rows.filter(x => x.days).length}名</td>` +
         `<td style="${cf}">${tot.days}</td><td style="${cf}">${tot.up500}</td><td style="${cf}">${tot.up1000}</td>` +
-        `<td style="${cf}">${tot.bonus.toLocaleString()}円</td><td style="${cf}">${tot.absent}</td><td style="border-top:2px solid #CBD5E1"></td>` +
+        `<td style="${cf}">${tot.bonus.toLocaleString()}円</td><td style="${cf}">${tot.upCount}</td><td style="${cf}">${tot.absent}</td><td style="border-top:2px solid #CBD5E1"></td>` +
         `</tr>`;
       h += '</tbody></table></div>';
 
       area.innerHTML = h;
-      lines.push(['合計', tot.days, tot.up500, tot.up1000, tot.bonus, tot.absent].join('\t'));
+      lines.push(['合計', tot.days, tot.up500, tot.up1000, tot.bonus, tot.upCount, tot.absent].join('\t'));
       kintaiText = `【${kintaiY}年${kintaiM}月締め ${md(r.from)}〜${md(r.to)}】\n` + lines.join('\n');
     }
 

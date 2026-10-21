@@ -208,7 +208,7 @@ const App = {
   },
 
   // アプリのバージョン（更新したらここを書き換える）
-  VERSION: '2026.10.21',
+  VERSION: '2026.10.21-2',
   lastSyncAt: null,   // Firebase から最後に受け取った時刻
 
   KEYS: {
@@ -965,7 +965,7 @@ const App = {
   countAttendance(from, to) {
     const rows = {};
     const touch = (n) => rows[n] || (rows[n] = {
-      name: n, days: 0, up500: 0, up1000: 0, absent: 0, bonus: 0, detail: []
+      name: n, days: 0, up500: 0, up1000: 0, absent: 0, bonus: 0, upCount: 0, detail: []
     });
     App.getRequests().forEach(req => {
       const dates = App.weekDates(req.ws);
@@ -1003,6 +1003,8 @@ const App = {
     const list = Object.keys(rows).map(n => rows[n]);
     list.forEach(r => {
       r.bonus = r.up500 * 500 + r.up1000 * 1000;
+      // 繁忙手当の回数。給与の勤怠記入表は「＠500×回数」なので 500円の日=1回・1000円の日=2回
+      r.upCount = r.up500 + r.up1000 * 2;
       r.detail.sort((a, b) => a.date < b.date ? -1 : 1);
     });
     list.sort((a, b) => {
