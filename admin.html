@@ -543,7 +543,8 @@
              : '<span style="color:var(--muted)">まだ設定されていません（シフト表のUP行、またはタブレットの日付をタップ）</span>') +
            `</div>`;
 
-      if (!rows.length) {
+      // 名簿の人は出勤0日でも行がある（Excel に行をそろえて貼るため）。誰も出ていなければ表は出さない
+      if (!rows.some(x => x.days || x.absent)) {
         h += '<div class="empty-state">この期間の出勤データがありません。</div>';
         area.innerHTML = h;
         kintaiText = '';
@@ -568,7 +569,8 @@
         tot.days += x.days; tot.up500 += x.up500; tot.up1000 += x.up1000;
         tot.bonus += x.bonus; tot.absent += x.absent;
         const c = 'padding:7px 10px;border-bottom:1px solid #E2E8F0;text-align:center';
-        h += `<tr>` +
+        // 出勤0日の人は薄く出す（行は残す）
+        h += `<tr${x.days || x.absent ? '' : ' style="color:var(--muted)"'}>` +
           `<td style="padding:7px 10px;border-bottom:1px solid #E2E8F0;font-weight:800">${escapeHtml(x.name)}</td>` +
           `<td style="${c};font-weight:800">${x.days}</td>` +
           `<td style="${c}${x.up500 ? ';background:#FEF3C7;color:#92400E;font-weight:800' : ''}">${x.up500 || '・'}</td>` +
@@ -584,7 +586,7 @@
 
       const cf = 'padding:8px 10px;border-top:2px solid #CBD5E1;text-align:center;font-weight:800';
       h += `<tr style="background:#F8FAFC">` +
-        `<td style="padding:8px 10px;border-top:2px solid #CBD5E1;font-weight:800">合計 ${rows.length}名</td>` +
+        `<td style="padding:8px 10px;border-top:2px solid #CBD5E1;font-weight:800">合計 ${rows.filter(x => x.days).length}名</td>` +
         `<td style="${cf}">${tot.days}</td><td style="${cf}">${tot.up500}</td><td style="${cf}">${tot.up1000}</td>` +
         `<td style="${cf}">${tot.bonus.toLocaleString()}円</td><td style="${cf}">${tot.absent}</td><td style="border-top:2px solid #CBD5E1"></td>` +
         `</tr>`;

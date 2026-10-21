@@ -208,7 +208,7 @@ const App = {
   },
 
   // アプリのバージョン（更新したらここを書き換える）
-  VERSION: '2026.10.17',
+  VERSION: '2026.10.21',
   lastSyncAt: null,   // Firebase から最後に受け取った時刻
 
   KEYS: {
@@ -997,6 +997,9 @@ const App = {
       }
     });
     const order = App.getStaff();
+    // 名簿の人は 出勤0日でも1行出す（2026/10/21）。
+    //   勤怠のExcel（担当者名の並び）にそのまま貼るので、行がずれないようにするため
+    order.forEach(n => touch(n));
     const list = Object.keys(rows).map(n => rows[n]);
     list.forEach(r => {
       r.bonus = r.up500 * 500 + r.up1000 * 1000;
