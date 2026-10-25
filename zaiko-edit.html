@@ -9,7 +9,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
   <script src="firebase-config.js"></script>
   <script src="shared.js"></script>
-  <script src="zaiko-items.js?v=20261017"></script>
+  <script src="zaiko-items.js?v=20261025"></script>
   <style>
     /* 在庫の商品と定数を変えるページ（管理する人用）。「保存する」を押すまで、入力ページには反映されない */
     :root {
@@ -46,6 +46,7 @@
     .fld.par { color: var(--blue); }
     .fld input { width: 84px; height: 46px; margin-top: 2px; padding: 0 6px; border: 2px solid var(--ink); border-radius: 10px; text-align: center; font-size: 19px; font-weight: 700; background: #fff; color: var(--ink); }
     .fld.par input { border-color: var(--blue); color: var(--blue); }
+    .fld.unit input { width: 64px; font-size: 16px; border-color: var(--line); }
     .only { flex: 1; font-size: 13px; color: var(--sub); align-self: center; }
     .ops { display: flex; gap: 6px; margin-left: auto; }
     .ops button { width: 46px; height: 46px; padding: 0; border: 2px solid var(--line); border-radius: 10px; background: #fff; font-size: 18px; font-weight: 700; }
@@ -118,7 +119,8 @@ function rowHtml(kind, it, i, n) {
     mid = (kind === 'drinks'
       ? '<label class="fld par">補充メモの定数<input data-f="par" type="text" value="' + esc(it.par) + '"></label>' : '') +
       '<label class="fld">' + (kind === 'drinks' ? '総在庫の定数' : '在庫の定数') +
-      '<input data-f="teisu" type="text" inputmode="numeric" value="' + esc(it.teisu) + '"></label>';
+      '<input data-f="teisu" type="text" inputmode="numeric" value="' + esc(it.teisu) + '"></label>' +
+      '<label class="fld unit">単位<input data-f="unit" type="text" placeholder="' + (kind === 'drinks' ? 'C/Sなど' : '袋など') + '" value="' + esc(it.unit) + '"></label>';
   }
   return '<div class="row' + (it.isNew ? ' new' : '') + '" data-kind="' + kind + '" data-i="' + i + '">' +
     '<input class="nm" data-f="name" type="text" placeholder="商品名" value="' + esc(it.name) + '">' +
@@ -185,6 +187,8 @@ function build(kind, errs) {
     if (it.ret) { o.ret = true; return o; }
     const par = String(it.par == null ? '' : it.par).trim();
     if (kind === 'drinks' && par) o.par = par;
+    const unit = String(it.unit == null ? '' : it.unit).trim();
+    if (unit) o.unit = unit;
     const t = String(it.teisu == null ? '' : it.teisu).trim();
     if (t === '') {
       if (kind === 'bihin') errs.push(where + '：在庫の定数を入れてください');

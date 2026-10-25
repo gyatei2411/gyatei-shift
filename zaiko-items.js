@@ -5,7 +5,8 @@
    id は保存先のキーになるので、名前を変えても id は変えないこと（その日の入力が迷子になる）。
    par   … 2階・1階の冷蔵庫の定数。補充メモの数量の右に出す
    teisu … 総在庫の定数。総在庫の数量の右に出す。これと同じか少ないと要注文。無い商品は補充メモだけ
-   ret   … 数ではなく「Tへ返却」のチェックだけの商品 */
+   ret   … 数ではなく「Tへ返却」のチェックだけの商品
+   unit  … 定数の単位（例：トイレットペーパーは「袋」→「定数 3袋」）。無ければ数字だけ */
 // 並びは冷蔵庫の順（2026/10/17 社長指定：オレンジジュースのあとに ゆずサイダー・ケルシュ・アルト・抹茶ビール・ぎゃあてい純米酒）
 const DEFAULT_DRINKS = [
   { id: 'asahi',      name: 'アサヒスーパードライ', par: '10',  teisu: 20 },
@@ -38,7 +39,7 @@ const DEFAULT_BIHIN = [
   { id: 'furikake',  name: 'ふりかけ',           teisu: 1 },
   { id: 'ittoko',    name: 'イットコ',           teisu: 10 },
   { id: 'straw',     name: 'ストロー',           teisu: 5 },
-  { id: 'toilet',    name: 'トイレットペーパー', teisu: 3 },
+  { id: 'toilet',    name: 'トイレットペーパー', teisu: 3, unit: '袋' },
   { id: 'quickle',   name: 'トイレクイックル',   teisu: 5 },
   { id: 'youji',     name: 'つまようじ',         teisu: 1 },
   { id: 'oshibori',  name: 'おしぼり',           teisu: 2 },
@@ -57,6 +58,7 @@ function cleanZaikoList(v, fallback) {
     if (x.par != null && x.par !== '') o.par = String(x.par);
     if (typeof x.teisu === 'number') o.teisu = x.teisu;
     if (x.ret) o.ret = true;
+    if (x.unit) o.unit = String(x.unit);
     return o;
   });
   return out.length ? out : fallback;

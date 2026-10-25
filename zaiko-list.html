@@ -9,7 +9,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
   <script src="firebase-config.js"></script>
   <script src="shared.js"></script>
-  <script src="zaiko-items.js?v=20261017"></script>
+  <script src="zaiko-items.js?v=20261025"></script>
   <style>
     /* 在庫入力（zaiko.html）で入れた数を見るだけのページ。管理する人用なので、要注文もここには出す。
        補充メモは補充する人のメモなので、ここには出さない */
@@ -140,18 +140,18 @@ function render() {
       else if (typeof z === 'number') {
         entered++;
         // 定数と同じ数になったら注文する（zaiko.html と同じ基準）
-        if (z <= it.teisu) { cls = 'low'; fus = String(it.teisu - z); low.push({ name: it.name, teisu: it.teisu, z: z }); }
+        if (z <= it.teisu) { cls = 'low'; fus = String(it.teisu - z); low.push({ name: it.name, teisu: it.teisu, z: z, u: it.unit || '' }); }
         else cls = 'num';
         txt = String(z);
       }
-      return '<tr class="' + cls + '"><td>' + esc(it.name) + '</td><td>' + it.teisu + '</td><td class="num">' + txt + '</td><td>' + fus + '</td></tr>';
+      return '<tr class="' + cls + '"><td>' + esc(it.name) + '</td><td>' + it.teisu + esc(it.unit || '') + '</td><td class="num">' + txt + (typeof z === 'number' ? esc(it.unit || '') : '') + '</td><td>' + fus + '</td></tr>';
     }).join('');
     return '<div class="box"><h2>' + s.title + '</h2><table><thead><tr><th>商品</th><th>定数</th><th>' + s.col + '</th><th>不足</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }).join('');
 
   $('order').innerHTML = low.length
     ? '<div class="box order"><h2>要注文（' + low.length + ' 品）</h2><table><tbody>' +
-      low.map(x => '<tr><td>' + esc(x.name) + '</td><td>定数 ' + x.teisu + '</td><td class="num">在庫 ' + x.z + '</td><td>不足 ' + (x.teisu - x.z) + '</td></tr>').join('') +
+      low.map(x => '<tr><td>' + esc(x.name) + '</td><td>定数 ' + x.teisu + esc(x.u) + '</td><td class="num">在庫 ' + x.z + esc(x.u) + '</td><td>不足 ' + (x.teisu - x.z) + esc(x.u) + '</td></tr>').join('') +
       '</tbody></table></div>'
     : '<div class="box"><p>' + (entered ? '要注文の商品はありません。' : 'この日はまだ入力がありません。') + '</p></div>';
 }

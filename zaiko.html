@@ -16,7 +16,7 @@
   <script src="firebase-config.js"></script>
   <script src="shared.js"></script>
   <!-- ?v= は、ブラウザが覚えている古い zaiko-items.js を使わせないための目印。このファイルを変えたら3ページとも数字を変える -->
-  <script src="zaiko-items.js?v=20261017"></script>
+  <script src="zaiko-items.js?v=20261025"></script>
   <style>
     /* この画面は style.css を使わない（立ったまま片手で押す前提で、ボタンを大きくしてある） */
     :root {
@@ -383,7 +383,9 @@ function shortage() {
     const z = confVal(t.key, it.id, 'z');
     // 定数と同じ数になったら注文する（定数より多いときだけ足りている）
     if (it.teisu != null && typeof z === 'number' && z <= it.teisu) {
-      out.push({ tab: t.label, name: it.name, teisu: it.teisu, zaiko: z, fusoku: it.teisu - z });
+      const o = { tab: t.label, name: it.name, teisu: it.teisu, zaiko: z, fusoku: it.teisu - z };
+      if (it.unit) o.unit = it.unit;
+      out.push(o);
     }
   }));
   return out;
@@ -404,8 +406,8 @@ function stepperHtml(f, label) {
     '<button type="button" class="plus" aria-label="1増やす">＋</button></div>';
 }
 
-function teisuHtml(n) {
-  return n == null ? '' : '<span class="teisu">定数 ' + esc(n) + '</span>';
+function teisuHtml(n, unit) {
+  return n == null ? '' : '<span class="teisu">定数 ' + esc(n) + esc(unit || '') + '</span>';
 }
 
 function render() {
@@ -423,7 +425,7 @@ function render() {
         (it.ret ? '<button type="button" class="btn-ret">Tへ返却</button>' : stepperHtml('ho', it.name + 'の補充メモ')) + '</div></div>';
     }
     if (hasZ) {
-      h += '<div class="col z"><div class="lab"><span class="lt">' + t.zLabel + '</span>' + teisuHtml(it.teisu) + '</div><div class="ctl">' +
+      h += '<div class="col z"><div class="lab"><span class="lt">' + t.zLabel + '</span>' + teisuHtml(it.teisu, it.unit) + '</div><div class="ctl">' +
         stepperHtml('z', it.name + 'の' + t.zLabel) + '<button type="button" class="btn-ok">足りてる</button></div></div>';
     }
     return h + '</div></div>';
@@ -631,7 +633,7 @@ $('submit').addEventListener('click', () => {
     const low = t.items.filter(it => { const z = val(t.key, it.id, 'z'); return it.teisu != null && typeof z === 'number' && z <= it.teisu; });
     html += '<h4>注文が必要なもの（' + low.length + ' 品）</h4>';
     html += low.length
-      ? '<ul>' + low.map(it => '<li><span>' + esc(it.name) + '</span><b class="red">在庫 ' + val(t.key, it.id, 'z') + '（定数 ' + it.teisu + '）</b></li>').join('') + '</ul>'
+      ? '<ul>' + low.map(it => '<li><span>' + esc(it.name) + '</span><b class="red">在庫 ' + val(t.key, it.id, 'z') + esc(it.unit || '') + '（定数 ' + it.teisu + esc(it.unit || '') + '）</b></li>').join('') + '</ul>'
       : '<p>注文が必要なものはありません。</p>';
   } else {
     html += '<p>補充メモを入力完了にします。</p>';
