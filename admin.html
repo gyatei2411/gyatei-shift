@@ -974,7 +974,7 @@
         const esc = n.replace(/'/g, "\\'");
         return `
         <div class="staff-master-row" style="flex-wrap:wrap;${rk ? `background:${RBG[rk]};border-color:${RC[rk]}` : ''}">
-          <span class="name">${n}${rk ? ` <span style="font-size:0.68rem;color:${RC[rk]};font-weight:700">${App.RANK_LABEL[rk]}</span>` : ''}${m.rookie ? ` <span style="font-size:0.68rem;background:#DC2626;color:#fff;font-weight:800;padding:1px 7px;border-radius:999px">新人</span>` : ''}${m.hallLeader ? ` <span style="font-size:0.68rem;background:#047857;color:#fff;font-weight:800;padding:1px 7px;border-radius:999px">ホールリーダー</span>` : ''}${m.veteran ? ` <span style="font-size:0.68rem;background:#FEF9C3;color:#A16207;border:1px solid #FDE047;font-weight:800;padding:1px 7px;border-radius:999px">ベテラン</span>` : ''}</span>
+          <span class="name">${n}${rk ? ` <span style="font-size:0.68rem;color:${RC[rk]};font-weight:700">${App.RANK_LABEL[rk]}</span>` : ''}${m.rookie ? ` <span style="font-size:0.68rem;background:#DC2626;color:#fff;font-weight:800;padding:1px 7px;border-radius:999px">新人</span>` : ''}${m.hallLeader ? ` <span style="font-size:0.68rem;background:#047857;color:#fff;font-weight:800;padding:1px 7px;border-radius:999px">ホールリーダー</span>` : ''}${m.veteran ? ` <span title="ベテラン" style="font-size:0.68rem;background:#FEF9C3;color:#A16207;border:1px solid #FDE047;font-weight:800;padding:1px 7px;border-radius:999px">ベ</span>` : ''}</span>
           <span style="display:inline-flex;gap:4px;flex-wrap:wrap" title="シフトに入れる優先順位：★★最優先 ＞ ★優先 ＞ 主婦 ＞ 無印 ＞ 学生&#10;16:30上がり（応援Tの日）は、この順位が低い人から先に上がります">
             ${['top','priority','housewife','student'].map(k => `
               <button class="btn btn-sm" onclick="setRank('${esc}', '${k}')"

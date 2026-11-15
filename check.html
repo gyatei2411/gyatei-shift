@@ -125,7 +125,7 @@
   <main>
     <div id="days" class="days"></div>
     <div id="out"><div class="msg">読み込み中…</div></div>
-    <p class="foot">管理用の画面です（スタッフの画面にはリンクしていません）。ベテラン・新人の印はスタッフ管理で付けます。</p>
+    <p class="foot">管理用の画面です（スタッフの画面にはリンクしていません）。「ベ」＝ベテラン。ベテラン・新人の印はスタッフ管理で付けます。</p>
   </main>
 
   <div id="set-back" class="modal-back" onclick="if (event.target === this) closeSet()">
@@ -378,7 +378,7 @@
 
     /* ===== 表示 ===== */
     function tags(p) {
-      return (p.vet ? ' <span class="tag t-vet">ベテラン</span>' : '') + (p.rookie ? ' <span class="tag t-new">新人</span>' : '') +
+      return (p.vet ? ' <span class="tag t-vet" title="ベテラン">ベ</span>' : '') + (p.rookie ? ' <span class="tag t-new">新人</span>' : '') +
         (p.cand ? ' <span class="tag t-early" title="2部Tが3人そろい次第、早上がり">早</span>' : '');
     }
     function personLine(p, opt) {
