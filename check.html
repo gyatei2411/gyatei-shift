@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>明日の確認 - ぎゃあてい</title>
+  <title>配置の確認 - ぎゃあてい</title>
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
@@ -115,7 +115,7 @@
 </head>
 <body>
   <header>
-    <h1>🔍 明日の確認</h1>
+    <h1>🔍 配置の確認</h1>
     <div class="right">
       <button onclick="openSet()" title="リーダーMに出る人">⚙ 設定</button>
       <a href="admin.html">← 管理画面</a>
@@ -203,15 +203,15 @@
       const closed = !!(req && (req.closed || []).map(Number).indexOf(d) >= 0);
       return { ds, ws, d, req, closed };
     }
-    // 今日〜1週間先（8日分）。最初は明日（定休日なら次の営業日）
+    // 今日〜1週間先（8日分）。最初は今日（定休日なら次の営業日）
     function dayList() {
       const t = App.todayLocal();
       return Array.from({ length: 8 }, (_, i) => addDays(t, i));
     }
     function defaultDate() {
       const list = dayList();
-      for (let i = 1; i < list.length; i++) if (!dayInfo(list[i]).closed) return list[i];
-      return list[1];
+      for (let i = 0; i < list.length; i++) if (!dayInfo(list[i]).closed) return list[i];
+      return list[0];
     }
 
     /* ===== 時刻 ===== */
@@ -241,7 +241,7 @@
     /* ===== その日の出勤者を集める ===== */
     const ZERO_FULL = { 'C': '廊下の掃除', '1F': '一階の準備', 'Rj': '2Fの準備', 'Tj': 'テイクアウト準備', 'm': '盛り付け' };
     // R は R2 と R1 を分けて出す（2026/11/15 社長）。基本人数（POS_BASE.R=3）は R2＋R1 の合計で見る
-    const GROUP_ORDER = ['K', 'R2', 'R1', 'W', 'T', 'F', '他'];
+    const GROUP_ORDER = ['K', 'W', 'R2', 'R1', 'T', 'F', '他'];   // K の次に W（11/16 社長）
     const GROUP_LABEL = { K: 'K 調理場', R: 'R レストラン', R2: 'R2 レストラン', R1: 'R1 レストラン',
                           W: 'W 洗い場', T: 'T テイクアウト', F: 'F フリー', '他': 'その他' };
     const isR = g => g === 'R2' || g === 'R1';
@@ -323,7 +323,7 @@
       });
       // 2) 1部の人数・顔ぶれ（T は家族がフォローするので、0人のときだけ）
       if (!c.people.some(p => p.g === 'T')) out.push(`1部の${GROUP_LABEL.T}が0人`);
-      ['K', 'R', 'W'].forEach(g => {
+      ['K', 'W', 'R'].forEach(g => {
         const list = c.people.filter(p => g === 'R' ? isR(p.g) : p.g === g);
         const base = App.POS_BASE[g];
         if (list.length < base) out.push(`1部の${GROUP_LABEL[g]}が基本の${base}人より少ない（${list.length}人）`);
