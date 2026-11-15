@@ -78,7 +78,7 @@
     .p .ex { font-size: 13px; color: var(--sub); }
     .p .z { font-size: 12px; font-weight: 800; color: #0F766E; background: #CCFBF1; border-radius: 6px; padding: 0 6px; }
     .tag { font-size: 11px; font-weight: 800; padding: 1px 7px; border-radius: 999px; }
-    .t-vet { background: var(--gold-bg); color: var(--gold); border: 1px solid #FDE047; }
+    .t-help { background: #E0E7FF; color: #4338CA; border: 1px solid #A5B4FC; }
     .t-new { background: var(--red); color: #fff; }
     .t-early { background: #FFEDD5; color: #C2410C; border: 1px solid #FDBA74; }
     .none { color: #94A3B8; font-size: 14px; }
@@ -125,7 +125,7 @@
   <main>
     <div id="days" class="days"></div>
     <div id="out"><div class="msg">読み込み中…</div></div>
-    <p class="foot">管理用の画面です（スタッフの画面にはリンクしていません）。「ベ」＝ベテラン。ベテラン・新人の印はスタッフ管理で付けます。</p>
+    <p class="foot">管理用の画面です（スタッフの画面にはリンクしていません）。新人の印はスタッフ管理で付けます。</p>
   </main>
 
   <div id="set-back" class="modal-back" onclick="if (event.target === this) closeSet()">
@@ -292,7 +292,7 @@
         const helpT = !!m.t2extra && g !== 'W' && g !== 'F' && !pm.p2 && end > 16;
         people.push({
           name: n, order, main, p1: pm.p1 || main, p2: pm.p2, early: pm.early || subEarly, cand, helpT, sub, g,
-          start, end, noTime, vet: !!m.veteran, rookie: !!m.rookie
+          start, end, noTime, rookie: !!m.rookie
         });
       });
       people.sort((a, b) => a.start - b.start || a.order - b.order);
@@ -378,7 +378,7 @@
 
     /* ===== 表示 ===== */
     function tags(p) {
-      return (p.vet ? ' <span class="tag t-vet" title="ベテラン">ベ</span>' : '') + (p.rookie ? ' <span class="tag t-new">新人</span>' : '') +
+      return (p.rookie ? ' <span class="tag t-new">新人</span>' : '') +
         (p.cand ? ' <span class="tag t-early" title="2部Tが3人そろい次第、早上がり">早</span>' : '');
     }
     function personLine(p, opt) {
@@ -397,14 +397,17 @@
     }
     // showEarly … 2部の時間帯の表示で、早上がりの人に「早」を付ける
     const names = (list, showEarly) => list.length ? list.map(p => `${esc(p.name)}` +
-      `${p.vet ? '<span class="tag t-vet" style="margin-left:3px">ベ</span>' : ''}` +
       `${p.rookie ? '<span class="tag t-new" style="margin-left:3px">新</span>' : ''}` +
       `${showEarly && p.cand ? '<span class="tag t-early" style="margin-left:3px">早</span>' : ''}` +
-      `${showEarly !== undefined && p.helpT ? '<span class="tag t-vet" style="margin-left:3px;background:#E0E7FF;color:#4338CA;border-color:#A5B4FC">応援</span>' : ''}`).join('・') : '';
+      `${showEarly !== undefined && p.helpT ? '<span class="tag t-help" style="margin-left:3px">応援</span>' : ''}`).join('・') : '';
     const famName = f => App.FAMILY_FULL[f] || f;
 
-    function renderDays() {
+    // chip … 選んだ日のボタンが見えるように、日付の列だけ横にずらす（日を選んだとき・開いたときだけ）。
+    //   以前は scrollIntoView を使っていたので、Firebase の更新で描き直すたびに
+    //   ページ全体が一番上に戻っていた（2026/11/15 社長）
+    function renderDays(chip) {
       const box = document.getElementById('days');
+      const keepX = box.scrollLeft;
       const today = App.todayLocal();
       box.innerHTML = dayList().map((ds, i) => {
         const info = dayInfo(ds);
@@ -414,13 +417,25 @@
         return `<button class="${cls}" onclick="pick('${ds}')"><span class="lb">${lb || '&nbsp;'}</span>${App.fmtMD(ds)}(${App.DOW_LABELS[dw]})</button>`;
       }).join('');
       const sel = box.querySelector('.sel');
-      if (sel && sel.scrollIntoView) sel.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+      if (chip && sel) {
+        const l = sel.offsetLeft - box.offsetLeft, r = l + sel.offsetWidth;
+        box.scrollLeft = l < keepX ? l - 8 : (r > keepX + box.clientWidth ? r - box.clientWidth + 8 : keepX);
+      } else {
+        box.scrollLeft = keepX;
+      }
     }
-    function pick(ds) { selDate = ds; render(); }
+    function pick(ds) { selDate = ds; render(true); }
 
-    function render() {
+    // 描き直してもページの縦の位置はそのまま（データが届くたびに描き直すため）
+    function render(chip) {
+      const y = window.scrollY;
+      draw(chip);
+      if (window.scrollY !== y) window.scrollTo(0, y);
+    }
+
+    function draw(chip) {
       if (!selDate) selDate = defaultDate();
-      renderDays();
+      renderDays(chip);
       const out = document.getElementById('out');
       const info = dayInfo(selDate);
       const dw = dowOf(selDate);
@@ -511,19 +526,19 @@
     function init() {
       App.initFirebase();
       if (App.isOnline()) {
-        App.subscribeSettings(render);
-        App.subscribeStaffMeta(render);
-        App.subscribeRequests(render, () => {
+        App.subscribeSettings(() => render());
+        App.subscribeStaffMeta(() => render());
+        App.subscribeRequests(() => render(), () => {
           document.getElementById('out').innerHTML = '<div class="msg">シフトを読み込めませんでした（通信を確認してください）</div>';
         });
         watchLeaderM();
       }
-      render();
+      render(true);
       // 日付が変わったら「今日・明日」を付け直す
       let lastDay = App.todayLocal();
       setInterval(() => {
         const t = App.todayLocal();
-        if (t !== lastDay) { lastDay = t; selDate = null; render(); }
+        if (t !== lastDay) { lastDay = t; selDate = null; render(true); }
       }, 60 * 1000);
     }
     window.addEventListener('DOMContentLoaded', init);
