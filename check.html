@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>明日の確認 - ぎゃあてい</title>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="shared.js"></script>
+  <style>
+    /* 翌日の配置の確認（社長とうららさんだけが使う。管理画面からだけ開く。スタッフの画面にはリンクしない）
+       見るもの：時間のイレギュラー／ポジションごとの顔ぶれ／朝の準備／2部の時間帯ごとの顔ぶれ */
+    :root {
+      --bg: #F1F5F9; --card: #fff; --ink: #1E293B; --sub: #64748B; --line: #E2E8F0;
+      --primary: #4F46E5; --warn: #B45309; --warn-bg: #FEF3C7; --ok: #047857; --ok-bg: #ECFDF5;
+      --red: #DC2626; --gold: #A16207; --gold-bg: #FEF9C3;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      background: var(--bg); color: var(--ink);
+      font-family: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", sans-serif;
+      font-size: 16px; line-height: 1.45; padding-bottom: 40px; -webkit-text-size-adjust: 100%;
+    }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    header {
+      position: sticky; top: 0; z-index: 5; color: #fff; padding: 10px 14px;
+      background: linear-gradient(135deg, #4F46E5, #7C3AED);
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    header h1 { font-size: 18px; margin: 0; white-space: nowrap; }
+    header .right { display: flex; gap: 8px; }
+    header a, header button {
+      color: #fff; font-size: 13px; font-weight: 700; padding: 8px 10px; background: rgba(255,255,255,.18);
+      border: 1px solid rgba(255,255,255,.45); border-radius: 8px; text-decoration: none; white-space: nowrap;
+    }
+    main { max-width: 760px; margin: 0 auto; padding: 12px; }
+
+    .days { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; -webkit-overflow-scrolling: touch; }
+    .days button {
+      flex: 0 0 auto; min-width: 74px; padding: 7px 8px; border: 2px solid var(--line); border-radius: 10px;
+      background: #fff; font-weight: 700; font-size: 14px; line-height: 1.2; text-align: center;
+    }
+    .days button .lb { display: block; font-size: 11px; color: var(--sub); font-weight: 700; }
+    .days button.sel { border-color: var(--primary); background: var(--primary); color: #fff; }
+    .days button.sel .lb { color: #E0E7FF; }
+    .days button.closed { color: #94A3B8; background: #F8FAFC; }
+    .days button.sat { color: #2563EB; } .days button.sun { color: var(--red); }
+    .days button.sel.sat, .days button.sel.sun { color: #fff; }
+
+    .card { background: var(--card); border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .card h2 { font-size: 16px; margin: 0 0 8px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .card h2 .s { font-size: 12px; color: var(--sub); font-weight: 600; }
+    .head-date { font-size: 22px; font-weight: 800; }
+    .badge { display: inline-block; font-size: 12px; font-weight: 800; padding: 1px 8px; border-radius: 999px; vertical-align: 2px; }
+    .b-conf { background: var(--ok-bg); color: var(--ok); }
+    .b-draft { background: #FFEDD5; color: #C2410C; }
+    .info { font-size: 14px; color: var(--ink); margin-top: 6px; }
+    .info b { color: var(--sub); font-weight: 700; margin-right: 4px; }
+
+    .alerts { list-style: none; padding: 0; margin: 0; }
+    .alerts li { background: var(--warn-bg); color: #78350F; border-radius: 8px; padding: 8px 10px; margin-top: 6px; font-size: 15px; }
+    .alerts li::before { content: '⚠ '; }
+    .allok { background: var(--ok-bg); color: var(--ok); border-radius: 8px; padding: 8px 10px; font-weight: 700; }
+
+    .pos { border-top: 1px solid var(--line); padding: 8px 0 6px; display: grid; grid-template-columns: 74px 1fr; gap: 8px; }
+    .pos:first-of-type { border-top: none; }
+    .pos .pl { font-weight: 800; font-size: 15px; }
+    .pos .pl .n { display: block; font-size: 12px; color: var(--sub); font-weight: 700; }
+    .pos .pl .n.few { color: var(--red); }
+    .ppl { display: flex; flex-direction: column; gap: 4px; }
+    .p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 15px; }
+    .p .nm { font-weight: 800; min-width: 4.2em; }
+    .p .tm { font-variant-numeric: tabular-nums; color: var(--ink); }
+    .p .tm.irr { color: var(--red); font-weight: 800; }
+    .p .ex { font-size: 13px; color: var(--sub); }
+    .p .z { font-size: 12px; font-weight: 800; color: #0F766E; background: #CCFBF1; border-radius: 6px; padding: 0 6px; }
+    .tag { font-size: 11px; font-weight: 800; padding: 1px 7px; border-radius: 999px; }
+    .t-vet { background: var(--gold-bg); color: var(--gold); border: 1px solid #FDE047; }
+    .t-new { background: var(--red); color: #fff; }
+    .t-early { background: #FFEDD5; color: #C2410C; border: 1px solid #FDBA74; }
+    .none { color: #94A3B8; font-size: 14px; }
+
+    .mrow { display: grid; grid-template-columns: 108px 1fr; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 15px; }
+    .mrow:first-of-type { border-top: none; }
+    .mrow .k { font-weight: 800; }
+    .mrow .k .s { display: block; font-size: 12px; color: var(--sub); font-weight: 600; }
+
+    .seg { border-top: 1px solid var(--line); padding: 8px 0; }
+    .seg:first-of-type { border-top: none; }
+    .seg .when { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
+    .seg .when .s { font-size: 12px; color: var(--sub); font-weight: 600; margin-left: 6px; }
+    .seg .ln { display: grid; grid-template-columns: 74px 1fr; gap: 8px; font-size: 15px; padding: 1px 0; }
+    .seg .ln .k { font-weight: 800; color: var(--sub); }
+    .seg .ln .zero { color: var(--red); font-weight: 800; }
+    .fam { font-size: 13px; color: var(--sub); }
+
+    .msg { background: #fff; border-radius: 12px; padding: 24px 16px; text-align: center; color: var(--sub); }
+    .note { font-size: 12px; color: var(--sub); margin-top: 6px; }
+    .foot { font-size: 12px; color: var(--sub); text-align: center; margin-top: 14px; }
+
+    .modal-back { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: none; align-items: flex-start; justify-content: center; z-index: 20; padding: 30px 12px; overflow-y: auto; }
+    .modal-back.open { display: flex; }
+    .modal { background: #fff; border-radius: 14px; padding: 16px; width: 100%; max-width: 520px; }
+    .modal h3 { margin: 0 0 4px; font-size: 17px; }
+    .chk { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+    .chk label { display: inline-flex; align-items: center; gap: 4px; border: 1.5px solid var(--line); border-radius: 8px; padding: 5px 9px; font-weight: 700; font-size: 14px; }
+    .chk label.on { border-color: var(--primary); background: #EEF2FF; }
+    .modal .btns { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal .btns button { padding: 9px 16px; border-radius: 9px; border: 1.5px solid var(--line); background: #fff; font-weight: 700; }
+    .modal .btns button.pri { background: var(--primary); border-color: var(--primary); color: #fff; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🔍 明日の確認</h1>
+    <div class="right">
+      <button onclick="openSet()" title="リーダーMに出る人">⚙ 設定</button>
+      <a href="admin.html">← 管理画面</a>
+    </div>
+  </header>
+
+  <main>
+    <div id="days" class="days"></div>
+    <div id="out"><div class="msg">読み込み中…</div></div>
+    <p class="foot">管理用の画面です（スタッフの画面にはリンクしていません）。ベテラン・新人の印はスタッフ管理で付けます。</p>
+  </main>
+
+  <div id="set-back" class="modal-back" onclick="if (event.target === this) closeSet()">
+    <div class="modal">
+      <h3>リーダーM（16:00〜17:00）に出る人</h3>
+      <div class="note">メモ欄に「リーダーM」と書いた日は、ここで選んだ人を 16:00〜17:00 の持ち場から外して数えます。</div>
+      <div style="font-weight:800;font-size:14px;margin-top:10px">スタッフ</div>
+      <div id="set-staff" class="chk"></div>
+      <div style="font-weight:800;font-size:14px">家族</div>
+      <div id="set-fam" class="chk"></div>
+      <div class="btns">
+        <button onclick="closeSet()">やめる</button>
+        <button class="pri" onclick="saveSet()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ===== 設定：リーダーMに出る人 =====
+       settings/leaderM = { staff: [...], fam: ['店','若奥'] }（全端末で共有） */
+    const LM_KEY = 'sa_v4_leaderM';
+    const LM_DEFAULT = { staff: ['青木', '渡邉'], fam: ['店', '若奥'] };  // 青木・渡邉／店長・若奥
+    const M_FROM = 16, M_TO = 17;
+    const M_RE = /リーダー\s*[MＭ]|リーダー会議/;    // リーダーM／リーダーＭ／リーダー会議
+
+    function leaderM() {
+      try {
+        const v = JSON.parse(localStorage.getItem(LM_KEY) || 'null');
+        if (v && Array.isArray(v.staff)) return { staff: v.staff, fam: Array.isArray(v.fam) ? v.fam : [] };
+      } catch (e) {}
+      return LM_DEFAULT;
+    }
+    function watchLeaderM() {
+      if (!App.isOnline()) return;
+      App.fbDB.ref('settings/leaderM').on('value', snap => {
+        const v = snap.val();
+        if (v && Array.isArray(v.staff)) {
+          localStorage.setItem(LM_KEY, JSON.stringify({ staff: v.staff, fam: Array.isArray(v.fam) ? v.fam : [] }));
+          render();
+        }
+      }, () => {});
+    }
+    function openSet() {
+      const lm = leaderM();
+      const box = (id, list, sel, label) => {
+        document.getElementById(id).innerHTML = list.map(n => `
+          <label class="${sel.indexOf(n) >= 0 ? 'on' : ''}">
+            <input type="checkbox" value="${esc(n)}" ${sel.indexOf(n) >= 0 ? 'checked' : ''}
+                   onchange="this.parentNode.classList.toggle('on', this.checked)">${esc(label(n))}
+          </label>`).join('');
+      };
+      box('set-staff', App.getStaff(), lm.staff, n => n);
+      box('set-fam', App.FAMILY, lm.fam, n => App.FAMILY_FULL[n] || n);
+      document.getElementById('set-back').classList.add('open');
+    }
+    function closeSet() { document.getElementById('set-back').classList.remove('open'); }
+    function saveSet() {
+      const pick = id => Array.from(document.querySelectorAll(`#${id} input:checked`)).map(i => i.value);
+      const v = { staff: pick('set-staff'), fam: pick('set-fam') };
+      localStorage.setItem(LM_KEY, JSON.stringify(v));
+      if (App.isOnline()) App.fbDB.ref('settings/leaderM').set(v).catch(() => App.toast('保存できませんでした', 'error'));
+      closeSet();
+      render();
+      App.toast('リーダーMに出る人を保存しました', 'success');
+    }
+
+    /* ===== 日付 ===== */
+    let selDate = null;
+    function addDays(ds, n) { const d = new Date(ds + 'T00:00:00'); d.setDate(d.getDate() + n); return App.toDateStr(d); }
+    function dowOf(ds) { return (new Date(ds + 'T00:00:00').getDay() + 6) % 7; }   // 月=0
+    function dayInfo(ds) {
+      const ws = App.weekStart(ds);
+      const d = App.weekDates(ws).indexOf(ds);
+      const req = App.bestOfWeek(ws);
+      const closed = !!(req && (req.closed || []).map(Number).indexOf(d) >= 0);
+      return { ds, ws, d, req, closed };
+    }
+    // 今日〜1週間先（8日分）。最初は明日（定休日なら次の営業日）
+    function dayList() {
+      const t = App.todayLocal();
+      return Array.from({ length: 8 }, (_, i) => addDays(t, i));
+    }
+    function defaultDate() {
+      const list = dayList();
+      for (let i = 1; i < list.length; i++) if (!dayInfo(list[i]).closed) return list[i];
+      return list[1];
+    }
+
+    /* ===== 時刻 ===== */
+    function hmNum(s) {
+      s = String(s || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+        .replace(/半/, '30').replace(/[:：時分\s]/g, '');
+      if (/^(L|Ｌ|ラスト)$/i.test(s)) return 99;
+      const m = s.match(/^(\d{1,4})$/);
+      if (!m) return null;
+      const n = parseInt(m[1], 10);
+      return m[1].length <= 2 ? n : Math.floor(n / 100) + (n % 100) / 60;
+    }
+    const parseStart = v => { const t = String(v || '').trim(); return t ? hmNum(t) : null; };
+    const parseEnd = v => { const t = String(v || '').trim().replace(/^[-−ー－〜～~]+/, ''); return t ? hmNum(t) : null; };
+    function fmtT(t) {
+      if (t == null) return '?';
+      if (t >= 99) return 'L';
+      const h = Math.floor(t), m = Math.round((t - h) * 60);
+      return m ? `${h}:${String(m).padStart(2, '0')}` : `${h}`;
+    }
+    const fmtSlot = t => t >= 99 ? 'ラスト' : (fmtT(t).indexOf(':') < 0 ? fmtT(t) + ':00' : fmtT(t));
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    /* ===== その日の出勤者を集める ===== */
+    const ZERO_FULL = { 'C': '廊下の掃除', '1F': '一階の準備', 'Rj': '2Fの準備', 'Tj': 'テイクアウト準備', 'm': '盛り付け' };
+    // R は R2 と R1 を分けて出す（2026/11/15 社長）。基本人数（POS_BASE.R=3）は R2＋R1 の合計で見る
+    const GROUP_ORDER = ['K', 'R2', 'R1', 'W', 'T', 'F', '他'];
+    const GROUP_LABEL = { K: 'K 調理場', R: 'R レストラン', R2: 'R2 レストラン', R1: 'R1 レストラン',
+                          W: 'W 洗い場', T: 'T テイクアウト', F: 'F フリー', '他': 'その他' };
+    const isR = g => g === 'R2' || g === 'R1';
+
+    function groupOf(p) {
+      const h = App.posHead(p);
+      if (h === 'R') return /^R1/.test(App.normPos(p).replace(/[（(）)\s]/g, '').toUpperCase()) ? 'R1' : 'R2';
+      if (h) return h;
+      const t = String(p || '').replace(/[（(）)\s]/g, '').toUpperCase();
+      if (t.charAt(0) === 'F') return 'F';
+      return '他';
+    }
+
+    function collect(info) {
+      const req = info.req, d = info.d;
+      const conf = App.getConfirmed(req.id);
+      const cells = conf ? (conf.cells || {}) : App.getManual(req.id);
+      const live = App.getManual(req.id);
+      const meta = App.getStaffMeta();
+      const cell = k => String(cells[App._safeCellKey(k)] || '');
+      const get = (n, f) => { const v = cell(`s_${n}_${d}_${f}`); return f === 'main' ? App.normPos(v) : v; };
+      const names = (req.staff || []).slice();
+      Object.keys(cells).forEach(k => {
+        const m = k.match(/^s_(.+)_(\d)_(?:main|start|end)$/);
+        if (m && Number(m[2]) === d && names.indexOf(m[1]) < 0) names.push(m[1]);
+      });
+      const people = [], absent = [];
+      names.forEach((n, order) => {
+        const main = get(n, 'main'), st = get(n, 'start'), en = get(n, 'end');
+        if (!(main || st || en)) return;
+        if (App.isAbsent(live, n, d)) { absent.push(n); return; }
+        const pm = App.parseMain(main);
+        // 0部の欄の「（」＝ 2部Tが3人そろい次第 16:30 で早上がりする印（2026/11/15 社長。例 11/16 藤田「（」）。
+        //   かっこは印として拾ってから外し、残りを 0部の仕事として読む
+        const rawSub = get(n, 'sub');
+        const subEarly = /[（(]/.test(rawSub);
+        const sub = rawSub.replace(/[（(）)]/g, '').split(/[・･,、\s]+/).filter(Boolean);
+        const g = groupOf(pm.p1 || main);
+        let start = parseStart(st), end = parseEnd(en);
+        const noTime = start == null || end == null;
+        if (start == null) start = (g === 'K' || g === 'T' || g === 'F') ? 9 : g === 'W' ? 10 : 9.5;
+        if (end == null) end = pm.p2 || g === 'K' ? 99 : 16;
+        const m = meta[n] || {};
+        // cand … 早上がりの印があり、終業はまだ 16:30 より後（＝そろい次第 16:30 で上がる候補）
+        const cand = (subEarly || pm.early) && end > 16.5;
+        // helpT … 応援T（staffmeta.t2extra。青木さん）。表記は1部のまま（K 9-L など）で、16時からは2部Tのヘルプに行く。
+        //   1部が W の日・F の日・2部の持ち場が書いてある日は行かない
+        const helpT = !!m.t2extra && g !== 'W' && g !== 'F' && !pm.p2 && end > 16;
+        people.push({
+          name: n, order, main, p1: pm.p1 || main, p2: pm.p2, early: pm.early || subEarly, cand, helpT, sub, g,
+          start, end, noTime, vet: !!m.veteran, rookie: !!m.rookie
+        });
+      });
+      people.sort((a, b) => a.start - b.start || a.order - b.order);
+      return {
+        conf, people, absent,
+        famOff: cell(`fam_off_${d}`), memo: cell(`memo_${d}`), note: cell(`note_${d}`)
+      };
+    }
+
+    /* ===== 確認ポイント（決まりで判定できるものだけ） ===== */
+    function irregular(p) {
+      if (p.g === 'F') return '';                       // F はそもそもイレギュラーなので見ない
+      const late = p.g === 'W' ? p.start > 11 : p.start >= 11;   // W は 9〜11時の出勤なら通常の範囲
+      const early = p.end < 15;
+      if (late && early) return '11時以降の出勤・15時前の退勤';
+      if (late) return '11時以降の出勤';
+      if (early) return '15時前の退勤';
+      return '';
+    }
+
+    function checkDay(c, segs) {
+      const out = [];
+      // 1) 時間
+      c.people.forEach(p => {
+        const r = irregular(p);
+        if (r) out.push(`${p.name}さん：${r}（${fmtT(p.start)}-${fmtT(p.end)}）`);
+        if (p.noTime) out.push(`${p.name}さん：出勤か退勤の時間が入っていません`);
+      });
+      // 2) 1部の人数・顔ぶれ（T は家族がフォローするので、0人のときだけ）
+      if (!c.people.some(p => p.g === 'T')) out.push(`1部の${GROUP_LABEL.T}が0人`);
+      ['K', 'R', 'W'].forEach(g => {
+        const list = c.people.filter(p => g === 'R' ? isR(p.g) : p.g === g);
+        const base = App.POS_BASE[g];
+        if (list.length < base) out.push(`1部の${GROUP_LABEL[g]}が基本の${base}人より少ない（${list.length}人）`);
+        if (list.length && list.every(p => p.rookie)) out.push(`1部の${GROUP_LABEL[g]}が新人だけ（${list.map(p => p.name).join('・')}）`);
+      });
+      // 3) 朝の準備
+      const has = z => c.people.filter(p => p.sub.indexOf(z) >= 0);
+      [['C', 9], ['1F', 9]].forEach(([z, t]) => {
+        const list = has(z);
+        if (!list.length) out.push(`朝の準備：${z}（${ZERO_FULL[z]}）の人がいません`);
+        list.forEach(p => { if (p.start > t) out.push(`朝の準備：${z} の${p.name}さんの出勤が ${fmtSlot(p.start)}（9:00に間に合わない）`); });
+      });
+      has('Rj').forEach(p => { if (p.start > 9.5) out.push(`朝の準備：Rj（2Fの準備 9:30〜）の${p.name}さんの出勤が ${fmtSlot(p.start)}`); });
+      if (!has('m').length) out.push('朝の準備：m（盛り付け）の人がいません');
+      // 4) 2部：K・W・T が0人になる時間帯
+      segs.forEach(s => {
+        ['K', 'W', 'T'].forEach(g => {
+          if (!s.by[g].length) out.push(`${s.label}：${GROUP_LABEL[g]}が0人`);
+        });
+      });
+      return out;
+    }
+
+    /* ===== 2部の時間帯（16:00〜） ===== */
+    function segments(c) {
+      const lm = leaderM();
+      const hasM = M_RE.test(c.memo) || M_RE.test(c.note);
+      const pts = new Set([16]);
+      // 早上がり（「（」）の人では区切らない。上がる時刻は 16:30 前後で日によって違うため（社長）
+      c.people.forEach(p => { if (p.end > 16 && p.end < 99) pts.add(p.end); });
+      if (hasM) pts.add(M_TO);
+      const list = Array.from(pts).sort((a, b) => a - b);
+      const famOffNames = App.parseFamilyOff(c.famOff);
+      const famUnknown = Math.max(0, App.familyOffCount(c.famOff) - famOffNames.length);
+      return list.map((t, i) => {
+        const to = list[i + 1] || 99;
+        const inM = hasM && t >= M_FROM && t < M_TO;
+        const by = { K: [], W: [], T: [], F: [], M: [], '他': [] };
+        c.people.forEach(p => {
+          if (!(p.start <= t && p.end > t)) return;
+          let pos = p.p2 || (p.helpT ? 'T' : p.p1);
+          if (inM && lm.staff.indexOf(p.name) >= 0) pos = 'M';
+          const g = String(pos).replace(/[（(）)\s]/g, '').toUpperCase() === 'M' ? 'M' : groupOf(pos);
+          (by[g] || by['他']).push(p);
+        });
+        let fam = App.FAMILY.filter(f => famOffNames.indexOf(f) < 0);
+        const famM = inM ? fam.filter(f => lm.fam.indexOf(f) >= 0) : [];
+        fam = fam.filter(f => famM.indexOf(f) < 0);
+        return { from: t, to, inM, by, fam, famM, famUnknown, label: `${fmtSlot(t)}〜${fmtSlot(to)}` };
+      });
+    }
+
+    /* ===== 表示 ===== */
+    function tags(p) {
+      return (p.vet ? ' <span class="tag t-vet">ベテラン</span>' : '') + (p.rookie ? ' <span class="tag t-new">新人</span>' : '') +
+        (p.cand ? ' <span class="tag t-early" title="2部Tが3人そろい次第、早上がり">早</span>' : '');
+    }
+    function personLine(p, opt) {
+      const irr = irregular(p);
+      const z = p.sub.length ? `<span class="z">${esc(p.sub.join('・'))}</span>` : '';
+      const pos = opt && opt.showPos ? `<span class="ex">${esc(p.main)}</span>` : '';
+      let ex = '';
+      if (!(opt && opt.showPos)) {
+        // 1部の持ち場は見出し（K / R2 / R1 …）で分かるので、16時からの持ち場だけ書く
+        if (p.p2) ex = `→ 16時から ${esc(p.p2 === 'M' ? 'ミーティング' : p.p2)}`;
+        else if (p.helpT) ex = '→ 16時から T（応援）';
+        ex = ex ? `<span class="ex">${ex}</span>` : '';
+      }
+      return `<div class="p"><span class="nm">${esc(p.name)}${tags(p)}</span>` +
+        `<span class="tm${irr ? ' irr' : ''}">${fmtT(p.start)}-${fmtT(p.end)}</span>${z}${pos}${ex}</div>`;
+    }
+    // showEarly … 2部の時間帯の表示で、早上がりの人に「早」を付ける
+    const names = (list, showEarly) => list.length ? list.map(p => `${esc(p.name)}` +
+      `${p.vet ? '<span class="tag t-vet" style="margin-left:3px">ベ</span>' : ''}` +
+      `${p.rookie ? '<span class="tag t-new" style="margin-left:3px">新</span>' : ''}` +
+      `${showEarly && p.cand ? '<span class="tag t-early" style="margin-left:3px">早</span>' : ''}` +
+      `${showEarly !== undefined && p.helpT ? '<span class="tag t-vet" style="margin-left:3px;background:#E0E7FF;color:#4338CA;border-color:#A5B4FC">応援</span>' : ''}`).join('・') : '';
+    const famName = f => App.FAMILY_FULL[f] || f;
+
+    function renderDays() {
+      const box = document.getElementById('days');
+      const today = App.todayLocal();
+      box.innerHTML = dayList().map((ds, i) => {
+        const info = dayInfo(ds);
+        const dw = dowOf(ds);
+        const lb = i === 0 ? '今日' : i === 1 ? '明日' : (info.closed ? '定休' : '');
+        const cls = [ds === selDate ? 'sel' : '', info.closed ? 'closed' : '', dw === 5 ? 'sat' : dw === 6 ? 'sun' : ''].join(' ');
+        return `<button class="${cls}" onclick="pick('${ds}')"><span class="lb">${lb || '&nbsp;'}</span>${App.fmtMD(ds)}(${App.DOW_LABELS[dw]})</button>`;
+      }).join('');
+      const sel = box.querySelector('.sel');
+      if (sel && sel.scrollIntoView) sel.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    }
+    function pick(ds) { selDate = ds; render(); }
+
+    function render() {
+      if (!selDate) selDate = defaultDate();
+      renderDays();
+      const out = document.getElementById('out');
+      const info = dayInfo(selDate);
+      const dw = dowOf(selDate);
+      const title = `${App.fmtMD(selDate)}（${App.DOW_LABELS[dw]}）`;
+      if (!info.req) { out.innerHTML = `<div class="msg"><b>${title}</b><br>この週のシフトはまだ作られていません</div>`; return; }
+      if (info.closed) { out.innerHTML = `<div class="msg"><b>${title}</b><br>定休日です</div>`; return; }
+
+      const c = collect(info);
+      if (!c.people.length) { out.innerHTML = `<div class="msg"><b>${title}</b><br>この日のシフトはまだ入っていません</div>`; return; }
+      const segs = segments(c);
+      const alerts = checkDay(c, segs);
+      let h = '';
+
+      // --- 見出し ---
+      const famOffNames = App.parseFamilyOff(c.famOff);
+      const famUnknown = Math.max(0, App.familyOffCount(c.famOff) - famOffNames.length);
+      const famTxt = famOffNames.map(famName).join('・') + (famUnknown ? `${famOffNames.length ? '・' : ''}${famUnknown}人（誰か未記入）` : '');
+      h += `<div class="card">
+        <div class="head-date">${title}
+          ${c.conf ? `<span class="badge b-conf">確定 v${c.conf.version || ''}</span>` : '<span class="badge b-draft">下書き（未確定）</span>'}</div>
+        <div class="info"><b>出勤</b>${c.people.length}人${c.absent.length ? `　<b>欠勤</b>${c.absent.map(esc).join('・')}` : ''}</div>
+        ${famTxt ? `<div class="info"><b>家族の休み</b>${esc(famTxt)}</div>` : ''}
+        ${c.memo ? `<div class="info"><b>メモ</b>${esc(c.memo)}</div>` : ''}
+      </div>`;
+
+      // --- 確認ポイント ---
+      h += `<div class="card"><h2>⚠ 確認ポイント<span class="s">決まりで判定できるところだけ。顔ぶれは下のリストで</span></h2>` +
+        (alerts.length ? `<ul class="alerts">${alerts.map(a => `<li>${esc(a)}</li>`).join('')}</ul>`
+                       : '<div class="allok">✓ 決まりから外れているところはありません</div>') + '</div>';
+
+      // --- 1部 ポジションごと ---
+      h += `<div class="card"><h2>1部（9:00〜16:00）ポジションごと<span class="s">名前の横：0部・16時からの持ち場</span></h2>`;
+      const rAll = c.people.filter(p => isR(p.g)).length;
+      GROUP_ORDER.forEach(g => {
+        const list = c.people.filter(p => p.g === g);
+        if (!list.length && (g === 'F' || g === '他')) return;
+        const base = App.POS_BASE[g];
+        const few = (base && g !== 'T' && list.length < base) || (g === 'R2' && rAll < App.POS_BASE.R) || (g === 'T' && !list.length);
+        // R2 の見出しに R2＋R1 の合計と基本人数を添える
+        const cnt = g === 'R2' ? `${list.length}人<br>R計${rAll}／基本${App.POS_BASE.R}`
+                  : g === 'R1' ? `${list.length}人`
+                  : `${list.length}人${base ? `／基本${base}` : ''}`;
+        h += `<div class="pos"><div class="pl">${GROUP_LABEL[g].split(' ')[0]}<span class="n${few ? ' few' : ''}">${GROUP_LABEL[g].split(' ')[1] || ''}<br>${cnt}</span></div>
+          <div class="ppl">${list.length ? list.map(p => personLine(p, { showPos: g === '他' })).join('') : '<span class="none">なし</span>'}</div></div>`;
+      });
+      h += `<div class="note">T は家族がフォローするので、警告は 0人のときだけ出します。</div></div>`;
+
+      // --- 朝の準備 ---
+      const zp = z => c.people.filter(p => p.sub.indexOf(z) >= 0);
+      const zLine = (z, when) => {
+        const list = zp(z);
+        const body = list.length
+          ? list.map(p => `${esc(p.name)}${tags(p)} <span class="ex" style="font-size:13px;color:var(--sub)">${fmtT(p.start)}〜 → 準備のあと ${esc(p.p1 || '')}</span>`).join('<br>')
+          : '<span class="none">なし</span>';
+        return `<div class="mrow"><div class="k">${z} ${ZERO_FULL[z]}<span class="s">${when}</span></div><div>${body}</div></div>`;
+      };
+      const at9 = c.people.filter(p => p.start <= 9);
+      h += `<div class="card"><h2>朝の準備</h2>
+        ${zLine('C', '9:00〜')}
+        ${zLine('1F', '9:00〜')}
+        ${zLine('Rj', '9:30〜10:30')}
+        ${zp('Tj').length ? zLine('Tj', '') : ''}
+        ${zLine('m', '時間は問わない')}
+        <div class="mrow"><div class="k">9:00に来る人<span class="s">${at9.length}人</span></div><div>${names(at9) || '<span class="none">なし</span>'}</div></div>
+      </div>`;
+
+      // --- 2部 ---
+      const anyCand = c.people.some(p => p.cand);
+      h += `<div class="card"><h2>2部（16:00〜）時間帯ごと<span class="s">上がる人・ミーティングで顔ぶれが変わるところで区切っています</span></h2>` +
+        (anyCand ? `<div class="note" style="margin:-4px 0 4px"><span class="tag t-early">早</span> ＝ 2部Tが3人そろい次第、早上がりする人（0部の欄の「（」）。人数にはまだ数えています</div>` : '');
+      segs.forEach(s => {
+        const ln = (k, list, opt) => {
+          if (!list.length && opt && opt.hideEmpty) return '';
+          const zero = !list.length && (k === 'K' || k === 'W' || k === 'T');
+          return `<div class="ln"><span class="k">${k === 'M' ? 'ミーティング' : k}</span><span class="${zero ? 'zero' : ''}">${list.length ? names(list, true) :(zero ? '0人' : '<span class="none">なし</span>')}${opt && opt.extra ? opt.extra : ''}</span></div>`;
+        };
+        const mExtra = s.famM.length ? ` <span class="fam">＋${s.famM.map(famName).join('・')}</span>` : '';
+        h += `<div class="seg"><div class="when">${s.label}${s.inM ? '<span class="s">リーダーM</span>' : ''}</div>
+          ${ln('K', s.by.K)}${ln('W', s.by.W)}${ln('T', s.by.T)}${ln('F', s.by.F, { hideEmpty: true })}
+          ${(s.by.M.length || s.famM.length) ? ln('M', s.by.M, { extra: mExtra }) : ''}${ln('他', s.by['他'], { hideEmpty: true })}
+        </div>`;
+      });
+      h += `</div>`;
+
+      out.innerHTML = h;
+    }
+
+    function init() {
+      App.initFirebase();
+      if (App.isOnline()) {
+        App.subscribeSettings(render);
+        App.subscribeStaffMeta(render);
+        App.subscribeRequests(render, () => {
+          document.getElementById('out').innerHTML = '<div class="msg">シフトを読み込めませんでした（通信を確認してください）</div>';
+        });
+        watchLeaderM();
+      }
+      render();
+      // 日付が変わったら「今日・明日」を付け直す
+      let lastDay = App.todayLocal();
+      setInterval(() => {
+        const t = App.todayLocal();
+        if (t !== lastDay) { lastDay = t; selDate = null; render(); }
+      }, 60 * 1000);
+    }
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

@@ -51,6 +51,8 @@
               style="background:#fff;color:#4F46E5;font-weight:800">📋 シフト表</button>
       <button onclick="location.href='board.html'" title="今週の確定シフトを大きく表示します（日付が変わると自動で今週に切り替わります）"
               style="background:#fff;color:#4F46E5;font-weight:800">📺 タブレット表示</button>
+      <button onclick="location.href='check.html'" title="明日〜1週間先の配置を1日ずつ確認（時間のイレギュラー・ポジションごとの顔ぶれ・朝の準備・2部）。管理用"
+              style="background:#fff;color:#4F46E5;font-weight:800">🔍 明日の確認</button>
       <button onclick="location.href='memo.html'" title="アイデアとリーダー会議の議事録">📝 メモ帳</button>
       <button onclick="location.href='zaiko-list.html'" title="在庫入力で入れた総在庫・備品の一覧（要注文も出る）">📋 在庫一覧</button>
       <button onclick="App.forceUpdate()" title="アプリを最新にして再読み込みします（スマホで古い画面が出るときに）">🔄 最新に更新</button>
@@ -461,6 +463,14 @@
     function toggleHall(name) {
       const m = staffMetaOf(name);
       App.setStaffMeta(name, Object.assign(m, { hallLeader: !m.hallLeader }));
+      renderStaffMaster();
+    }
+
+    // ベテラン（2026/11/15）。「明日の確認」で名前の横に印を出すだけ。自動割り当てには使わない。
+    //   書くのはこの人の分だけ
+    function toggleVet(name) {
+      const m = staffMetaOf(name);
+      App.setStaffMeta(name, Object.assign(m, { veteran: !m.veteran }));
       renderStaffMaster();
     }
 
@@ -956,7 +966,7 @@
       el.innerHTML = staff.map((n, i) => {
         const m = Object.assign({ positions0: [], positions: [], positions2: [], t2always: false, t2extra: false,
                                   rank: '', daysMin: null, daysMax: null, note: '', priority: false,
-                                  rookie: false, hours: '', desh: false, hallLeader: false }, meta[n] || {});
+                                  rookie: false, hours: '', desh: false, hallLeader: false, veteran: false }, meta[n] || {});
         const rk = App.rankKey(m);
         const dOn = App.canDesh(meta, n);   // d（デシャップ）ができる人
         const RC = { top: '#BE123C', priority: '#B45309', housewife: '#0369A1', student: '#7E22CE' };
@@ -964,7 +974,7 @@
         const esc = n.replace(/'/g, "\\'");
         return `
         <div class="staff-master-row" style="flex-wrap:wrap;${rk ? `background:${RBG[rk]};border-color:${RC[rk]}` : ''}">
-          <span class="name">${n}${rk ? ` <span style="font-size:0.68rem;color:${RC[rk]};font-weight:700">${App.RANK_LABEL[rk]}</span>` : ''}${m.rookie ? ` <span style="font-size:0.68rem;background:#DC2626;color:#fff;font-weight:800;padding:1px 7px;border-radius:999px">新人</span>` : ''}${m.hallLeader ? ` <span style="font-size:0.68rem;background:#047857;color:#fff;font-weight:800;padding:1px 7px;border-radius:999px">ホールリーダー</span>` : ''}</span>
+          <span class="name">${n}${rk ? ` <span style="font-size:0.68rem;color:${RC[rk]};font-weight:700">${App.RANK_LABEL[rk]}</span>` : ''}${m.rookie ? ` <span style="font-size:0.68rem;background:#DC2626;color:#fff;font-weight:800;padding:1px 7px;border-radius:999px">新人</span>` : ''}${m.hallLeader ? ` <span style="font-size:0.68rem;background:#047857;color:#fff;font-weight:800;padding:1px 7px;border-radius:999px">ホールリーダー</span>` : ''}${m.veteran ? ` <span style="font-size:0.68rem;background:#FEF9C3;color:#A16207;border:1px solid #FDE047;font-weight:800;padding:1px 7px;border-radius:999px">ベテラン</span>` : ''}</span>
           <span style="display:inline-flex;gap:4px;flex-wrap:wrap" title="シフトに入れる優先順位：★★最優先 ＞ ★優先 ＞ 主婦 ＞ 無印 ＞ 学生&#10;16:30上がり（応援Tの日）は、この順位が低い人から先に上がります">
             ${['top','priority','housewife','student'].map(k => `
               <button class="btn btn-sm" onclick="setRank('${esc}', '${k}')"
@@ -983,6 +993,11 @@
               style="padding:3px 10px;font-size:0.76rem;font-weight:700;border-radius:6px;cursor:pointer;
                      border:1.5px solid ${m.hallLeader ? '#047857' : 'var(--border)'};
                      background:${m.hallLeader ? '#047857' : '#fff'};color:${m.hallLeader ? '#fff' : 'var(--muted)'}">ホールリーダー</button>
+            <button class="btn btn-sm" onclick="toggleVet('${esc}')"
+              title="ベテラン。&#10;「🔍 明日の確認」で名前の横に印が出ます（顔ぶれを見るため）。&#10;※ 自動割り当てには使いません。シフト表やタブレットにも出しません"
+              style="padding:3px 10px;font-size:0.76rem;font-weight:700;border-radius:6px;cursor:pointer;
+                     border:1.5px solid ${m.veteran ? '#CA8A04' : 'var(--border)'};
+                     background:${m.veteran ? '#CA8A04' : '#fff'};color:${m.veteran ? '#fff' : 'var(--muted)'}">ベテラン</button>
           </span>
           <div class="actions">
             <button class="btn btn-outline btn-sm" onclick="renameStaffPrompt('${esc}')" title="名前を変える">✏️</button>
@@ -1142,7 +1157,7 @@
       return Object.assign(
         { positions0: [], positions: [], positions2: [], t2always: false, t2extra: false,
           rank: '', daysMin: null, daysMax: null, note: '', priority: false,
-          rookie: false, hours: '', desh: false, hallLeader: false },
+          rookie: false, hours: '', desh: false, hallLeader: false, veteran: false },
         App.getStaffMeta()[name] || {});
     }
 

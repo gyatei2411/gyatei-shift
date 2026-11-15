@@ -208,7 +208,7 @@ const App = {
   },
 
   // アプリのバージョン（更新したらここを書き換える）
-  VERSION: '2026.10.25',
+  VERSION: '2026.11.15',
   lastSyncAt: null,   // Firebase から最後に受け取った時刻
 
   KEYS: {
@@ -804,7 +804,7 @@ const App = {
   forceUpdate() {
     const files = ['shared.js', 'xlsx-export.js', 'firebase-config.js', 'style.css',
                    'admin.html', 'shift-view.html', 'board.html', 'reply.html', 'memo.html', 'zaiko.html',
-                   'zaiko-items.js', 'zaiko-list.html', 'zaiko-edit.html'];
+                   'zaiko-items.js', 'zaiko-list.html', 'zaiko-edit.html', 'check.html'];
     return Promise.all(files.map(f => fetch(f, { cache: 'reload' }).catch(() => {})))
       .then(() => { location.reload(); });
   },
