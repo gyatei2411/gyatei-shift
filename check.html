@@ -338,12 +338,27 @@
       });
       has('Rj').forEach(p => { if (p.start > 9.5) out.push(`朝の準備：Rj（2Fの準備 9:30〜）の${p.name}さんの出勤が ${fmtSlot(p.start)}`); });
       if (!has('m').length) out.push('朝の準備：m（盛り付け）の人がいません');
-      // 4) 2部：K・W・T が0人になる時間帯
-      segs.forEach(s => {
-        ['K', 'W', 'T'].forEach(g => {
-          if (!s.by[g].length) out.push(`${s.label}：${GROUP_LABEL[g]}が0人`);
+      // 4) 2部（2部の K は調理場が各自で調整するので見ない。11/15 社長）
+      //   W：0人の時間帯と、1人になる時間帯（11/16 の「16:30から西川さん1人」のような日。11/15 社長）
+      //   T：0人の時間帯だけ（1人は家族がフォローするのでふつう）
+      //   続いている時間帯はまとめて「16:30〜ラスト」のように1行にする
+      const runs = (g, stateOf) => {
+        let cur = null;
+        const emit = r => {
+          const label = `${fmtSlot(r.from)}〜${fmtSlot(r.to)}`;
+          if (r.st === 'zero') out.push(`${label}：${GROUP_LABEL[g]}が0人`);
+          else out.push(`${label}：${GROUP_LABEL[g]}が${r.st.slice(4)}さん1人`);
+        };
+        segs.forEach(s => {
+          const st = stateOf(s.by[g]);
+          if (cur && cur.st === st) { cur.to = s.to; return; }
+          if (cur && cur.st) emit(cur);
+          cur = { st, from: s.from, to: s.to };
         });
-      });
+        if (cur && cur.st) emit(cur);
+      };
+      runs('W', list => !list.length ? 'zero' : list.length === 1 ? 'one:' + list[0].name : null);
+      runs('T', list => !list.length ? 'zero' : null);
       return out;
     }
 
@@ -353,7 +368,11 @@
       const hasM = M_RE.test(c.memo) || M_RE.test(c.note);
       const pts = new Set([16]);
       // 早上がり（「（」）の人では区切らない。上がる時刻は 16:30 前後で日によって違うため（社長）
-      c.people.forEach(p => { if (p.end > 16 && p.end < 99) pts.add(p.end); });
+      //   2部の K は出さないので、K の人（応援T以外）が上がる時刻でも区切らない
+      c.people.forEach(p => {
+        if (p.g === 'K' && !p.helpT) return;
+        if (p.end > 16 && p.end < 99) pts.add(p.end);
+      });
       if (hasM) pts.add(M_TO);
       const list = Array.from(pts).sort((a, b) => a - b);
       const famOffNames = App.parseFamilyOff(c.famOff);
@@ -509,12 +528,12 @@
       segs.forEach(s => {
         const ln = (k, list, opt) => {
           if (!list.length && opt && opt.hideEmpty) return '';
-          const zero = !list.length && (k === 'K' || k === 'W' || k === 'T');
+          const zero = !list.length && (k === 'W' || k === 'T');
           return `<div class="ln"><span class="k">${k === 'M' ? 'ミーティング' : k}</span><span class="${zero ? 'zero' : ''}">${list.length ? names(list, true) :(zero ? '0人' : '<span class="none">なし</span>')}${opt && opt.extra ? opt.extra : ''}</span></div>`;
         };
         const mExtra = s.famM.length ? ` <span class="fam">＋${s.famM.map(famName).join('・')}</span>` : '';
         h += `<div class="seg"><div class="when">${s.label}${s.inM ? '<span class="s">リーダーM</span>' : ''}</div>
-          ${ln('K', s.by.K)}${ln('W', s.by.W)}${ln('T', s.by.T)}${ln('F', s.by.F, { hideEmpty: true })}
+          ${ln('W', s.by.W)}${ln('T', s.by.T)}${ln('F', s.by.F, { hideEmpty: true })}
           ${(s.by.M.length || s.famM.length) ? ln('M', s.by.M, { extra: mExtra }) : ''}${ln('他', s.by['他'], { hideEmpty: true })}
         </div>`;
       });
