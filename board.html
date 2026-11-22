@@ -87,13 +87,17 @@
     /* UPの日 */
     th.day.u500  { background: #78350F; }
     th.day.u1000 { background: #9A3412; }
+    th.day.u1500 { background: #7F1D1D; }
     th.day .d-up {
       display: block; font-size: 15px; font-weight: 900; color: #FDE68A; line-height: 1.2;
     }
     th.day.u1000 .d-up { color: #FED7AA; }
+    th.day.u1500 .d-up { color: #FECACA; }
     .bv-days button.u500  { background: #78350F; border-color: #B45309; color: #FDE68A; }
     .bv-days button.u1000 { background: #9A3412; border-color: #C2410C; color: #FED7AA; }
+    .bv-days button.u1500 { background: #7F1D1D; border-color: #B91C1C; color: #FECACA; }
     .bv-days button.u500 .d, .bv-days button.u1000 .d { color: #FDE68A; }
+    .bv-days button.u1500 .d { color: #FECACA; }
     .bv-irow.up .v { color: #FDE68A; font-weight: 900; }
     /* 勤怠（店用モードだけ。その日シフトどおりに出勤したか確かめたら押す） */
     tr.info.kin td.v { cursor: pointer; color: #64748B; box-shadow: inset 0 0 0 1px #334155; border-radius: 6px; }
@@ -1217,7 +1221,7 @@
           if (shopMode) {
             // 誤タップで変わらないようにプルダウン
             r += `<td class="v"><select class="up-select" data-upsel="${d}" onchange="saveUpBoard(this)">` +
-                 ['', '500', '1000'].map(v =>
+                 [''].concat(App.UP_LEVELS).map(v =>
                    `<option value="${v}" ${v === u ? 'selected' : ''}>${v ? '+' + v + '円' : '・'}</option>`).join('') +
                  `</select></td>`;
           } else {
@@ -1386,7 +1390,7 @@
       h += `<div class="bv-irow up"><span class="l">UP</span>` +
            (shopMode
              ? `<span class="v"><select class="up-select" data-upsel="${d}" onchange="saveUpBoard(this)">` +
-               ['', '500', '1000'].map(v =>
+               [''].concat(App.UP_LEVELS).map(v =>
                  `<option value="${v}" ${v === upv ? 'selected' : ''}>${v ? '+' + v + '円' : 'なし'}</option>`).join('') +
                `</select></span>`
              : `<span class="v">${upv ? '+' + upv + '円' : 'なし'}</span>`) + `</div>`;
@@ -1476,8 +1480,8 @@
 
       if (usedUp) {
         h += '<div class="leg-sec"><h3>UPの日</h3>' +
-             '<div class="leg-note">売上に応じて <b style="color:#FDE68A">+500円UP</b> ・ <b style="color:#FED7AA">+1000円UP</b> になる日です。<br>' +
-             '日付の欄がオレンジ色になっている日がそうです。</div></div>';
+             '<div class="leg-note">売上に応じて <b style="color:#FDE68A">+500円UP</b> ・ <b style="color:#FED7AA">+1000円UP</b> ・ <b style="color:#FECACA">+1500円UP</b> になる日です。<br>' +
+             '日付の欄に色（オレンジ・赤）が付いている日がそうです。</div></div>';
       }
 
       h += '<div class="leg-sec"><h3>時間・その他</h3><div class="leg-note">' +

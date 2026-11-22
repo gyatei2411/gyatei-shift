@@ -208,7 +208,7 @@ const App = {
   },
 
   // アプリのバージョン（更新したらここを書き換える）
-  VERSION: '2026.11.16',
+  VERSION: '2026.11.22',
   lastSyncAt: null,   // Firebase から最後に受け取った時刻
 
   KEYS: {
@@ -323,8 +323,8 @@ const App = {
   },
 
   /* ===== UPの日 =====
-     忙しかった日の売上に応じて時給を上げる日。500円 / 1000円の2種類 */
-  UP_LEVELS: ['500', '1000'],
+     忙しかった日の売上に応じて時給を上げる日。500円 / 1000円 / 1500円の3種類（1500円は 2026/11/22 に追加） */
+  UP_LEVELS: ['500', '1000', '1500'],
   upKey(d) { return `up_${d}`; },
   upOf(cells, d) {
     const v = String((cells || {})[App._safeCellKey(App.upKey(d))] || '');
@@ -334,7 +334,7 @@ const App = {
     const t = String(v == null ? '' : v);
     App.setManualCell(reqId, App.upKey(d), App.UP_LEVELS.indexOf(t) >= 0 ? t : '');
   },
-  // 押すたびに なし → 500 → 1000 → なし
+  // 押すたびに なし → 500 → 1000 → 1500 → なし
   nextUp(v) {
     const i = App.UP_LEVELS.indexOf(String(v || ''));
     return i < 0 ? App.UP_LEVELS[0] : (App.UP_LEVELS[i + 1] || '');
@@ -965,7 +965,7 @@ const App = {
   countAttendance(from, to) {
     const rows = {};
     const touch = (n) => rows[n] || (rows[n] = {
-      name: n, days: 0, up500: 0, up1000: 0, absent: 0, bonus: 0, upCount: 0, detail: []
+      name: n, days: 0, up500: 0, up1000: 0, up1500: 0, absent: 0, bonus: 0, upCount: 0, detail: []
     });
     App.getRequests().forEach(req => {
       const dates = App.weekDates(req.ws);
@@ -992,6 +992,7 @@ const App = {
           r.days++;
           if (up === '500') r.up500++;
           else if (up === '1000') r.up1000++;
+          else if (up === '1500') r.up1500++;
           r.detail.push({ date: ds, up: up, pos: g(n, d, 'main') });
         });
       }
@@ -1002,9 +1003,9 @@ const App = {
     order.forEach(n => touch(n));
     const list = Object.keys(rows).map(n => rows[n]);
     list.forEach(r => {
-      r.bonus = r.up500 * 500 + r.up1000 * 1000;
-      // 繁忙手当の回数。給与の勤怠記入表は「＠500×回数」なので 500円の日=1回・1000円の日=2回
-      r.upCount = r.up500 + r.up1000 * 2;
+      r.bonus = r.up500 * 500 + r.up1000 * 1000 + r.up1500 * 1500;
+      // 繁忙手当の回数。給与の勤怠記入表は「＠500×回数」なので 500円の日=1回・1000円の日=2回・1500円の日=3回
+      r.upCount = r.up500 + r.up1000 * 2 + r.up1500 * 3;
       r.detail.sort((a, b) => a.date < b.date ? -1 : 1);
     });
     list.sort((a, b) => {

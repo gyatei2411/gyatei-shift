@@ -231,6 +231,7 @@
     .shift-table td.upcell { cursor: pointer; font-weight: 800; color: #94A3B8; }
     .shift-table td.upcell.u500  { background: #FEF3C7; color: #92400E; }
     .shift-table td.upcell.u1000 { background: #FDBA74; color: #7C2D12; }
+    .shift-table td.upcell.u1500 { background: #FCA5A5; color: #7F1D1D; }
     .shift-table td.upcell:hover { outline: 2px solid var(--primary); outline-offset: -2px; }
     /* 勤怠（その日シフトどおりに出勤したかの確認。1日ワンクリック） */
     .shift-table td.kincell {
@@ -248,6 +249,7 @@
       font-size: 9px; font-weight: 800; background: #F59E0B; color: #fff; vertical-align: 1px;
     }
     .shift-table thead th.up1000 .upbadge { background: #EA580C; }
+    .shift-table thead th.up1500 .upbadge { background: #DC2626; }
     /* 日別表示での欠勤とUP */
     .dv-row.dv-abs { background: #FEF2F2; }
     .dv-row.dv-abs .dv-pos, .dv-row.dv-abs .dv-time { text-decoration: line-through; opacity: 0.6; }
@@ -256,6 +258,7 @@
       padding: 1px 7px; margin-right: 6px; font-size: 0.85rem; font-weight: 900;
     }
     .dv-days button.u500 .d, .dv-days button.u1000 .d { color: #B45309; }
+    .dv-days button.u1500 .d { color: #B91C1C; }
     .shift-table .up-select {
       width: 100%; border: none; background: transparent; font: inherit;
       font-weight: 800; text-align: center; cursor: pointer; color: inherit;
@@ -266,6 +269,7 @@
     .dv-info .dv-ival.dv-up { font-weight: 900; }
     .dv-info .dv-ival.dv-up.u500  { background: #FEF3C7; color: #92400E; border-color: #FCD34D; }
     .dv-info .dv-ival.dv-up.u1000 { background: #FDBA74; color: #7C2D12; border-color: #FB923C; }
+    .dv-info .dv-ival.dv-up.u1500 { background: #FCA5A5; color: #7F1D1D; border-color: #F87171; }
     .shift-table td.cnt-staff { background: #EEF2FF; color: #3730A3; font-weight: 800; }
     /* 本人の申告から自動で出している希望時刻 */
     .shift-table td.cell-time.auto { color: #7C3AED; font-style: italic; }
@@ -703,14 +707,14 @@
       }
       html += '<td></td></tr>';
 
-      // UP（ボタン：押すたびに なし → 500 → 1000）
+      // UP（プルダウン：なし / 500 / 1000 / 1500）
       html += `<tr class="row-header row-up"><td class="lbl" title="忙しかった日の時給UP。選んで設定します">UP</td>`;
       for (let i = 0; i < 7; i++) {
         if (closed.has(i)) { html += '<td colspan="3" class="closed-cell"></td>'; continue; }
         const up = App.upOf(manual, i);
         html += `<td colspan="3" class="upcell${up ? ' u' + up : ''}">` +
                 `<select class="up-select" data-upsel="${i}" onchange="saveUp(this)">` +
-                ['', '500', '1000'].map(v =>
+                [''].concat(App.UP_LEVELS).map(v =>
                   `<option value="${v}" ${v === up ? 'selected' : ''}>${v ? '+' + v : '・'}</option>`).join('') +
                 `</select></td>`;
       }
@@ -1015,7 +1019,7 @@
         `<div class="dv-irow"><span class="dv-ilbl">UP</span>` +
         `<span class="dv-ival ro${upv ? ' dv-up u' + upv : ''}" style="padding:0">` +
         `<select class="up-select dv-upsel" data-upsel="${d}" onchange="saveUp(this)">` +
-        ['', '500', '1000'].map(v =>
+        [''].concat(App.UP_LEVELS).map(v =>
           `<option value="${v}" ${v === upv ? 'selected' : ''}>${v ? '+' + v + '円' : 'なし'}</option>`).join('') +
         `</select></span></div>` +
         `<div class="dv-irow"><span class="dv-ilbl">休み（家族）</span>` +
