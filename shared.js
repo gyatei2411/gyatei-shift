@@ -208,7 +208,7 @@ const App = {
   },
 
   // アプリのバージョン（更新したらここを書き換える）
-  VERSION: '2026.11.22',
+  VERSION: '2026.11.28',
   lastSyncAt: null,   // Firebase から最後に受け取った時刻
 
   KEYS: {

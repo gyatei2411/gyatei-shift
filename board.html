@@ -145,9 +145,11 @@
        入り切らない文字は fitCells() で小さくし、下限を下回ったら折り返す */
     table.board {
       border-collapse: separate; border-spacing: 3px;
-      table-layout: fixed; width: 1210px;
+      table-layout: fixed; width: 1224px;
     }
-    table.board col.c-name { width: 130px; }
+    /* 名前は左右の両端に出す（2026/11/28 社長指定。右の方の日でも誰のシフトか分かるように）。
+       左の列を 130px → 72px に細くして、その分を右の列に回した */
+    table.board col.c-name { width: 72px; }
     table.board col.c-day { width: 150px; }
     table.board th, table.board td { text-align: center; vertical-align: middle; }
 
@@ -170,10 +172,12 @@
     /* 名前 */
     td.name {
       background: #1E293B; color: #F1F5F9; border-radius: 8px;
-      font-size: 24px; font-weight: 800;
-      text-align: left; padding: 4px 14px; white-space: nowrap;
+      font-size: 22px; font-weight: 800;
+      text-align: center; padding: 4px 4px; white-space: nowrap;
       overflow: hidden;
     }
+    td.name .nm { display: inline-block; max-width: 100%; }
+    td.name .nm.wrap { white-space: normal; line-height: 1.1; }
 
     /* 勤務セル */
     td.cell { border-radius: 8px; padding: 4px 6px; height: 62px; overflow: hidden; }
@@ -222,7 +226,7 @@
     .resting .rt-none { opacity: 0.55; }
 
     /* 下段の情報行（休み・まかない・メモ） */
-    tr.info td.name { font-size: 17px; padding: 2px 12px; background: #16202F; color: #94A3B8; }
+    tr.info td.name { font-size: 17px; padding: 2px 4px; background: #16202F; color: #94A3B8; }
     tr.info td.v {
       background: #131C2E; color: #CBD5E1; border-radius: 6px;
       height: 34px; padding: 2px 6px; font-size: 17px; font-weight: 700;
@@ -238,7 +242,7 @@
     /* 人数が多い週は1行にまとめて、その分だけ文字を大きく見せる */
     table.board.compact td.cell { height: 42px; }
     table.board.compact td.cell .ci { flex-direction: row; align-items: baseline; gap: 8px; }
-    table.board.compact td.name { font-size: 21px; padding: 2px 12px; }
+    table.board.compact td.name { font-size: 21px; padding: 2px 4px; }
     table.board.compact th.day { padding: 3px 8px; }
 
     /* ポジション別の色分け */
@@ -418,7 +422,7 @@
 
       table.board, table.board.compact { border-spacing: 1px; }
       table.board td.name, table.board.compact td.name {
-        min-width: 52px; font-size: 21px; padding: 1px 5px; border-radius: 5px;
+        font-size: 21px; padding: 1px 4px; border-radius: 5px;
       }
       table.board th.day, table.board.compact th.day {
         min-width: 0; padding: 2px 3px; border-radius: 5px;
@@ -439,7 +443,7 @@
       }
       table.board td.cell .time, table.board.compact td.cell .time { font-size: 20px; }
       table.board td.cell .mark { font-size: 20px; }
-      table.board tr.info td.name { font-size: 11px; padding: 1px 5px; }
+      table.board tr.info td.name { font-size: 11px; padding: 1px 4px; }
       table.board tr.info td.v { height: 22px; font-size: 15px; padding: 1px 3px; }
       table.board tr.info.mkn td.v { font-size: 18px; }
     }
@@ -461,7 +465,7 @@
       table.board th.day, table.board.compact th.day { padding: 1px 6px; min-width: 100px; }
       table.board th.day .d-date { font-size: 16px; line-height: 1.05; }
       table.board th.day .d-dow { font-size: 11px; }
-      table.board td.name, table.board.compact td.name { font-size: 17px; padding: 0 8px; min-width: 92px; }
+      table.board td.name, table.board.compact td.name { font-size: 17px; padding: 0 4px; }
       table.board td.cell, table.board.compact td.cell { height: 26px; padding: 0 5px; min-width: 100px; }
       table.board td.cell .ci, table.board.compact td.cell .ci {
         flex-direction: row; align-items: baseline; gap: 7px;
@@ -471,7 +475,7 @@
       table.board td.cell .sub, table.board.compact td.cell .sub { font-size: 13px; padding: 0 4px; margin-right: 3px; }
       table.board td.cell .pos .p2, table.board.compact td.cell .pos .p2 { font-size: 15px; }
       table.board td.cell .mark { font-size: 18px; }
-      table.board tr.info td.name { font-size: 13px; padding: 0 8px; }
+      table.board tr.info td.name { font-size: 13px; padding: 0 4px; }
       table.board tr.info td.v { height: 22px; font-size: 14px; padding: 0 5px; }
       table.board tr.info.mkn td.v { font-size: 18px; }
     }
@@ -1091,7 +1095,7 @@
       const names = shopMode ? all : shown;
 
       let html = `<table class="board${names.length > 12 ? ' compact' : ''}">` +
-        `<colgroup><col class="c-name">` + '<col class="c-day">'.repeat(7) + `</colgroup>` +
+        `<colgroup><col class="c-name">` + '<col class="c-day">'.repeat(7) + `<col class="c-name"></colgroup>` +
         `<thead><tr><th class="corner"></th>`;
       dates.forEach((ds, i) => {
         let cls = 'day';
@@ -1108,7 +1112,10 @@
           ${up ? `<div class="d-up">+${up}円UP</div>` : ''}
         </th>`;
       });
-      html += '</tr></thead><tbody>';
+      html += '<th class="corner"></th></tr></thead><tbody>';
+
+      // 名前のマス。左端と右端の両方に同じものを出す
+      const nameTd = (label) => `<td class="name"><span class="nm">${label}</span></td>`;
 
       const usedPos = {};
       let usedAvail = false;
@@ -1128,7 +1135,7 @@
       };
 
       const rowFor = (name) => {
-        let r = `<tr><td class="name">${esc(name)}</td>`;
+        let r = `<tr>${nameTd(esc(name))}`;
         for (let d = 0; d < 7; d++) {
           if (closed.has(d)) { r += '<td class="cell closedday"></td>'; continue; }
           const pos = get(name, d, 'main');
@@ -1180,7 +1187,7 @@
                  '</td>';
           }
         }
-        return r + '</tr>';
+        return r + nameTd(esc(name)) + '</tr>';
       };
 
       for (const name of names) html += rowFor(name);
@@ -1192,29 +1199,29 @@
       // editKey を渡すと、店用モードのときタップで直せる
       const infoRow = (cls, label, fn, editKey) => {
         const ed = editKey && shopMode;
-        let r = `<tr class="info ${cls}${ed ? ' editable' : ''}"><td class="name">${label}</td>`;
+        let r = `<tr class="info ${cls}${ed ? ' editable' : ''}">${nameTd(label)}`;
         for (let d = 0; d < 7; d++) {
           if (closed.has(d)) { r += '<td class="cell closedday"></td>'; continue; }
           const v = fn(d);
           r += `<td class="v${v ? '' : ' blank'}"${ed ? ` data-editkey="${editKey}" data-editday="${d}"` : ''}>` +
                `<span class="iv">${v || (ed ? '✏' : '・')}</span></td>`;
         }
-        return r + '</tr>';
+        return r + nameTd(label) + '</tr>';
       };
       const anyFam = [0,1,2,3,4,5,6].some(d => !closed.has(d) && cell(`fam_off_${d}`));
       const anyMemo = [0,1,2,3,4,5,6].some(d => !closed.has(d) && cell(`memo_${d}`));
       // 勤怠（店用モードだけ出す。スタッフが見る画面には要らないため）
       if (shopMode) {
-        let r = '<tr class="info kin"><td class="name">勤怠</td>';
+        let r = '<tr class="info kin">' + nameTd('勤怠');
         for (let d = 0; d < 7; d++) {
           if (closed.has(d)) { r += '<td class="cell closedday"></td>'; continue; }
           const ok = App.isKinChecked(live, d);
           r += `<td class="v${ok ? ' ok' : ''}" data-kin="${d}"><span class="iv">${ok ? '✓ 済' : '未'}</span></td>`;
         }
-        html += r + '</tr>';
+        html += r + nameTd('勤怠') + '</tr>';
       }
       if (usedUp || shopMode) {
-        let r = '<tr class="info up"><td class="name">UP</td>';
+        let r = '<tr class="info up">' + nameTd('UP');
         for (let d = 0; d < 7; d++) {
           if (closed.has(d)) { r += '<td class="cell closedday"></td>'; continue; }
           const u = upOfDay(d);
@@ -1230,7 +1237,7 @@
                  `><span class="iv">${u ? '+' + u + '円' : '・'}</span></td>`;
           }
         }
-        html += r + '</tr>';
+        html += r + nameTd('UP') + '</tr>';
       }
       if (anyFam || shopMode) html += infoRow('fam', '休み', d => esc(cell(`fam_off_${d}`)), 'fam_off_');
       html += infoRow('mkn', 'まかない', d => {
@@ -1508,7 +1515,7 @@
     function fitCells() {
       const table = document.querySelector('#fit-inner table.board');
       if (!table) return;
-      const targets = table.querySelectorAll('td.cell .pos, td.cell .time, tr.info td.v .iv');
+      const targets = table.querySelectorAll('td.cell .pos, td.cell .time, tr.info td.v .iv, td.name .nm');
       targets.forEach(el => {
         el.style.fontSize = '';
         el.classList.remove('wrap');
